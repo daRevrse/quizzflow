@@ -23,7 +23,7 @@ import Dashboard from "./pages/Dashboard";
 import QuizList from "./pages/quiz/QuizList";
 import QuizCreate from "./pages/quiz/QuizCreate";
 // import QuizEdit from "./pages/quiz/QuizEdit";
-// import QuizView from "./pages/quiz/QuizView";
+import QuizView from "./pages/quiz/QuizView";
 // import SessionCreate from "./pages/session/SessionCreate";
 // import SessionHost from "./pages/session/SessionHost";
 import SessionJoin from "./pages/session/SessionJoin";
@@ -194,7 +194,11 @@ function MainLayout() {
               />
               <Route
                 path="/quiz/:id"
-                element={<ProtectedRoute>{/* <QuizView /> */}</ProtectedRoute>}
+                element={
+                  <ProtectedRoute>
+                    <QuizView />
+                  </ProtectedRoute>
+                }
               />
 
               {/* Gestion des sessions */}
