@@ -18,12 +18,12 @@ const SessionJoin = () => {
   const { code: urlCode } = useParams();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuthStore();
-  const { joinSession, sessionState, useSocketEvent } = useSocket();
+  const { socket, isConnected, joinSession } = useSocket();
 
   const [loading, setLoading] = useState(false);
   const [sessionInfo, setSessionInfo] = useState(null);
   const [joining, setJoining] = useState(false);
-  const [step, setStep] = useState("enter-code"); // enter-code, session-info, joining, joined
+  const [step, setStep] = useState("enter-code");
 
   const {
     register,
@@ -51,24 +51,35 @@ const SessionJoin = () => {
   }, [urlCode]);
 
   // Écouter les événements Socket.IO
-  useSocketEvent("session_joined", (data) => {
-    console.log("Session rejointe:", data);
-    setJoining(false);
-    setStep("joined");
-    toast.success("Session rejointe avec succès !");
+  useEffect(() => {
+    if (!socket || !isConnected) return;
 
-    // Rediriger vers la page de jeu après un délai
-    setTimeout(() => {
-      navigate(`/session/${data.sessionId}/play`);
-    }, 2000);
-  });
+    const handleSessionJoined = (data) => {
+      console.log("Session rejointe:", data);
+      setJoining(false);
+      setStep("joined");
+      toast.success("Session rejointe avec succès !");
 
-  useSocketEvent("error", (error) => {
-    console.error("Erreur Socket.IO:", error);
-    setJoining(false);
-    toast.error(error.message || "Erreur lors de la connexion");
-    setStep("session-info");
-  });
+      setTimeout(() => {
+        navigate(`/session/${data.sessionId}/play`);
+      }, 2000);
+    };
+
+    const handleError = (error) => {
+      console.error("Erreur Socket.IO:", error);
+      setJoining(false);
+      toast.error(error.message || "Erreur lors de la connexion");
+      setStep("session-info");
+    };
+
+    socket.on("session_joined", handleSessionJoined);
+    socket.on("error", handleError);
+
+    return () => {
+      socket.off("session_joined", handleSessionJoined);
+      socket.off("error", handleError);
+    };
+  }, [socket, isConnected, navigate]);
 
   const loadSessionInfo = async (code) => {
     try {
@@ -109,7 +120,6 @@ const SessionJoin = () => {
     setStep("joining");
 
     try {
-      // Rejoindre via Socket.IO
       joinSession(sessionInfo.code, name, data.isAnonymous);
     } catch (error) {
       console.error("Erreur lors de la connexion:", error);
@@ -135,10 +145,7 @@ const SessionJoin = () => {
 
       <form onSubmit={handleSubmit(onSubmitCode)} className="space-y-6">
         <div>
-          <label
-            htmlFor="sessionCode"
-            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-          >
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Code de session
           </label>
           <input
@@ -154,8 +161,8 @@ const SessionJoin = () => {
               },
             })}
             type="text"
-            className={`input text-center text-lg font-mono uppercase tracking-widest ${
-              errors.sessionCode ? "input-error" : ""
+            className={`w-full px-4 py-3 text-center text-lg font-mono uppercase tracking-widest border rounded-lg focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white ${
+              errors.sessionCode ? "border-red-300 dark:border-red-600" : ""
             }`}
             placeholder="ABC123"
             maxLength={8}
@@ -166,7 +173,7 @@ const SessionJoin = () => {
             }}
           />
           {errors.sessionCode && (
-            <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+            <p className="mt-1 text-sm text-red-600 dark:text-red-400">
               {errors.sessionCode.message}
             </p>
           )}
@@ -175,13 +182,10 @@ const SessionJoin = () => {
         <button
           type="submit"
           disabled={loading || !sessionCode}
-          className="w-full btn-primary py-3"
+          className="w-full inline-flex items-center justify-center px-4 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
         >
-          {loading ? (
-            <LoadingSpinner size="sm" inline />
-          ) : (
-            "Rechercher la session"
-          )}
+          {loading ? <LoadingSpinner size="sm" className="mr-2" /> : null}
+          {loading ? "Recherche..." : "Rechercher la session"}
         </button>
       </form>
 
@@ -208,7 +212,7 @@ const SessionJoin = () => {
   const renderSessionInfoStep = () => (
     <div className="max-w-md w-full mx-auto">
       <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-gradient-to-r from-success-500 to-success-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+        <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-green-600 rounded-xl flex items-center justify-center mx-auto mb-4">
           <CheckCircleIcon className="h-8 w-8 text-white" />
         </div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -217,7 +221,7 @@ const SessionJoin = () => {
       </div>
 
       {sessionInfo && (
-        <div className="card p-6 mb-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             {sessionInfo.title}
           </h2>
@@ -242,19 +246,19 @@ const SessionJoin = () => {
                 Participants:
               </span>
               <span className="font-medium text-gray-900 dark:text-white">
-                {sessionInfo.participantCount} /{" "}
+                {sessionInfo.participantCount || 0} /{" "}
                 {sessionInfo.settings?.maxParticipants || 100}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500 dark:text-gray-400">Statut:</span>
               <span
-                className={`badge ${
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   sessionInfo.status === "waiting"
-                    ? "badge-warning"
+                    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
                     : sessionInfo.status === "active"
-                    ? "badge-success"
-                    : "badge-gray"
+                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                    : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
                 }`}
               >
                 {sessionInfo.status === "waiting"
@@ -278,10 +282,7 @@ const SessionJoin = () => {
 
       <form onSubmit={handleSubmit(onJoinSession)} className="space-y-6">
         <div>
-          <label
-            htmlFor="participantName"
-            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-          >
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Votre nom
           </label>
           <div className="relative">
@@ -295,15 +296,17 @@ const SessionJoin = () => {
                 },
               })}
               type="text"
-              className={`input pl-10 ${
-                errors.participantName ? "input-error" : ""
+              className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white ${
+                errors.participantName
+                  ? "border-red-300 dark:border-red-600"
+                  : ""
               }`}
               placeholder="Entrez votre nom"
               disabled={joining}
             />
           </div>
           {errors.participantName && (
-            <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+            <p className="mt-1 text-sm text-red-600 dark:text-red-400">
               {errors.participantName.message}
             </p>
           )}
@@ -327,7 +330,7 @@ const SessionJoin = () => {
           <button
             type="button"
             onClick={() => setStep("enter-code")}
-            className="flex-1 btn-outline"
+            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md transition-colors"
             disabled={joining}
           >
             Changer de code
@@ -335,7 +338,7 @@ const SessionJoin = () => {
           <button
             type="submit"
             disabled={joining || !participantName}
-            className="flex-1 btn-primary"
+            className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium rounded-md transition-colors"
           >
             Rejoindre
           </button>
@@ -361,7 +364,7 @@ const SessionJoin = () => {
   const renderJoinedStep = () => (
     <div className="max-w-md w-full mx-auto text-center">
       <div className="mb-8">
-        <div className="w-16 h-16 bg-gradient-to-r from-success-500 to-success-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+        <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-green-600 rounded-xl flex items-center justify-center mx-auto mb-4">
           <CheckCircleIcon className="h-8 w-8 text-white" />
         </div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">

@@ -100,7 +100,7 @@ export const SocketProvider = ({ children }) => {
         setIsConnected(false);
       }
     }
-  }, [accessToken, user]);
+  }, [accessToken, user, socket]);
 
   // Fonctions utilitaires pour les sessions
   const joinSession = useCallback(
@@ -200,36 +200,6 @@ export const SocketProvider = ({ children }) => {
       socket.emit("participant_heartbeat");
     }
   }, [socket, isConnected]);
-
-  // Hook pour écouter un événement spécifique
-  const useSocketEvent = (socket, event, handler) => {
-    useEffect(() => {
-      if (!socket) return;
-
-      socket.on(event, handler);
-
-      return () => {
-        socket.off(event, handler);
-      };
-    }, [socket, event, handler]);
-  };
-
-  // Hook pour écouter plusieurs événements
-  const useSocketEvents = (socket, eventHandlers) => {
-    useEffect(() => {
-      if (!socket) return;
-
-      Object.entries(eventHandlers).forEach(([event, handler]) => {
-        socket.on(event, handler);
-      });
-
-      return () => {
-        Object.entries(eventHandlers).forEach(([event, handler]) => {
-          socket.off(event, handler);
-        });
-      };
-    }, [socket, eventHandlers]);
-  };
 
   // État de la session actuelle
   const [sessionState, setSessionState] = useState({
@@ -337,10 +307,6 @@ export const SocketProvider = ({ children }) => {
 
     // Communication
     sendMessage,
-
-    // Utilitaires
-    useSocketEvent,
-    useSocketEvents,
 
     // Helpers
     emit: useCallback(

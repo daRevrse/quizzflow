@@ -22,15 +22,16 @@ import Register from "./pages/auth/Register";
 import Dashboard from "./pages/Dashboard";
 import QuizList from "./pages/quiz/QuizList";
 import QuizCreate from "./pages/quiz/QuizCreate";
-// import QuizEdit from "./pages/quiz/QuizEdit";
+import QuizEdit from "./pages/quiz/QuizEdit";
 import QuizView from "./pages/quiz/QuizView";
-// import SessionCreate from "./pages/session/SessionCreate";
-// import SessionHost from "./pages/session/SessionHost";
+import SessionCreate from "./pages/session/SessionCreate";
+import SessionHost from "./pages/session/SessionHost";
 import SessionJoin from "./pages/session/SessionJoin";
-// import SessionPlay from "./pages/session/SessionPlay";
-// import SessionResults from "./pages/session/SessionResults";
-// import Profile from "./pages/Profile";
-// import Settings from "./pages/Settings";
+import SessionPlay from "./pages/session/SessionPlay";
+import SessionResults from "./pages/session/SessionResults";
+import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
 // Route guards
@@ -94,7 +95,7 @@ function App() {
               }
             />
             <Route path="/join/:code?" element={<SessionJoin />} />
-            {/* <Route path="/session/:sessionId/play" element={<SessionPlay />} /> */}
+            <Route path="/session/:sessionId/play" element={<SessionPlay />} />
 
             {/* Routes avec layout principal */}
             <Route path="/*" element={<MainLayout />} />
@@ -167,6 +168,16 @@ function MainLayout() {
                 }
               />
 
+              {/* Administration (Admin uniquement) */}
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute roles={["admin"]}>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
+
               {/* Gestion des quiz */}
               <Route
                 path="/quiz"
@@ -188,7 +199,7 @@ function MainLayout() {
                 path="/quiz/:id/edit"
                 element={
                   <ProtectedRoute roles={["formateur", "admin"]}>
-                    {/* <QuizEdit /> */}
+                    <QuizEdit />
                   </ProtectedRoute>
                 }
               />
@@ -206,7 +217,7 @@ function MainLayout() {
                 path="/session/create"
                 element={
                   <ProtectedRoute roles={["formateur", "admin"]}>
-                    {/* <SessionCreate /> */}
+                    <SessionCreate />
                   </ProtectedRoute>
                 }
               />
@@ -214,15 +225,15 @@ function MainLayout() {
                 path="/session/:sessionId/host"
                 element={
                   <ProtectedRoute roles={["formateur", "admin"]}>
-                    {/* <SessionHost /> */}
+                    <SessionHost />
                   </ProtectedRoute>
                 }
               />
               <Route
                 path="/session/:sessionId/results"
                 element={
-                  <ProtectedRoute roles={["formateur", "admin"]}>
-                    {/* <SessionResults /> */}
+                  <ProtectedRoute>
+                    <SessionResults />
                   </ProtectedRoute>
                 }
               />
@@ -230,11 +241,19 @@ function MainLayout() {
               {/* Profil et paramètres */}
               <Route
                 path="/profile"
-                element={<ProtectedRoute>{/* <Profile /> */}</ProtectedRoute>}
+                element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                }
               />
               <Route
                 path="/settings"
-                element={<ProtectedRoute>{/* <Settings /> */}</ProtectedRoute>}
+                element={
+                  <ProtectedRoute>
+                    <Settings />
+                  </ProtectedRoute>
+                }
               />
 
               {/* Page 404 */}
