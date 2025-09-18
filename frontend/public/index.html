@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full">
+
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#3b82f6" />
+  <meta name="description"
+    content="QuizApp - Plateforme de quiz interactifs en temps réel pour l'éducation et la formation" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://quiz-app.local/" />
+  <meta property="og:title" content="QuizApp - Quiz Interactifs en Temps Réel" />
+  <meta property="og:description"
+    content="Créez et animez des sessions de quiz captivantes pour vos formations, cours ou événements." />
+  <meta property="og:image" content="%PUBLIC_URL%/og-image.jpg" />
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:url" content="https://quiz-app.local/" />
+  <meta property="twitter:title" content="QuizApp - Quiz Interactifs en Temps Réel" />
+  <meta property="twitter:description"
+    content="Créez et animez des sessions de quiz captivantes pour vos formations, cours ou événements." />
+  <meta property="twitter:image" content="%PUBLIC_URL%/og-image.jpg" />
+
+  <!-- Apple -->
+  <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="QuizApp" />
+
+  <!-- Microsoft -->
+  <meta name="msapplication-TileColor" content="#3b82f6" />
+  <meta name="msapplication-config" content="%PUBLIC_URL%/browserconfig.xml" />
+
+  <!-- Manifest -->
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+  <!-- Preconnect pour améliorer les performances -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <title>QuizApp - Quiz Interactifs en Temps Réel</title>
+
+  <!-- Script pour éviter le flash de thème -->
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem('theme-storage');
+        if (theme) {
+          var parsed = JSON.parse(theme);
+          var actualTheme = parsed.state?.theme || 'light';
+
+          if (actualTheme === 'dark' || (actualTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
+        }
+      } catch (e) {
+        console.log('Erreur lors du chargement du thème:', e);
+      }
+    })();
+  </script>
+</head>
+
+<body class="h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+  <noscript>
+    <div style="text-align: center; padding: 50px; font-family: sans-serif;">
+      <h1>JavaScript Requis</h1>
+      <p>Cette application nécessite JavaScript pour fonctionner correctement.</p>
+      <p>Veuillez activer JavaScript dans votre navigateur.</p>
+    </div>
+  </noscript>
+
+  <div id="root"></div>
+
+  <!-- Scripts additionnels si nécessaire -->
+  <script>
+    // Gestion des erreurs globales
+    window.addEventListener('error', function (event) {
+      console.error('Erreur globale:', event.error);
+    });
+
+    window.addEventListener('unhandledrejection', function (event) {
+      console.error('Promise rejetée:', event.reason);
+    });
+
+    // Analytics ou autres scripts de suivi peuvent être ajoutés ici
+  </script>
+</body>
+
+</html>
