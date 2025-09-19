@@ -108,39 +108,121 @@ export const SocketProvider = ({ children }) => {
   }, [accessToken, user?.id]);
 
   // Fonction joinSession corrigée avec validation complète
+  // const joinSession = useCallback(
+  //   (sessionCode, participantName, isAnonymous = false) => {
+  //     if (!socket || !isConnected) {
+  //       toast.error("Connexion non établie");
+  //       return false;
+  //     }
+
+  //     // Validation côté client avant envoi
+  //     if (!sessionCode || sessionCode.trim().length < 6) {
+  //       toast.error("Code de session requis (minimum 6 caractères)");
+  //       return false;
+  //     }
+
+  //     if (!participantName || participantName.trim().length < 2) {
+  //       toast.error("Nom de participant requis (minimum 2 caractères)");
+  //       return false;
+  //     }
+
+  //     console.log("🎯 Envoi de join_session:", {
+  //       sessionCode: sessionCode.trim().toUpperCase(),
+  //       participantName: participantName.trim(),
+  //       isAnonymous: Boolean(isAnonymous),
+  //     });
+
+  //     // Données validées et nettoyées
+  //     const joinData = {
+  //       sessionCode: sessionCode.trim().toUpperCase(),
+  //       participantName: participantName.trim(),
+  //       isAnonymous: Boolean(isAnonymous),
+  //     };
+
+  //     socket.emit("join_session", joinData);
+  //     return true;
+  //   },
+  //   [socket, isConnected]
+  // );
+
   const joinSession = useCallback(
     (sessionCode, participantName, isAnonymous = false) => {
+      console.log(`🔄 joinSession appelé avec:`, {
+        sessionCode,
+        participantName,
+        isAnonymous,
+        socketExists: !!socket,
+        isConnected,
+      });
+
+      // Validation de la connexion
       if (!socket || !isConnected) {
+        console.error("❌ Socket non connecté");
         toast.error("Connexion non établie");
         return false;
       }
 
-      // Validation côté client avant envoi
-      if (!sessionCode || sessionCode.trim().length < 6) {
+      // Validation stricte des paramètres
+      if (!sessionCode) {
+        console.error("❌ sessionCode manquant:", sessionCode);
+        toast.error("Code de session manquant");
+        return false;
+      }
+
+      if (!participantName) {
+        console.error("❌ participantName manquant:", participantName);
+        toast.error("Nom de participant manquant");
+        return false;
+      }
+
+      // Nettoyage et validation des données
+      const cleanSessionCode = String(sessionCode).trim().toUpperCase();
+      const cleanParticipantName = String(participantName).trim();
+      const cleanIsAnonymous = Boolean(isAnonymous);
+
+      // Validation des longueurs
+      if (cleanSessionCode.length < 6) {
+        console.error("❌ Code trop court:", cleanSessionCode);
         toast.error("Code de session requis (minimum 6 caractères)");
         return false;
       }
 
-      if (!participantName || participantName.trim().length < 2) {
+      if (cleanParticipantName.length < 2) {
+        console.error("❌ Nom trop court:", cleanParticipantName);
         toast.error("Nom de participant requis (minimum 2 caractères)");
         return false;
       }
 
-      console.log("🎯 Envoi de join_session:", {
-        sessionCode: sessionCode.trim().toUpperCase(),
-        participantName: participantName.trim(),
-        isAnonymous: Boolean(isAnonymous),
-      });
-
-      // Données validées et nettoyées
+      // Préparation des données avec validation finale
       const joinData = {
-        sessionCode: sessionCode.trim().toUpperCase(),
-        participantName: participantName.trim(),
-        isAnonymous: Boolean(isAnonymous),
+        sessionCode: cleanSessionCode,
+        participantName: cleanParticipantName,
+        isAnonymous: cleanIsAnonymous,
       };
 
-      socket.emit("join_session", joinData);
-      return true;
+      console.log("🎯 Données finales à envoyer:", joinData);
+
+      // Vérification finale avant envoi
+      if (!joinData.sessionCode || !joinData.participantName) {
+        console.error("❌ Données finales invalides:", joinData);
+        toast.error("Erreur de validation des données");
+        return false;
+      }
+
+      console.log("📡 Envoi join_session via socket.emit");
+
+      try {
+        // Envoi avec gestion d'erreur
+        socket.emit("join_session", joinData);
+
+        // Log de confirmation d'envoi
+        console.log("✅ join_session envoyé avec succès");
+        return true;
+      } catch (error) {
+        console.error("❌ Erreur lors de l'envoi:", error);
+        toast.error("Erreur lors de l'envoi de la requête");
+        return false;
+      }
     },
     [socket, isConnected]
   );

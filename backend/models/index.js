@@ -1,63 +1,155 @@
+// Correction models/index.js - backend/models/index.js
+
 const { sequelize } = require("../config/database");
 
-// Import des modèles
+// Import direct avec chemin absolu pour éviter les problèmes de cache
 const User = require("./User");
 const Quiz = require("./Quiz");
 const Session = require("./Session");
 
-// Définition des associations
-const defineAssociations = () => {
-  // Un utilisateur peut créer plusieurs quiz
-  User.hasMany(Quiz, {
-    foreignKey: "creatorId",
-    as: "quizzes",
-    onDelete: "CASCADE",
-  });
+// Vérification que les modèles sont bien importés
+console.log("🔍 Vérification des modèles:");
+console.log("   User:", typeof User, User.name);
+console.log("   Quiz:", typeof Quiz, Quiz.name);
+console.log("   Session:", typeof Session, Session.name);
 
-  // Un quiz appartient à un utilisateur (créateur)
-  Quiz.belongsTo(User, {
-    foreignKey: "creatorId",
-    as: "creator",
-    onDelete: "CASCADE",
-  });
-
-  // Un utilisateur peut héberger plusieurs sessions
-  User.hasMany(Session, {
-    foreignKey: "hostId",
-    as: "hostedSessions",
-    onDelete: "CASCADE",
-  });
-
-  // Une session appartient à un utilisateur (hôte)
-  Session.belongsTo(User, {
-    foreignKey: "hostId",
-    as: "host",
-    onDelete: "CASCADE",
-  });
-
-  // Un quiz peut avoir plusieurs sessions
-  Quiz.hasMany(Session, {
-    foreignKey: "quizId",
-    as: "sessions",
-    onDelete: "CASCADE",
-  });
-
-  // Une session appartient à un quiz
-  Session.belongsTo(Quiz, {
-    foreignKey: "quizId",
-    as: "quiz",
-    onDelete: "CASCADE",
-  });
+// Vérification que ce sont bien des modèles Sequelize
+const isSequelizeModel = (model) => {
+  return (
+    model &&
+    typeof model === "function" &&
+    model.prototype &&
+    model.sequelize &&
+    typeof model.hasMany === "function"
+  );
 };
 
-// Exécuter les associations
-defineAssociations();
+console.log("🧪 Test modèles Sequelize:");
+console.log("   User isModel:", isSequelizeModel(User));
+console.log("   Quiz isModel:", isSequelizeModel(Quiz));
+console.log("   Session isModel:", isSequelizeModel(Session));
+
+// Si les modèles ne sont pas valides, les recréer
+let models = { User, Quiz, Session };
+
+// Vérification et correction si nécessaire
+Object.keys(models).forEach((modelName) => {
+  if (!isSequelizeModel(models[modelName])) {
+    console.error(`❌ ${modelName} n'est pas un modèle Sequelize valide`);
+    console.log(`   Type: ${typeof models[modelName]}`);
+    console.log(`   Constructor: ${models[modelName]?.constructor?.name}`);
+    console.log(`   Properties:`, Object.keys(models[modelName] || {}));
+  }
+});
+
+// Définition des associations avec vérification
+const defineAssociations = () => {
+  try {
+    console.log("🔗 Définition des associations...");
+
+    // Vérifier que tous les modèles sont disponibles avant de créer les associations
+    if (!isSequelizeModel(User)) {
+      throw new Error("User n'est pas un modèle Sequelize valide");
+    }
+    if (!isSequelizeModel(Quiz)) {
+      throw new Error("Quiz n'est pas un modèle Sequelize valide");
+    }
+    if (!isSequelizeModel(Session)) {
+      throw new Error("Session n'est pas un modèle Sequelize valide");
+    }
+
+    // Un utilisateur peut créer plusieurs quiz
+    User.hasMany(Quiz, {
+      foreignKey: "creatorId",
+      as: "quizzes",
+      onDelete: "CASCADE",
+    });
+    console.log("✅ User.hasMany(Quiz)");
+
+    // Un quiz appartient à un utilisateur (créateur)
+    Quiz.belongsTo(User, {
+      foreignKey: "creatorId",
+      as: "creator",
+      onDelete: "CASCADE",
+    });
+    console.log("✅ Quiz.belongsTo(User)");
+
+    // Un utilisateur peut héberger plusieurs sessions
+    User.hasMany(Session, {
+      foreignKey: "hostId",
+      as: "hostedSessions",
+      onDelete: "CASCADE",
+    });
+    console.log("✅ User.hasMany(Session)");
+
+    // Une session appartient à un utilisateur (hôte)
+    Session.belongsTo(User, {
+      foreignKey: "hostId",
+      as: "host",
+      onDelete: "CASCADE",
+    });
+    console.log("✅ Session.belongsTo(User)");
+
+    // Un quiz peut avoir plusieurs sessions
+    Quiz.hasMany(Session, {
+      foreignKey: "quizId",
+      as: "sessions",
+      onDelete: "CASCADE",
+    });
+    console.log("✅ Quiz.hasMany(Session)");
+
+    // Une session appartient à un quiz
+    Session.belongsTo(Quiz, {
+      foreignKey: "quizId",
+      as: "quiz",
+      onDelete: "CASCADE",
+    });
+    console.log("✅ Session.belongsTo(Quiz)");
+
+    console.log("🎉 Toutes les associations ont été définies avec succès");
+    return true;
+  } catch (error) {
+    console.error("❌ Erreur lors de la définition des associations:", error);
+
+    // Afficher plus de détails sur l'erreur
+    console.error("   Stack:", error.stack);
+
+    // Afficher l'état des modèles pour déboguer
+    console.log("🔍 État des modèles lors de l'erreur:");
+    console.log("   User:", {
+      type: typeof User,
+      hasMany: typeof User.hasMany,
+      sequelize: !!User.sequelize,
+    });
+    console.log("   Quiz:", {
+      type: typeof Quiz,
+      hasMany: typeof Quiz.hasMany,
+      sequelize: !!Quiz.sequelize,
+    });
+    console.log("   Session:", {
+      type: typeof Session,
+      hasMany: typeof Session.hasMany,
+      sequelize: !!Session.sequelize,
+    });
+
+    throw error;
+  }
+};
+
+// Exécuter les associations seulement si tous les modèles sont valides
+try {
+  defineAssociations();
+} catch (error) {
+  console.error("💥 Impossible de définir les associations:", error.message);
+  process.exit(1);
+}
 
 // Fonction pour synchroniser tous les modèles
 const syncDatabase = async (options = {}) => {
   try {
+    console.log("🔄 Synchronisation de la base de données...");
     await sequelize.sync(options);
-    console.log("🔄 Base de données synchronisée avec succès");
+    console.log("✅ Base de données synchronisée avec succès");
     return true;
   } catch (error) {
     console.error("❌ Erreur lors de la synchronisation:", error);
@@ -105,23 +197,23 @@ const seedDatabase = async () => {
 
       // Créer un quiz de démonstration
       const demoQuiz = await Quiz.create({
+        creatorId: formateur.id,
         title: "Quiz de démonstration - Connaissances générales",
         description:
           "Un quiz simple pour tester l'application avec différents types de questions.",
-        creatorId: formateur.id,
-        category: "Général",
-        tags: ["demo", "test", "général"],
-        difficulty: "facile",
+        category: "general",
+        tags: ["demo", "test", "general"],
+        difficulty: "moyen",
         questions: [
           {
             id: "q1",
             type: "qcm",
             question: "Quelle est la capitale de la France ?",
             options: [
+              { text: "Londres", isCorrect: false },
+              { text: "Berlin", isCorrect: false },
               { text: "Paris", isCorrect: true },
-              { text: "Lyon", isCorrect: false },
-              { text: "Marseille", isCorrect: false },
-              { text: "Toulouse", isCorrect: false },
+              { text: "Madrid", isCorrect: false },
             ],
             explanation:
               "Paris est la capitale et la plus grande ville de France.",
@@ -173,6 +265,7 @@ const seedDatabase = async () => {
     }
   } catch (error) {
     console.error("❌ Erreur lors de la création des données de test:", error);
+    throw error;
   }
 };
 
@@ -212,6 +305,14 @@ const getDatabaseStats = async () => {
     return null;
   }
 };
+
+// Export avec vérification finale
+console.log("📦 Export des modèles...");
+console.log("   Modèles disponibles:", {
+  User: !!User,
+  Quiz: !!Quiz,
+  Session: !!Session,
+});
 
 module.exports = {
   sequelize,

@@ -140,27 +140,6 @@ const loadSession = async (req, res, next) => {
 };
 
 // Middleware pour vérifier les permissions sur une session
-// const requireSessionOwnership = (req, res, next) => {
-//   if (!req.user) {
-//     return res.status(401).json({
-//       error: "Authentification requise",
-//     });
-//   }
-
-//   const session = req.session;
-//   const isHost = session.hostId === req.user.id;
-//   const isQuizOwner = session.quiz?.creatorId === req.user.id;
-//   const isAdmin = req.user.role === "admin";
-
-//   if (!isHost && !isQuizOwner && !isAdmin) {
-//     return res.status(403).json({
-//       error:
-//         "Permission insuffisante - Vous devez être l'hôte ou le créateur du quiz",
-//     });
-//   }
-
-//   next();
-// };
 const requireSessionOwnership = (req, res, next) => {
   try {
     const session = req.session;
@@ -197,7 +176,140 @@ const requireSessionOwnership = (req, res, next) => {
   }
 };
 
+// Fonction utilitaire pour calculer le nombre de participants de façon sécurisée
+const getParticipantCount = (participants) => {
+  if (!participants) {
+    console.log("⚠️  getParticipantCount: participants est null/undefined");
+    return 0;
+  }
+
+  if (Array.isArray(participants)) {
+    // Filtrer les participants valides (objets avec un id)
+    const validParticipants = participants.filter(
+      (p) => p && typeof p === "object" && p.id
+    );
+    console.log(
+      `✅ getParticipantCount: ${validParticipants.length} participants valides sur ${participants.length} entrées`
+    );
+    return validParticipants.length;
+  }
+
+  if (typeof participants === "string") {
+    try {
+      const parsed = JSON.parse(participants);
+      if (Array.isArray(parsed)) {
+        const validParticipants = parsed.filter(
+          (p) => p && typeof p === "object" && p.id
+        );
+        console.log(
+          `✅ getParticipantCount: ${validParticipants.length} participants valides (parsé depuis string)`
+        );
+        return validParticipants.length;
+      }
+    } catch (error) {
+      console.error(
+        "❌ getParticipantCount: Erreur parsing JSON:",
+        error.message
+      );
+    }
+  }
+
+  console.log(
+    `⚠️  getParticipantCount: Format non reconnu:`,
+    typeof participants
+  );
+  return 0;
+};
+
 // GET /api/session - Lister les sessions
+// router.get("/", authenticateToken, async (req, res) => {
+//   try {
+//     const {
+//       page = 1,
+//       limit = 20,
+//       status,
+//       quizId,
+//       hostId,
+//       my = false,
+//     } = req.query;
+
+//     const pageNum = parseInt(page);
+//     const limitNum = parseInt(limit);
+//     const offset = (pageNum - 1) * limitNum;
+
+//     const whereConditions = {};
+
+//     // Filtrer par statut
+//     if (status) {
+//       whereConditions.status = status;
+//     }
+
+//     // Filtrer par quiz
+//     if (quizId) {
+//       whereConditions.quizId = quizId;
+//     }
+
+//     // Filtrer par hôte
+//     if (hostId) {
+//       whereConditions.hostId = hostId;
+//     }
+
+//     // Mes sessions seulement
+//     if (my === "true") {
+//       whereConditions.hostId = req.user.id;
+//     }
+
+//     const { count, rows: sessions } = await Session.findAndCountAll({
+//       where: whereConditions,
+//       include: [
+//         {
+//           model: Quiz,
+//           as: "quiz",
+//           attributes: ["id", "title", "category", "difficulty"],
+//         },
+//         {
+//           model: User,
+//           as: "host",
+//           attributes: ["id", "username", "firstName", "lastName"],
+//         },
+//       ],
+//       order: [["createdAt", "DESC"]],
+//       limit: limitNum,
+//       offset,
+//     });
+
+//     const formattedSessions = sessions.map((session) => ({
+//       id: session.id,
+//       code: session.code,
+//       title: session.title,
+//       status: session.status,
+//       currentQuestionIndex: session.currentQuestionIndex,
+//       participantCount: session.participants?.length || 0,
+//       settings: session.settings,
+//       stats: session.stats,
+//       quiz: session.quiz,
+//       host: session.host,
+//       startedAt: session.startedAt,
+//       endedAt: session.endedAt,
+//       createdAt: session.createdAt,
+//     }));
+
+//     res.json({
+//       sessions: formattedSessions,
+//       pagination: {
+//         current: pageNum,
+//         pages: Math.ceil(count / limitNum),
+//         total: count,
+//         limit: limitNum,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Erreur lors de la récupération des sessions:", error);
+//     res.status(500).json({
+//       error: "Erreur lors de la récupération des sessions",
+//     });
+//   }
+// });
 router.get("/", authenticateToken, async (req, res) => {
   try {
     const {
@@ -235,6 +347,8 @@ router.get("/", authenticateToken, async (req, res) => {
       whereConditions.hostId = req.user.id;
     }
 
+    console.log(`🔍 Recherche sessions avec conditions:`, whereConditions);
+
     const { count, rows: sessions } = await Session.findAndCountAll({
       where: whereConditions,
       include: [
@@ -254,21 +368,38 @@ router.get("/", authenticateToken, async (req, res) => {
       offset,
     });
 
-    const formattedSessions = sessions.map((session) => ({
-      id: session.id,
-      code: session.code,
-      title: session.title,
-      status: session.status,
-      currentQuestionIndex: session.currentQuestionIndex,
-      participantCount: session.participants?.length || 0,
-      settings: session.settings,
-      stats: session.stats,
-      quiz: session.quiz,
-      host: session.host,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt,
-      createdAt: session.createdAt,
-    }));
+    console.log(`📊 Sessions trouvées: ${sessions.length}`);
+
+    // 🔧 CORRECTION : Calcul sécurisé du participantCount
+    const formattedSessions = sessions.map((session, index) => {
+      const participantCount = getParticipantCount(session.participants);
+
+      console.log(`📋 Session ${index + 1}/${sessions.length}:`, {
+        id: session.id,
+        code: session.code,
+        title: session.title,
+        rawParticipants: session.participants,
+        calculatedCount: participantCount,
+      });
+
+      return {
+        id: session.id,
+        code: session.code,
+        title: session.title,
+        status: session.status,
+        currentQuestionIndex: session.currentQuestionIndex,
+        participantCount: participantCount, // 🔧 Utilisation de la fonction sécurisée
+        settings: session.settings,
+        stats: session.stats,
+        quiz: session.quiz,
+        host: session.host,
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+        createdAt: session.createdAt,
+      };
+    });
+
+    console.log(`✅ Sessions formatées avec succès`);
 
     res.json({
       sessions: formattedSessions,
@@ -280,9 +411,11 @@ router.get("/", authenticateToken, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Erreur lors de la récupération des sessions:", error);
+    console.error("❌ Erreur lors de la récupération des sessions:", error);
     res.status(500).json({
       error: "Erreur lors de la récupération des sessions",
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
@@ -291,203 +424,465 @@ router.get("/", authenticateToken, async (req, res) => {
 // router.get("/:id", optionalAuth, loadSession, async (req, res) => {
 //   try {
 //     const session = req.session;
+//     const user = req.user;
 
-//     // Permissions de lecture
-//     const isHost = req.user && req.user.id === session.hostId;
-//     const isQuizOwner = req.user && req.user.id === session.quiz?.creatorId;
-//     const isAdmin = req.user && req.user.role === "admin";
+//     // Vérifications de permissions
+//     const isHost = user && user.id === session.hostId;
+//     const isQuizOwner =
+//       user && session.quiz && user.id === session.quiz.creatorId;
+//     const isAdmin = user && user.role === "admin";
+
+//     const participants = Array.isArray(session.participants)
+//       ? session.participants
+//       : [];
 //     const isParticipant =
-//       req.user && session.participants?.some((p) => p.id === req.user.id);
+//       user &&
+//       participants.some((p) => {
+//         return (
+//           p.id === user.id ||
+//           p.userId === user.id ||
+//           p.participantId === user.id
+//         );
+//       });
 
-//     // Les sessions fermées sont visibles par tous pour consultation
+//     // Logique d'accès
+//     const isPublicSession = session.settings?.isPublic !== false;
+//     const isFinishedSession = ["finished", "cancelled"].includes(
+//       session.status
+//     );
+
 //     const canView =
 //       isHost ||
 //       isQuizOwner ||
 //       isAdmin ||
 //       isParticipant ||
-//       ["finished", "cancelled"].includes(session.status);
+//       (isPublicSession && isFinishedSession) ||
+//       session.status === "waiting";
 
 //     if (!canView) {
 //       return res.status(403).json({
 //         error: "Accès refusé à cette session",
+//         code: "SESSION_ACCESS_DENIED",
 //       });
 //     }
 
-//     // Formater la réponse selon les permissions
-//     const responseData = {
+//     // Construction des données de réponse
+//     const sessionData = {
 //       id: session.id,
-//       code: session.code,
-//       title: session.title,
-//       status: session.status,
-//       currentQuestionIndex: session.currentQuestionIndex,
-//       settings: session.settings,
-//       stats: session.stats,
-//       quiz: {
-//         id: session.quiz.id,
-//         title: session.quiz.title,
-//         category: session.quiz.category,
-//         difficulty: session.quiz.difficulty,
-//         creator: session.quiz.creator,
-//       },
-//       host: session.host,
+//       code: session.code || "N/A",
+//       title: session.title || "Session sans titre",
+//       status: session.status || "unknown",
+//       currentQuestionIndex: session.currentQuestionIndex || 0,
+//       settings: session.settings || {},
+//       participantCount: participants.length,
 //       startedAt: session.startedAt,
 //       endedAt: session.endedAt,
-//       currentQuestionStartedAt: session.currentQuestionStartedAt,
 //       createdAt: session.createdAt,
+//       updatedAt: session.updatedAt,
+
+//       quiz: session.quiz
+//         ? {
+//             id: session.quiz.id,
+//             title: session.quiz.title || "Quiz sans titre",
+//             category: session.quiz.category,
+//             difficulty: session.quiz.difficulty,
+//             questionCount: Array.isArray(session.quiz.questions)
+//               ? session.quiz.questions.length
+//               : 0,
+//           }
+//         : null,
+
+//       host: session.host
+//         ? {
+//             id: session.host.id,
+//             username: session.host.username,
+//             displayName:
+//               session.host.firstName && session.host.lastName
+//                 ? `${session.host.firstName} ${session.host.lastName}`
+//                 : session.host.username,
+//           }
+//         : null,
 //     };
 
-//     // Informations détaillées pour l'hôte et le créateur
-//     if (isHost || isQuizOwner || isAdmin) {
-//       responseData.participants = session.participants;
-//       responseData.responses = session.responses;
-//       responseData.quiz.questions = session.quiz.questions;
-//     } else {
-//       // Participants voient seulement la liste des participants et leurs propres réponses
-//       responseData.participants = session.participants?.map((p) => ({
+//     // Données étendues pour les propriétaires/admins
+//     const canViewDetails = isHost || isQuizOwner || isAdmin;
+//     if (canViewDetails) {
+//       sessionData.participants = participants.map((p) => ({
 //         id: p.id,
-//         name: p.name,
-//         avatar: p.avatar,
-//         isConnected: p.isConnected,
-//         score: p.score,
+//         name: p.name || "Participant",
+//         score: p.score || 0,
+//         isConnected: p.isConnected || false,
+//         joinedAt: p.joinedAt,
+//         lastSeen: p.lastSeen,
 //       }));
 
-//       if (req.user && isParticipant) {
-//         const participant = session.participants.find(
-//           (p) => p.id === req.user.id
-//         );
-//         responseData.myResponses = participant?.responses;
-//         responseData.myScore = participant?.score;
+//       sessionData.responses = session.responses || {};
+//       sessionData.stats = session.stats || {};
+
+//       if (session.quiz?.questions) {
+//         sessionData.quiz.questions = session.quiz.questions;
 //       }
 //     }
 
-//     res.json({ session: responseData });
+//     res.json({
+//       session: sessionData,
+//       permissions: {
+//         canEdit: isHost || isQuizOwner || isAdmin,
+//         canViewDetails: canViewDetails,
+//         canParticipate:
+//           !isHost && ["waiting", "active"].includes(session.status),
+//         canStart: isHost && session.status === "waiting",
+//         canControl:
+//           isHost && ["waiting", "active", "paused"].includes(session.status),
+//       },
+//     });
 //   } catch (error) {
-//     console.error("Erreur lors de la récupération de la session:", error);
+//     console.error("Erreur dans GET session:", error.message);
 //     res.status(500).json({
 //       error: "Erreur lors de la récupération de la session",
+//       code: "GET_SESSION_ERROR",
 //     });
 //   }
 // });
 router.get("/:id", optionalAuth, loadSession, async (req, res) => {
   try {
     const session = req.session;
-    const user = req.user;
 
-    // Vérifications de permissions
-    const isHost = user && user.id === session.hostId;
-    const isQuizOwner =
-      user && session.quiz && user.id === session.quiz.creatorId;
-    const isAdmin = user && user.role === "admin";
+    console.log(`🔍 Récupération session détails:`, {
+      id: session.id,
+      code: session.code,
+      rawParticipants: session.participants,
+      participantsType: typeof session.participants,
+    });
 
-    const participants = Array.isArray(session.participants)
-      ? session.participants
-      : [];
+    // Permissions de lecture
+    const isHost = req.user && req.user.id === session.hostId;
+    const isQuizOwner = req.user && req.user.id === session.quiz?.creatorId;
+    const isAdmin = req.user && req.user.role === "admin";
     const isParticipant =
-      user &&
-      participants.some((p) => {
-        return (
-          p.id === user.id ||
-          p.userId === user.id ||
-          p.participantId === user.id
-        );
-      });
+      req.user && Array.isArray(session.participants)
+        ? session.participants.some((p) => p && p.userId === req.user.id)
+        : false;
 
-    // Logique d'accès
-    const isPublicSession = session.settings?.isPublic !== false;
-    const isFinishedSession = ["finished", "cancelled"].includes(
-      session.status
+    console.log(
+      "isHost",
+      isHost,
+      "isQuizOwner",
+      isQuizOwner,
+      "isAdmin",
+      isAdmin,
+      "isParticipant",
+      isParticipant
     );
 
+    // const canView =
+    //   // Tout le monde peut voir les sessions terminées
+    //   ["finished", "cancelled"].includes(session.status) ||
+    //   // Ou si l'utilisateur a un rôle
+    //   isHost ||
+    //   isQuizOwner ||
+    //   isAdmin ||
+    //   isParticipant ||
+    //   // Ou si la session est ouverte et permet les anonymes
+    //   (["waiting", "active", "paused"].includes(session.status) &&
+    //     session.settings?.allowAnonymous);
+
+    // if (!canView) {
+    //   return res.status(403).json({
+    //     error: "Accès refusé à cette session",
+    //     code: "ACCESS_DENIED",
+    //     suggestion: "Rejoignez la session avec le code d'accès",
+    //   });
+    // }
+
+    // 🔧 CORRECTION : Calcul sécurisé du participantCount
+
     const canView =
+      // Hôte, propriétaire du quiz, admin
       isHost ||
       isQuizOwner ||
       isAdmin ||
+      // Participant existant
       isParticipant ||
-      (isPublicSession && isFinishedSession) ||
-      session.status === "waiting";
+      // Sessions publiques terminées
+      ["finished", "cancelled"].includes(session.status) ||
+      // Sessions en attente qui permettent les anonymes
+      (session.status === "waiting" &&
+        session.settings?.allowAnonymous !== false);
 
-    if (!canView) {
-      return res.status(403).json({
-        error: "Accès refusé à cette session",
-        code: "SESSION_ACCESS_DENIED",
+    const participantCount = getParticipantCount(session.participants);
+    console.log(`📊 Participant count calculé: ${participantCount}`);
+
+    // Formater la réponse selon les permissions
+    const responseData = {
+      session: {
+        id: session.id,
+        code: session.code,
+        title: session.title,
+        status: session.status,
+        currentQuestionIndex: session.currentQuestionIndex,
+        participantCount: participantCount, // 🔧 Utilisation de la fonction sécurisée
+        settings: session.settings,
+        stats: session.stats,
+        quiz: session.quiz,
+        host: session.host,
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      },
+      permissions: {
+        canView: canView,
+        canControl: isHost || isQuizOwner || isAdmin,
+        canParticipate: ["waiting", "active"].includes(session.status),
+        isHost: isHost,
+        isParticipant: isParticipant,
+      },
+    };
+
+    // Ajouter les détails pour les hôtes
+    if (isHost || isQuizOwner || isAdmin) {
+      // Nettoyer les participants pour l'affichage
+      let cleanParticipants = [];
+      if (Array.isArray(session.participants)) {
+        cleanParticipants = session.participants.filter(
+          (p) => p && typeof p === "object" && p.id
+        );
+      }
+
+      responseData.session.participants = cleanParticipants;
+      responseData.session.responses = session.responses || {};
+      responseData.session.detailedStats = session.stats || {};
+    }
+
+    console.log(
+      `✅ Session détails envoyés avec participantCount: ${participantCount}`
+    );
+
+    res.json(responseData);
+  } catch (error) {
+    console.error("❌ Erreur lors de la récupération de la session:", error);
+    res.status(500).json({
+      error: "Erreur lors de la récupération de la session",
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// Correction route POST /:id/join - backend/routes/session.js
+
+router.post("/:id/join", optionalAuth, loadSession, async (req, res) => {
+  try {
+    const session = req.session;
+    const { participantName, isAnonymous = false } = req.body;
+
+    console.log("🔄 Join session appelé:", {
+      sessionId: session.id,
+      participantName,
+      isAnonymous,
+      userId: req.user?.id,
+    });
+
+    // 🔧 VALIDATION : Vérifier le statut de la session
+    if (!["waiting", "active"].includes(session.status)) {
+      console.log(`❌ Statut session invalide: ${session.status}`);
+      return res.status(400).json({
+        error: "Cette session n'accepte pas de nouveaux participants",
+        code: "SESSION_NOT_JOINABLE",
+        currentStatus: session.status,
       });
     }
 
-    // Construction des données de réponse
-    const sessionData = {
-      id: session.id,
-      code: session.code || "N/A",
-      title: session.title || "Session sans titre",
-      status: session.status || "unknown",
-      currentQuestionIndex: session.currentQuestionIndex || 0,
-      settings: session.settings || {},
-      participantCount: participants.length,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
-
-      quiz: session.quiz
-        ? {
-            id: session.quiz.id,
-            title: session.quiz.title || "Quiz sans titre",
-            category: session.quiz.category,
-            difficulty: session.quiz.difficulty,
-            questionCount: Array.isArray(session.quiz.questions)
-              ? session.quiz.questions.length
-              : 0,
-          }
-        : null,
-
-      host: session.host
-        ? {
-            id: session.host.id,
-            username: session.host.username,
-            displayName:
-              session.host.firstName && session.host.lastName
-                ? `${session.host.firstName} ${session.host.lastName}`
-                : session.host.username,
-          }
-        : null,
-    };
-
-    // Données étendues pour les propriétaires/admins
-    const canViewDetails = isHost || isQuizOwner || isAdmin;
-    if (canViewDetails) {
-      sessionData.participants = participants.map((p) => ({
-        id: p.id,
-        name: p.name || "Participant",
-        score: p.score || 0,
-        isConnected: p.isConnected || false,
-        joinedAt: p.joinedAt,
-        lastSeen: p.lastSeen,
-      }));
-
-      sessionData.responses = session.responses || {};
-      sessionData.stats = session.stats || {};
-
-      if (session.quiz?.questions) {
-        sessionData.quiz.questions = session.quiz.questions;
-      }
+    // 🔧 VALIDATION : Late join
+    if (session.status === "active" && !session.settings?.allowLateJoin) {
+      console.log("❌ Late join désactivé");
+      return res.status(400).json({
+        error: "Rejoindre en cours de session n'est pas autorisé",
+        code: "LATE_JOIN_DISABLED",
+      });
     }
 
-    res.json({
-      session: sessionData,
-      permissions: {
-        canEdit: isHost || isQuizOwner || isAdmin,
-        canViewDetails: canViewDetails,
-        canParticipate:
-          !isHost && ["waiting", "active"].includes(session.status),
-        canStart: isHost && session.status === "waiting",
-        canControl:
-          isHost && ["waiting", "active", "paused"].includes(session.status),
+    // 🔧 VALIDATION : Données requises
+    if (
+      !participantName ||
+      typeof participantName !== "string" ||
+      participantName.trim().length < 2
+    ) {
+      console.log("❌ Nom participant invalide:", participantName);
+      return res.status(400).json({
+        error: "Nom de participant requis (minimum 2 caractères)",
+        code: "INVALID_PARTICIPANT_NAME",
+      });
+    }
+
+    const cleanParticipantName = participantName.trim();
+
+    // 🔧 VALIDATION : Nom unique
+    const currentParticipants = Array.isArray(session.participants)
+      ? session.participants
+      : [];
+    const existingParticipant = currentParticipants.find(
+      (p) =>
+        p &&
+        p.name &&
+        p.name.toLowerCase() === cleanParticipantName.toLowerCase()
+    );
+
+    if (existingParticipant) {
+      console.log("❌ Nom déjà pris:", cleanParticipantName);
+      return res.status(409).json({
+        error: "Ce nom est déjà pris dans cette session",
+        code: "NAME_ALREADY_TAKEN",
+        suggestion: `${cleanParticipantName}_${Date.now()
+          .toString()
+          .slice(-3)}`,
+      });
+    }
+
+    // 🔧 VALIDATION : Capacité maximale
+    const maxParticipants = session.settings?.maxParticipants || 100;
+    if (currentParticipants.length >= maxParticipants) {
+      console.log(
+        `❌ Session pleine: ${currentParticipants.length}/${maxParticipants}`
+      );
+      return res.status(400).json({
+        error: "Nombre maximum de participants atteint",
+        code: "SESSION_FULL",
+        current: currentParticipants.length,
+        max: maxParticipants,
+      });
+    }
+
+    // 🔧 CRÉATION : Générer un ID unique pour le participant
+    const participantId = `participant_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 8)}`;
+
+    // 🔧 STRUCTURE : Données complètes du participant
+    const participantData = {
+      id: participantId,
+      name: cleanParticipantName,
+      userId: req.user?.id || null,
+      socketId: null, // Sera mis à jour par Socket.IO
+      isAnonymous: Boolean(isAnonymous),
+      joinedAt: new Date().toISOString(),
+      score: 0,
+      responses: {},
+      isConnected: false, // Sera mis à jour par Socket.IO
+      stats: {
+        correctAnswers: 0,
+        totalAnswers: 0,
+        averageTime: 0,
       },
+    };
+
+    console.log("📝 Participant à ajouter:", participantData);
+
+    // 🔧 UTILISATION MÉTHODE SÉCURISÉE : Utiliser addParticipant du modèle
+    try {
+      await session.addParticipant(participantData);
+      console.log("✅ Participant ajouté via addParticipant()");
+    } catch (addError) {
+      console.error("❌ Erreur addParticipant:", addError.message);
+
+      if (addError.message.includes("maximum")) {
+        return res.status(400).json({
+          error: addError.message,
+          code: "MAX_PARTICIPANTS_REACHED",
+        });
+      }
+
+      throw addError;
+    }
+
+    // 🔧 RECHARGER : Récupérer la session mise à jour
+    // await session.reload();
+
+    const updatedSession = await session.addParticipant(participantData);
+
+    console.log("📊 Session après ajout:", {
+      participantCount: updatedSession.participants?.length,
+      participants: updatedSession.participants?.map((p) => ({
+        id: p.id,
+        name: p.name,
+      })),
     });
+
+    // 🔧 NOTIFICATION : Préparer les données pour Socket.IO
+    const notificationData = {
+      sessionId: updatedSession.id,
+      participant: participantData,
+      totalParticipants: updatedSession.participants?.length || 0,
+    };
+
+    // Notifier via Socket.IO si disponible
+    if (req.io) {
+      console.log("📢 Notification Socket.IO");
+      req.io
+        .to(`session_${updatedSession.id}`)
+        .emit("participant_joined", notificationData);
+      req.io
+        .to(`host_${updatedSession.id}`)
+        .emit("participant_joined", notificationData);
+    }
+
+    // 🔧 RÉPONSE : Données complètes pour le client
+    const responseData = {
+      success: true,
+      message: "Participant ajouté avec succès",
+      sessionId: updatedSession.id,
+      participantId: participantId,
+      participant: {
+        id: participantId,
+        name: cleanParticipantName,
+        isAnonymous: Boolean(isAnonymous),
+        joinedAt: participantData.joinedAt,
+      },
+      // session: {
+      //   // id: session.id,
+      //   // code: session.code,
+      //   // title: session.title,
+      //   // status: session.status,
+      //   ...session,
+      //   participantCount: session.participants?.length || 0,
+      //   currentQuestionIndex: session.currentQuestionIndex || -1,
+      // },
+      session: updatedSession,
+    };
+
+    console.log("✅ Join session réussi:", {
+      participantId,
+      participantName: cleanParticipantName,
+      sessionId: updatedSession.id,
+      totalParticipants: updatedSession.participants?.length,
+    });
+
+    res.status(200).json(responseData);
   } catch (error) {
-    console.error("Erreur dans GET session:", error.message);
+    console.error("❌ Erreur lors de l'ajout du participant:", error);
+
+    // Gestion d'erreurs spécifiques
+    if (error.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({
+        error: "Conflit lors de l'ajout du participant",
+        code: "PARTICIPANT_CONFLICT",
+      });
+    }
+
+    if (error.name === "SequelizeValidationError") {
+      return res.status(400).json({
+        error: "Données participant invalides",
+        code: "VALIDATION_ERROR",
+        details: error.errors?.map((e) => e.message),
+      });
+    }
+
     res.status(500).json({
-      error: "Erreur lors de la récupération de la session",
-      code: "GET_SESSION_ERROR",
+      error: "Erreur lors de l'ajout du participant",
+      code: "JOIN_SESSION_ERROR",
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
@@ -497,17 +892,108 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
 //   try {
 //     const { code } = req.params;
 
-//     const session = await Session.findByCode(code);
-
-//     if (!session) {
-//       return res.status(404).json({
-//         error: "Session non trouvée avec ce code",
-//         code: "INVALID_SESSION_CODE",
+//     if (!code || code.trim().length === 0) {
+//       return res.status(400).json({
+//         error: "Code de session requis",
+//         code: "MISSING_SESSION_CODE",
 //       });
 //     }
 
-//     // Charger les détails complets
-//     await session.reload({
+//     const sessionCode = code.trim().toUpperCase();
+
+//     const session = await Session.findOne({
+//       where: {
+//         code: sessionCode,
+//         status: {
+//           [Op.in]: ["waiting", "active", "paused"],
+//         },
+//       },
+//       include: [
+//         {
+//           model: Quiz,
+//           as: "quiz",
+//           required: false,
+//           attributes: ["id", "title", "category", "difficulty"],
+//         },
+//         {
+//           model: User,
+//           as: "host",
+//           required: false,
+//           attributes: ["id", "username", "firstName", "lastName"],
+//         },
+//       ],
+//     });
+
+//     if (!session) {
+//       return res.status(404).json({
+//         error: "Aucune session active trouvée avec ce code",
+//         code: "SESSION_NOT_FOUND_BY_CODE",
+//       });
+//     }
+
+//     const sessionData = {
+//       id: session.id,
+//       code: session.code,
+//       title: session.title,
+//       status: session.status,
+//       settings: {
+//         allowAnonymous: session.settings?.allowAnonymous !== false,
+//         allowLateJoin: session.settings?.allowLateJoin !== false,
+//         requireName: session.settings?.requireName !== false,
+//       },
+//       quiz: session.quiz
+//         ? {
+//             id: session.quiz.id,
+//             title: session.quiz.title,
+//             category: session.quiz.category,
+//             difficulty: session.quiz.difficulty,
+//           }
+//         : null,
+//       host: session.host
+//         ? {
+//             username: session.host.username,
+//             displayName:
+//               session.host.firstName && session.host.lastName
+//                 ? `${session.host.firstName} ${session.host.lastName}`
+//                 : session.host.username,
+//           }
+//         : null,
+//       participantCount: Array.isArray(session.participants)
+//         ? session.participants.length
+//         : 0,
+//       canJoin:
+//         ["waiting", "active"].includes(session.status) &&
+//         (session.settings?.allowLateJoin !== false ||
+//           session.status === "waiting"),
+//     };
+
+//     res.json({
+//       session: sessionData,
+//       message: sessionData.canJoin
+//         ? "Session trouvée et accessible"
+//         : "Session trouvée mais non accessible",
+//     });
+//   } catch (error) {
+//     console.error("Erreur recherche par code:", error.message);
+//     res.status(500).json({
+//       error: "Erreur lors de la recherche de session",
+//       code: "SESSION_SEARCH_ERROR",
+//     });
+//   }
+// });
+
+// router.get("/code/:code", optionalAuth, async (req, res) => {
+//   try {
+//     const { code } = req.params;
+//     const cleanCode = code.trim().toUpperCase();
+
+//     console.log(`🔍 Recherche session par code: "${cleanCode}"`);
+
+//     const session = await Session.findOne({
+//       where: {
+//         code: cleanCode,
+//         status: ["waiting", "active"], // Seules les sessions actives
+//       },
 //       include: [
 //         {
 //           model: Quiz,
@@ -529,6 +1015,21 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
 //       ],
 //     });
 
+//     if (!session) {
+//       console.log(`❌ Session non trouvée pour le code: "${cleanCode}"`);
+//       return res.status(404).json({
+//         error: "Session non trouvée",
+//         code: "SESSION_NOT_FOUND",
+//       });
+//     }
+
+//     console.log(`✅ Session trouvée:`, {
+//       id: session.id,
+//       code: session.code,
+//       status: session.status,
+//       rawParticipants: session.participants,
+//     });
+
 //     // Vérifier si la session accepte de nouveaux participants
 //     if (session.status === "finished" || session.status === "cancelled") {
 //       return res.status(400).json({
@@ -537,15 +1038,22 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
 //       });
 //     }
 
-//     if (session.status === "active" && !session.settings.allowLateJoin) {
+//     if (session.status === "active" && !session.settings?.allowLateJoin) {
 //       return res.status(400).json({
 //         error: "Cette session ne permet plus de nouveaux participants",
 //         code: "LATE_JOIN_DISABLED",
 //       });
 //     }
 
-//     const participantCount = session.participants?.length || 0;
-//     if (participantCount >= (session.settings.maxParticipants || 100)) {
+//     // 🔧 CORRECTION : Calcul sécurisé du participantCount
+//     const participantCount = getParticipantCount(session.participants);
+//     const maxParticipants = session.settings?.maxParticipants || 100;
+
+//     console.log(
+//       `📊 Vérification capacité: ${participantCount}/${maxParticipants}`
+//     );
+
+//     if (participantCount >= maxParticipants) {
 //       return res.status(400).json({
 //         error: "Nombre maximum de participants atteint",
 //         code: "MAX_PARTICIPANTS_REACHED",
@@ -553,18 +1061,19 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
 //     }
 
 //     // Informations publiques de la session
-//     res.json({
+//     const responseData = {
 //       session: {
 //         id: session.id,
 //         code: session.code,
 //         title: session.title,
 //         status: session.status,
 //         currentQuestionIndex: session.currentQuestionIndex,
-//         participantCount,
+//         participantCount: participantCount, // 🔧 Utilisation de la fonction sécurisée
+//         canJoin: true,
 //         settings: {
-//           allowLateJoin: session.settings.allowLateJoin,
-//           maxParticipants: session.settings.maxParticipants,
-//           showLeaderboard: session.settings.showLeaderboard,
+//           allowLateJoin: session.settings?.allowLateJoin,
+//           maxParticipants: maxParticipants,
+//           showLeaderboard: session.settings?.showLeaderboard,
 //         },
 //         quiz: {
 //           id: session.quiz.id,
@@ -574,107 +1083,148 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
 //           difficulty: session.quiz.difficulty,
 //           estimatedDuration: session.quiz.estimatedDuration,
 //         },
-//         host: session.host,
-//         createdAt: session.createdAt,
+//         host: {
+//           name: session.host.firstName || session.host.username,
+//           username: session.host.username,
+//         },
 //       },
-//     });
+//     };
+
+//     console.log(
+//       `✅ Données session envoyées avec participantCount: ${participantCount}`
+//     );
+
+//     res.json(responseData);
 //   } catch (error) {
-//     console.error("Erreur lors de la recherche de session par code:", error);
+//     console.error("❌ Erreur lors de la récupération par code:", error);
 //     res.status(500).json({
-//       error: "Erreur lors de la recherche de session",
+//       error: "Erreur lors de la récupération de la session",
+//       details:
+//         process.env.NODE_ENV === "development" ? error.message : undefined,
 //     });
 //   }
 // });
+
 router.get("/code/:code", optionalAuth, async (req, res) => {
   try {
     const { code } = req.params;
+    const cleanCode = code.trim().toUpperCase();
 
-    if (!code || code.trim().length === 0) {
-      return res.status(400).json({
-        error: "Code de session requis",
-        code: "MISSING_SESSION_CODE",
-      });
-    }
-
-    const sessionCode = code.trim().toUpperCase();
+    console.log(`🔍 Recherche session par code: "${cleanCode}"`);
 
     const session = await Session.findOne({
       where: {
-        code: sessionCode,
-        status: {
-          [Op.in]: ["waiting", "active", "paused"],
-        },
+        code: cleanCode,
+        status: ["waiting", "active"], // Seules les sessions actives
       },
       include: [
         {
           model: Quiz,
           as: "quiz",
-          required: false,
-          attributes: ["id", "title", "category", "difficulty"],
+          attributes: [
+            "id",
+            "title",
+            "description",
+            "category",
+            "difficulty",
+            "estimatedDuration",
+          ],
         },
         {
           model: User,
           as: "host",
-          required: false,
           attributes: ["id", "username", "firstName", "lastName"],
         },
       ],
     });
 
     if (!session) {
+      console.log(`❌ Session non trouvée pour le code: "${cleanCode}"`);
       return res.status(404).json({
-        error: "Aucune session active trouvée avec ce code",
-        code: "SESSION_NOT_FOUND_BY_CODE",
+        error: "Session non trouvée ou terminée",
+        code: "SESSION_NOT_FOUND",
       });
     }
 
-    const sessionData = {
+    console.log(`✅ Session trouvée:`, {
       id: session.id,
       code: session.code,
-      title: session.title,
       status: session.status,
-      settings: {
-        allowAnonymous: session.settings?.allowAnonymous !== false,
-        allowLateJoin: session.settings?.allowLateJoin !== false,
-        requireName: session.settings?.requireName !== false,
+      rawParticipants: session.participants,
+    });
+
+    // Vérifier si la session accepte de nouveaux participants
+    if (session.status === "finished" || session.status === "cancelled") {
+      return res.status(400).json({
+        error: "Cette session est terminée",
+        code: "SESSION_ENDED",
+      });
+    }
+
+    if (session.status === "active" && !session.settings?.allowLateJoin) {
+      return res.status(400).json({
+        error: "Cette session ne permet plus de nouveaux participants",
+        code: "LATE_JOIN_DISABLED",
+      });
+    }
+
+    // 🔧 CORRECTION : Calcul sécurisé du participantCount
+    const participantCount = getParticipantCount(session.participants);
+    const maxParticipants = session.settings?.maxParticipants || 100;
+
+    console.log(
+      `📊 Vérification capacité: ${participantCount}/${maxParticipants}`
+    );
+
+    if (participantCount >= maxParticipants) {
+      return res.status(400).json({
+        error: "Nombre maximum de participants atteint",
+        code: "MAX_PARTICIPANTS_REACHED",
+      });
+    }
+
+    // Informations publiques de la session
+    const responseData = {
+      session: {
+        id: session.id,
+        code: session.code,
+        title: session.title,
+        status: session.status,
+        currentQuestionIndex: session.currentQuestionIndex,
+        participantCount: participantCount, // 🔧 Utilisation de la fonction sécurisée
+        canJoin: true,
+        settings: {
+          allowLateJoin: session.settings?.allowLateJoin,
+          allowAnonymous: session.settings?.allowAnonymous !== false,
+          maxParticipants: maxParticipants,
+          showLeaderboard: session.settings?.showLeaderboard,
+        },
+        quiz: {
+          id: session.quiz.id,
+          title: session.quiz.title,
+          description: session.quiz.description,
+          category: session.quiz.category,
+          difficulty: session.quiz.difficulty,
+          estimatedDuration: session.quiz.estimatedDuration,
+        },
+        host: {
+          name: session.host.firstName || session.host.username,
+          username: session.host.username,
+        },
       },
-      quiz: session.quiz
-        ? {
-            id: session.quiz.id,
-            title: session.quiz.title,
-            category: session.quiz.category,
-            difficulty: session.quiz.difficulty,
-          }
-        : null,
-      host: session.host
-        ? {
-            username: session.host.username,
-            displayName:
-              session.host.firstName && session.host.lastName
-                ? `${session.host.firstName} ${session.host.lastName}`
-                : session.host.username,
-          }
-        : null,
-      participantCount: Array.isArray(session.participants)
-        ? session.participants.length
-        : 0,
-      canJoin:
-        ["waiting", "active"].includes(session.status) &&
-        (session.settings?.allowLateJoin !== false ||
-          session.status === "waiting"),
     };
 
-    res.json({
-      session: sessionData,
-      message: sessionData.canJoin
-        ? "Session trouvée et accessible"
-        : "Session trouvée mais non accessible",
-    });
+    console.log(
+      `✅ Données session envoyées avec participantCount: ${participantCount}`
+    );
+
+    res.json(responseData);
   } catch (error) {
-    console.error("Erreur recherche par code:", error.message);
+    console.error("❌ Erreur lors de la récupération par code:", error);
     res.status(500).json({
-      error: "Erreur lors de la recherche de session",
-      code: "SESSION_SEARCH_ERROR",
+      error: "Erreur lors de la récupération de la session",
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
@@ -861,58 +1411,6 @@ router.put(
   }
 );
 
-// POST /api/session/:id/start - Démarrer une session
-// router.post(
-//   "/:id/start",
-//   authenticateToken,
-//   loadSession,
-//   requireSessionOwnership,
-//   async (req, res) => {
-//     try {
-//       const session = req.session;
-
-//       if (session.status !== "waiting") {
-//         return res.status(400).json({
-//           error:
-//             'La session ne peut être démarrée que depuis l\'état "en attente"',
-//           currentStatus: session.status,
-//         });
-//       }
-
-//       if (!session.participants || session.participants.length === 0) {
-//         return res.status(400).json({
-//           error: "Au moins un participant est requis pour démarrer la session",
-//         });
-//       }
-
-//       await session.startSession();
-
-//       // Notifier via Socket.IO
-//       if (req.io) {
-//         req.io.to(`session_${session.id}`).emit("session_started", {
-//           sessionId: session.id,
-//           currentQuestionIndex: session.currentQuestionIndex,
-//           startedAt: session.startedAt,
-//         });
-//       }
-
-//       res.json({
-//         message: "Session démarrée avec succès",
-//         session: {
-//           id: session.id,
-//           status: session.status,
-//           currentQuestionIndex: session.currentQuestionIndex,
-//           startedAt: session.startedAt,
-//         },
-//       });
-//     } catch (error) {
-//       console.error("Erreur lors du démarrage de la session:", error);
-//       res.status(500).json({
-//         error: "Erreur lors du démarrage de la session",
-//       });
-//     }
-//   }
-// );
 router.post(
   "/:id/start",
   authenticateToken,
@@ -988,46 +1486,6 @@ router.post(
   }
 );
 
-// POST /api/session/:id/pause - Mettre en pause une session
-// router.post(
-//   "/:id/pause",
-//   authenticateToken,
-//   loadSession,
-//   requireSessionOwnership,
-//   async (req, res) => {
-//     try {
-//       const session = req.session;
-
-//       if (session.status !== "active") {
-//         return res.status(400).json({
-//           error: "Seules les sessions actives peuvent être mises en pause",
-//         });
-//       }
-
-//       await session.pauseSession();
-
-//       // Notifier via Socket.IO
-//       if (req.io) {
-//         req.io.to(`session_${session.id}`).emit("session_paused", {
-//           sessionId: session.id,
-//         });
-//       }
-
-//       res.json({
-//         message: "Session mise en pause",
-//         session: {
-//           id: session.id,
-//           status: session.status,
-//         },
-//       });
-//     } catch (error) {
-//       console.error("Erreur lors de la mise en pause:", error);
-//       res.status(500).json({
-//         error: "Erreur lors de la mise en pause de la session",
-//       });
-//     }
-//   }
-// );
 router.post(
   "/:id/pause",
   authenticateToken,
@@ -1531,5 +1989,77 @@ router.delete(
     }
   }
 );
+
+router.get("/:id/stats", optionalAuth, loadSession, async (req, res) => {
+  try {
+    const session = req.session;
+
+    // Permissions basiques
+    const isHost = req.user && req.user.id === session.hostId;
+    const isQuizOwner = req.user && req.user.id === session.quiz?.creatorId;
+    const isAdmin = req.user && req.user.role === "admin";
+
+    const canViewStats =
+      isHost ||
+      isQuizOwner ||
+      isAdmin ||
+      (session.settings?.showLeaderboard &&
+        ["active", "finished"].includes(session.status));
+
+    if (!canViewStats) {
+      return res.status(403).json({
+        error: "Accès refusé aux statistiques",
+        code: "STATS_ACCESS_DENIED",
+      });
+    }
+
+    const participantCount = getParticipantCount(session.participants);
+
+    const stats = {
+      sessionId: session.id,
+      status: session.status,
+      participantCount: participantCount,
+      currentQuestionIndex: session.currentQuestionIndex || 0,
+      totalQuestions: session.quiz?.questions?.length || 0,
+      stats: session.stats || {},
+      leaderboard: session.getLeaderboard(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    res.json(stats);
+  } catch (error) {
+    console.error("❌ Erreur stats:", error);
+    res.status(500).json({
+      error: "Erreur lors de la récupération des statistiques",
+      code: "STATS_ERROR",
+    });
+  }
+});
+
+router.get("/:id/status", optionalAuth, loadSession, async (req, res) => {
+  try {
+    const session = req.session;
+
+    const basicInfo = {
+      id: session.id,
+      code: session.code,
+      status: session.status,
+      participantCount: getParticipantCount(session.participants),
+      currentQuestionIndex: session.currentQuestionIndex || 0,
+      canJoin:
+        ["waiting", "active"].includes(session.status) &&
+        (session.status === "waiting" || session.settings?.allowLateJoin),
+      updatedAt: new Date().toISOString(),
+    };
+
+    res.json(basicInfo);
+  } catch (error) {
+    console.error("❌ Erreur status:", error);
+    res.status(500).json({
+      error: "Erreur lors de la vérification du statut",
+      code: "STATUS_ERROR",
+    });
+  }
+});
 
 module.exports = router;

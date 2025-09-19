@@ -1,6 +1,97 @@
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
+const sessionHooks = {
+  beforeCreate: (session) => {
+    console.log(`🪝 beforeCreate hook - session:`, session.id);
+
+    // Générer un code unique si pas fourni
+    if (!session.code) {
+      session.code = generateSessionCode();
+      console.log(`✅ Code généré: ${session.code}`);
+    }
+
+    // S'assurer que participants est un tableau vide
+    if (!Array.isArray(session.participants)) {
+      console.log(`🔧 beforeCreate: Initialisation participants array`);
+      session.participants = [];
+    }
+
+    // Initialiser les stats
+    session.stats = calculateSessionStats(session);
+  },
+
+  beforeUpdate: (session) => {
+    console.log(`🪝 beforeUpdate hook - session:`, session.id);
+    console.log(`   Champs modifiés:`, session.changed());
+
+    // S'assurer que participants est un tableau
+    if (session.changed("participants")) {
+      if (!Array.isArray(session.participants)) {
+        console.log(
+          `🔧 beforeUpdate: Correction participants non-array:`,
+          typeof session.participants
+        );
+        session.participants = [];
+      } else {
+        // Nettoyer les participants invalides
+        const validParticipants = session.participants.filter(
+          (p) => p && typeof p === "object" && p.id
+        );
+        if (validParticipants.length !== session.participants.length) {
+          console.log(
+            `🧹 beforeUpdate: Nettoyage participants - ${session.participants.length} -> ${validParticipants.length}`
+          );
+          session.participants = validParticipants;
+        }
+      }
+    }
+
+    // Recalculer les stats si nécessaire
+    if (session.changed("responses") || session.changed("participants")) {
+      console.log(`📊 beforeUpdate: Recalcul des stats`);
+      session.stats = calculateSessionStats(session);
+    }
+  },
+
+  beforeValidate: (session) => {
+    console.log(`🪝 beforeValidate hook - session:`, session.id);
+
+    // S'assurer que participants est toujours un tableau avant validation
+    if (!Array.isArray(session.participants)) {
+      console.log(`🔧 beforeValidate: Force participants array`);
+      session.participants = [];
+    }
+  },
+
+  afterFind: (result) => {
+    // Hook appelé après récupération depuis la DB
+    if (!result) return;
+
+    const sessions = Array.isArray(result) ? result : [result];
+
+    sessions.forEach((session) => {
+      if (session && !Array.isArray(session.participants)) {
+        console.log(
+          `🔧 afterFind: Correction participants pour session ${session.id}:`,
+          typeof session.participants
+        );
+        session.participants = [];
+      }
+    });
+  },
+};
+
+// Fonction pour générer un code de session unique
+function generateSessionCode() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
 const Session = sequelize.define(
   "Session",
   {
@@ -156,20 +247,21 @@ const Session = sequelize.define(
         fields: ["createdAt"],
       },
     ],
-    hooks: {
-      beforeCreate: (session) => {
-        // Générer un code unique si pas fourni
-        if (!session.code) {
-          session.code = generateSessionCode();
-        }
-      },
-      beforeUpdate: (session) => {
-        // Calculer les stats automatiquement
-        if (session.changed("responses") || session.changed("participants")) {
-          session.stats = calculateSessionStats(session);
-        }
-      },
-    },
+    // hooks: {
+    //   beforeCreate: (session) => {
+    //     // Générer un code unique si pas fourni
+    //     if (!session.code) {
+    //       session.code = generateSessionCode();
+    //     }
+    //   },
+    //   beforeUpdate: (session) => {
+    //     // Calculer les stats automatiquement
+    //     if (session.changed("responses") || session.changed("participants")) {
+    //       session.stats = calculateSessionStats(session);
+    //     }
+    //   },
+    // },
+    hooks: sessionHooks,
   }
 );
 
@@ -184,82 +276,211 @@ function generateSessionCode() {
 }
 
 // Fonction pour calculer les statistiques
+// function calculateSessionStats(session) {
+//   const participants = session.participants || [];
+//   const responses = session.responses || {};
+
+//   const totalParticipants = participants.length;
+//   const totalResponses = Object.values(responses).reduce(
+//     (total, questionResponses) => {
+//       return total + Object.keys(questionResponses || {}).length;
+//     },
+//     0
+//   );
+
+//   let totalScore = 0;
+//   let participantsWithScore = 0;
+
+//   participants.forEach((participant) => {
+//     if (participant.score !== undefined) {
+//       totalScore += participant.score;
+//       participantsWithScore++;
+//     }
+//   });
+
+//   const averageScore =
+//     participantsWithScore > 0
+//       ? Math.round(totalScore / participantsWithScore)
+//       : 0;
+//   const completionRate =
+//     totalParticipants > 0
+//       ? Math.round((participantsWithScore / totalParticipants) * 100)
+//       : 0;
+
+//   return {
+//     totalParticipants,
+//     totalResponses,
+//     averageScore,
+//     completionRate,
+//   };
+// }
+
 function calculateSessionStats(session) {
-  const participants = session.participants || [];
-  const responses = session.responses || {};
-
-  const totalParticipants = participants.length;
-  const totalResponses = Object.values(responses).reduce(
-    (total, questionResponses) => {
-      return total + Object.keys(questionResponses || {}).length;
-    },
-    0
-  );
-
-  let totalScore = 0;
-  let participantsWithScore = 0;
-
-  participants.forEach((participant) => {
-    if (participant.score !== undefined) {
-      totalScore += participant.score;
-      participantsWithScore++;
+  try {
+    // S'assurer que participants est un tableau
+    let participants = session.participants;
+    if (!Array.isArray(participants)) {
+      console.log(
+        `⚠️  calculateSessionStats: participants n'est pas un tableau:`,
+        typeof participants
+      );
+      participants = [];
     }
-  });
 
-  const averageScore =
-    participantsWithScore > 0
-      ? Math.round(totalScore / participantsWithScore)
-      : 0;
-  const completionRate =
-    totalParticipants > 0
-      ? Math.round((participantsWithScore / totalParticipants) * 100)
-      : 0;
+    // Filtrer les participants valides
+    const validParticipants = participants.filter(
+      (p) => p && typeof p === "object" && p.id
+    );
 
-  return {
-    totalParticipants,
-    totalResponses,
-    averageScore,
-    completionRate,
-  };
+    const responses = session.responses || {};
+    const totalParticipants = validParticipants.length;
+    const totalResponses = Object.values(responses).reduce(
+      (total, questionResponses) => {
+        return total + Object.keys(questionResponses || {}).length;
+      },
+      0
+    );
+
+    let totalScore = 0;
+    let participantsWithScore = 0;
+
+    validParticipants.forEach((participant) => {
+      if (participant.score !== undefined && participant.score !== null) {
+        totalScore += Number(participant.score) || 0;
+        participantsWithScore++;
+      }
+    });
+
+    const averageScore =
+      participantsWithScore > 0
+        ? Math.round((totalScore / participantsWithScore) * 100) / 100
+        : 0;
+
+    const completionRate =
+      totalParticipants > 0
+        ? Math.round((participantsWithScore / totalParticipants) * 100)
+        : 0;
+
+    const stats = {
+      totalParticipants,
+      totalResponses,
+      averageScore,
+      completionRate,
+    };
+
+    console.log(`📊 Stats calculées:`, stats);
+    return stats;
+  } catch (error) {
+    console.error("❌ Erreur dans calculateSessionStats:", error);
+    return {
+      totalParticipants: 0,
+      totalResponses: 0,
+      averageScore: 0,
+      completionRate: 0,
+    };
+  }
 }
 
 // Méthodes d'instance
+// Session.prototype.addParticipant = function (participantData) {
+//   const participants = [...(this.participants || [])];
+//   const existingIndex = participants.findIndex(
+//     (p) => p.id === participantData.id
+//   );
+
+//   if (existingIndex !== -1) {
+//     // Mettre à jour participant existant
+//     participants[existingIndex] = {
+//       ...participants[existingIndex],
+//       ...participantData,
+//     };
+//   } else {
+//     // Ajouter nouveau participant
+//     if (participants.length >= (this.settings?.maxParticipants || 100)) {
+//       throw new Error("Nombre maximum de participants atteint");
+//     }
+//     participants.push({
+//       id: participantData.id,
+//       name: participantData.name,
+//       avatar: participantData.avatar || null,
+//       joinedAt: new Date(),
+//       score: 0,
+//       responses: {},
+//       isConnected: true,
+//     });
+//   }
+
+//   return this.update({ participants });
+// };
 Session.prototype.addParticipant = function (participantData) {
-  const participants = [...(this.participants || [])];
-  const existingIndex = participants.findIndex(
-    (p) => p.id === participantData.id
+  // S'assurer que participants est un tableau
+  let participants = this.participants;
+  if (!Array.isArray(participants)) {
+    console.log(
+      `⚠️  addParticipant: participants n'est pas un tableau, initialisation:`,
+      {
+        type: typeof participants,
+        value: participants,
+      }
+    );
+    participants = [];
+  }
+
+  const participantsList = [...participants];
+  const existingIndex = participantsList.findIndex(
+    (p) => p && p.id === participantData.id
   );
 
   if (existingIndex !== -1) {
     // Mettre à jour participant existant
-    participants[existingIndex] = {
-      ...participants[existingIndex],
+    participantsList[existingIndex] = {
+      ...participantsList[existingIndex],
       ...participantData,
     };
   } else {
     // Ajouter nouveau participant
-    if (participants.length >= (this.settings?.maxParticipants || 100)) {
+    const maxParticipants = this.settings?.maxParticipants || 100;
+    if (participantsList.length >= maxParticipants) {
       throw new Error("Nombre maximum de participants atteint");
     }
-    participants.push({
+
+    participantsList.push({
       id: participantData.id,
       name: participantData.name,
       avatar: participantData.avatar || null,
-      joinedAt: new Date(),
+      joinedAt: new Date().toISOString(),
       score: 0,
       responses: {},
       isConnected: true,
+      ...participantData,
     });
   }
 
-  return this.update({ participants });
+  return this.update({ participants: participantsList });
 };
 
+// Session.prototype.removeParticipant = function (participantId) {
+//   const participants = (this.participants || []).filter(
+//     (p) => p.id !== participantId
+//   );
+//   return this.update({ participants });
+// };
 Session.prototype.removeParticipant = function (participantId) {
-  const participants = (this.participants || []).filter(
-    (p) => p.id !== participantId
+  // S'assurer que participants est un tableau
+  let participants = this.participants;
+  if (!Array.isArray(participants)) {
+    console.log(`⚠️  removeParticipant: participants n'est pas un tableau:`, {
+      type: typeof participants,
+      value: participants,
+    });
+    participants = [];
+  }
+
+  const updatedParticipants = participants.filter(
+    (p) => p && p.id !== participantId
   );
-  return this.update({ participants });
+
+  return this.update({ participants: updatedParticipants });
 };
 
 // Session.prototype.updateParticipantConnection = function (
@@ -464,27 +685,84 @@ Session.prototype.resumeSession = function () {
 };
 
 // Session.prototype.endSession = function () {
+//   const now = new Date();
+
+//   // Calculer les statistiques finales
+//   const participants = this.participants || [];
+//   const totalParticipants = participants.length;
+//   const totalResponses = Object.keys(this.responses || {}).length;
+
+//   let totalScore = 0;
+//   let completedParticipants = 0;
+
+//   participants.forEach((participant) => {
+//     if (participant.score !== undefined && participant.score !== null) {
+//       totalScore += participant.score;
+//       completedParticipants++;
+//     }
+//   });
+
+//   const averageScore =
+//     completedParticipants > 0 ? totalScore / completedParticipants : 0;
+//   const completionRate =
+//     totalParticipants > 0
+//       ? (completedParticipants / totalParticipants) * 100
+//       : 0;
+
+//   const finalStats = {
+//     totalParticipants,
+//     totalResponses,
+//     averageScore: Math.round(averageScore * 100) / 100,
+//     completionRate: Math.round(completionRate * 100) / 100,
+//     duration: this.startedAt
+//       ? Math.floor((now - new Date(this.startedAt)) / 1000)
+//       : 0,
+//   };
+
 //   return this.update({
 //     status: "finished",
-//     endedAt: new Date(),
+//     endedAt: now,
+//     stats: {
+//       ...this.stats,
+//       ...finalStats,
+//     },
 //   });
 // };
-
 Session.prototype.endSession = function () {
   const now = new Date();
 
-  // Calculer les statistiques finales
-  const participants = this.participants || [];
+  // 🔧 CORRECTION : S'assurer que participants est un tableau
+  let participants = this.participants;
+  if (!Array.isArray(participants)) {
+    console.log(`⚠️  endSession: participants n'est pas un tableau:`, {
+      type: typeof participants,
+      value: participants,
+    });
+    participants = [];
+  }
+
+  console.log(`🏁 Fin de session - participants validés:`, {
+    count: participants.length,
+    isArray: Array.isArray(participants),
+  });
+
+  // Calculer les statistiques finales avec tableau sécurisé
   const totalParticipants = participants.length;
   const totalResponses = Object.keys(this.responses || {}).length;
 
   let totalScore = 0;
   let completedParticipants = 0;
 
+  // 🔧 Utilisation sécurisée de forEach maintenant que c'est un tableau
   participants.forEach((participant) => {
-    if (participant.score !== undefined && participant.score !== null) {
-      totalScore += participant.score;
-      completedParticipants++;
+    // Vérifier que participant est un objet valide
+    if (participant && typeof participant === "object") {
+      if (participant.score !== undefined && participant.score !== null) {
+        totalScore += Number(participant.score) || 0;
+        completedParticipants++;
+      }
+    } else {
+      console.warn(`⚠️  Participant invalide ignoré:`, participant);
     }
   });
 
@@ -495,61 +773,90 @@ Session.prototype.endSession = function () {
       ? (completedParticipants / totalParticipants) * 100
       : 0;
 
+  // Calcul de la durée de session
+  const duration = this.startedAt
+    ? Math.floor((now - new Date(this.startedAt)) / 1000)
+    : 0;
+
   const finalStats = {
     totalParticipants,
     totalResponses,
     averageScore: Math.round(averageScore * 100) / 100,
     completionRate: Math.round(completionRate * 100) / 100,
-    duration: this.startedAt
-      ? Math.floor((now - new Date(this.startedAt)) / 1000)
-      : 0,
+    duration,
+    endedAt: now.toISOString(),
   };
 
+  console.log(`📊 Statistiques finales calculées:`, finalStats);
+
+  // Mise à jour de la session avec les stats finales
   return this.update({
     status: "finished",
     endedAt: now,
     stats: {
-      ...this.stats,
+      ...(this.stats || {}),
       ...finalStats,
     },
   });
 };
 
 // Session.prototype.getLeaderboard = function () {
-//   const participants = [...(this.participants || [])];
+//   try {
+//     const participants = [...(this.participants || [])];
 
-//   return participants
-//     .filter((p) => p.score !== undefined)
-//     .sort((a, b) => b.score - a.score)
-//     .map((participant, index) => ({
-//       rank: index + 1,
-//       id: participant.id,
-//       name: participant.name,
-//       score: participant.score,
-//       avatar: participant.avatar,
-//     }));
+//     return participants
+//       .filter((p) => p.score !== undefined && p.score !== null)
+//       .sort((a, b) => (b.score || 0) - (a.score || 0))
+//       .map((participant, index) => ({
+//         rank: index + 1,
+//         id: participant.id,
+//         name: participant.name || "Participant",
+//         score: participant.score || 0,
+//         avatar: participant.avatar || null,
+//         isConnected: participant.isConnected || false,
+//         lastSeen: participant.lastSeen || null,
+//       }));
+//   } catch (error) {
+//     console.error("Erreur lors de la génération du leaderboard:", error);
+//     return [];
+//   }
 // };
 Session.prototype.getLeaderboard = function () {
   try {
-    const participants = [...(this.participants || [])];
+    // S'assurer que participants est un tableau
+    let participants = this.participants;
+    if (!Array.isArray(participants)) {
+      console.log(`⚠️  getLeaderboard: participants n'est pas un tableau:`, {
+        type: typeof participants,
+        value: participants,
+      });
+      participants = [];
+    }
 
     return participants
-      .filter((p) => p.score !== undefined && p.score !== null)
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .filter(
+        (p) =>
+          p &&
+          typeof p === "object" &&
+          p.score !== undefined &&
+          p.score !== null
+      )
+      .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0))
       .map((participant, index) => ({
         rank: index + 1,
-        id: participant.id,
+        id: participant.id || `participant_${index}`,
         name: participant.name || "Participant",
-        score: participant.score || 0,
+        score: Number(participant.score) || 0,
         avatar: participant.avatar || null,
-        isConnected: participant.isConnected || false,
+        isConnected: Boolean(participant.isConnected),
         lastSeen: participant.lastSeen || null,
       }));
   } catch (error) {
-    console.error("Erreur lors de la génération du leaderboard:", error);
+    console.error("❌ Erreur lors de la génération du leaderboard:", error);
     return [];
   }
 };
+
 // Session.prototype.getQuestionResults = function (questionId) {
 //   const responses = this.responses[questionId] || {};
 //   const participants = this.participants || [];
@@ -717,4 +1024,15 @@ Session.addScope("withHost", {
   ],
 });
 
+// module.exports = Session;
+// module.exports = {
+//   Session,
+//   calculateSessionStats,
+//   generateSessionCode,
+// };
+
+Session.calculateSessionStats = calculateSessionStats;
+Session.generateSessionCode = generateSessionCode;
+
+// Export par défaut
 module.exports = Session;

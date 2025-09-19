@@ -43,27 +43,28 @@ const SessionPlay = () => {
   const loadSession = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await sessionService.getSession(sessionId);
-      const sessionData = response.session;
+      //   const response = await sessionService.getSession(sessionId);
+      //   const sessionData = response.session;
+      //   console.log("reponse", response);
 
-      setSession(sessionData);
-      setSessionStatus(sessionData.status);
-      setPlayerScore(sessionData.myScore || 0);
+      //   setSession(sessionData);
+      //   setSessionStatus(sessionData.status);
+      //   setPlayerScore(sessionData.myScore || 0);
 
-      // Définir la question courante si elle existe
-      if (sessionData.currentQuestionIndex !== undefined) {
-        const question =
-          sessionData.quiz.questions?.[sessionData.currentQuestionIndex];
-        if (question) {
-          setCurrentQuestion(question);
-          // Vérifier si on a déjà répondu à cette question
-          const myResponse = sessionData.myResponses?.[question.id];
-          if (myResponse) {
-            setSelectedAnswer(myResponse.answer);
-            setIsAnswered(true);
-          }
-        }
-      }
+      //   // Définir la question courante si elle existe
+      //   if (sessionData.currentQuestionIndex !== undefined) {
+      //     const question =
+      //       sessionData.quiz.questions?.[sessionData.currentQuestionIndex];
+      //     if (question) {
+      //       setCurrentQuestion(question);
+      //       // Vérifier si on a déjà répondu à cette question
+      //       const myResponse = sessionData.myResponses?.[question.id];
+      //       if (myResponse) {
+      //         setSelectedAnswer(myResponse.answer);
+      //         setIsAnswered(true);
+      //       }
+      //     }
+      //   }
 
       // Rejoindre la session via Socket.IO
       if (socket && isConnected) {
@@ -74,6 +75,58 @@ const SessionPlay = () => {
             name: user?.firstName || user?.username || "Participant anonyme",
           },
         });
+      }
+
+      // Ensuite rejoindre la session via une API dédiée
+      try {
+        const getParticipantName = () => {
+          if (user?.firstName) {
+            return user.firstName;
+          }
+          if (user?.username) {
+            return user.username;
+          }
+          return `Participant_${Date.now().toString().slice(-6)}`;
+        };
+
+        const participantData = {
+          participantName: getParticipantName(),
+          isAnonymous: !user || !user.id,
+        };
+
+        console.log("Données participant à envoyer:", participantData);
+
+        const joinResponse = await sessionService.joinSession(
+          sessionId,
+          participantData
+        );
+
+        const sessionData = joinResponse.session;
+
+        console.log("sessionData", sessionData);
+
+        // Mettre à jour avec les données de la session rejointe
+        setSession(sessionData);
+        setSessionStatus(sessionData.status);
+        setPlayerScore(sessionData.myScore || 0);
+
+        // Définir la question courante si elle existe
+        if (sessionData.currentQuestionIndex !== undefined) {
+          const question =
+            sessionData.quiz.questions?.[sessionData.currentQuestionIndex];
+          if (question) {
+            setCurrentQuestion(question);
+            // Vérifier si on a déjà répondu à cette question
+            const myResponse = sessionData.myResponses?.[question.id];
+            if (myResponse) {
+              setSelectedAnswer(myResponse.answer);
+              setIsAnswered(true);
+            }
+          }
+        }
+      } catch (joinError) {
+        console.warn("Erreur lors du join:", joinError);
+        // Continuer quand même avec les données de base
       }
     } catch (error) {
       console.error("Erreur lors du chargement de la session:", error);

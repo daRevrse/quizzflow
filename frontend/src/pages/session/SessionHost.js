@@ -39,6 +39,8 @@ const SessionHost = () => {
       const response = await sessionService.getSession(sessionId);
       const sessionData = response.session;
 
+      console.log("sessionData", sessionData);
+
       // Vérifications de sécurité
       if (!sessionData) {
         throw new Error("Session non trouvée");

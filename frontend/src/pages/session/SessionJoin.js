@@ -125,62 +125,202 @@ const SessionJoin = () => {
     await loadSessionInfo(code);
   };
 
+  // const onJoinSession = async (data) => {
+  //   if (!sessionInfo) {
+  //     toast.error("Informations de session manquantes");
+  //     return;
+  //   }
+
+  //   const name = data.participantName.trim();
+  //   if (!name || name.length < 2) {
+  //     toast.error("Veuillez entrer un nom d'au moins 2 caractères");
+  //     return;
+  //   }
+
+  //   if (!sessionInfo.canJoin) {
+  //     toast.error("Cette session n'accepte plus de nouveaux participants");
+  //     return;
+  //   }
+
+  //   setJoining(true);
+  //   setStep("joining");
+
+  //   try {
+  //     // Vérifier la connexion socket
+  //     if (!socket || !isConnected) {
+  //       throw new Error("Connexion au serveur non établie");
+  //     }
+
+  //     // Dans onJoinSession, juste avant joinSession()
+  //     console.log("🧪 DEBUG - Données avant envoi:", {
+  //       sessionCode: sessionInfo.code,
+  //       participantName: data.participantName,
+  //       isAnonymous: data.isAnonymous,
+  //       sessionInfo: sessionInfo,
+  //     });
+
+  //     // Vérifiez que ces valeurs ne sont pas undefined/null
+  //     if (!sessionInfo?.code) {
+  //       console.error("❌ sessionInfo.code est manquant!");
+  //       toast.error("Informations de session manquantes");
+  //       return;
+  //     }
+
+  //     if (!data.participantName?.trim()) {
+  //       console.error("❌ participantName est manquant!");
+  //       toast.error("Nom de participant manquant");
+  //       return;
+  //     }
+
+  //     joinSession(sessionInfo.code, name, data.isAnonymous);
+  //   } catch (error) {
+  //     console.error("Erreur lors de la connexion:", error);
+  //     setJoining(false);
+  //     setStep("session-info");
+  //     toast.error(error.message || "Erreur lors de la connexion à la session");
+  //   }
+  // };
+  // Correction onJoinSession - frontend/src/pages/session/SessionJoin.js
+
+  // const onJoinSession = async (formData) => {
+  //   console.log("🔄 onJoinSession appelé avec formData:", formData);
+  //   console.log("🔄 sessionInfo actuel:", sessionInfo);
+
+  //   // Validation préalable
+  //   if (!sessionInfo) {
+  //     console.error("❌ sessionInfo manquant");
+  //     toast.error("Informations de session manquantes");
+  //     return;
+  //   }
+
+  //   if (!sessionInfo.code) {
+  //     console.error("❌ sessionInfo.code manquant:", sessionInfo);
+  //     toast.error("Code de session manquant dans les informations");
+  //     return;
+  //   }
+
+  //   // Extraction et nettoyage des données du formulaire
+  //   const rawParticipantName = formData?.participantName;
+  //   const rawIsAnonymous = formData?.isAnonymous;
+
+  //   console.log("🧹 Données brutes du formulaire:", {
+  //     rawParticipantName,
+  //     rawIsAnonymous,
+  //     formDataKeys: formData ? Object.keys(formData) : "formData is null",
+  //   });
+
+  //   // Validation stricte des données
+  //   if (!rawParticipantName) {
+  //     console.error("❌ participantName manquant dans formData");
+  //     toast.error("Nom de participant manquant");
+  //     return;
+  //   }
+
+  //   const cleanName = String(rawParticipantName).trim();
+
+  //   if (!cleanName || cleanName.length < 2) {
+  //     console.error("❌ Nom invalide après nettoyage:", cleanName);
+  //     toast.error("Veuillez entrer un nom d'au moins 2 caractères");
+  //     return;
+  //   }
+
+  //   if (cleanName.length > 30) {
+  //     console.error("❌ Nom trop long:", cleanName.length);
+  //     toast.error("Le nom ne peut dépasser 30 caractères");
+  //     return;
+  //   }
+
+  //   // Vérification des capacités de la session
+  //   if (!sessionInfo.canJoin) {
+  //     console.error("❌ Session ne peut pas accepter de participants");
+  //     toast.error("Cette session n'accepte plus de nouveaux participants");
+  //     return;
+  //   }
+
+  //   // Préparation des données finales
+  //   const finalData = {
+  //     sessionCode: sessionInfo.code,
+  //     participantName: cleanName,
+  //     isAnonymous: Boolean(rawIsAnonymous),
+  //   };
+
+  //   console.log("🎯 Données finales préparées:", finalData);
+
+  //   // Vérification de la connexion socket
+  //   if (!socket || !isConnected) {
+  //     console.error("❌ Socket non connecté:", {
+  //       socket: !!socket,
+  //       isConnected,
+  //     });
+  //     toast.error("Connexion au serveur non établie");
+  //     return;
+  //   }
+
+  //   // Démarrage du processus de connexion
+  //   setJoining(true);
+  //   setStep("joining");
+
+  //   try {
+  //     console.log("📡 Appel de joinSession avec les données finales");
+
+  //     const result = joinSession(
+  //       finalData.sessionCode,
+  //       finalData.participantName,
+  //       finalData.isAnonymous
+  //     );
+
+  //     if (!result) {
+  //       console.error("❌ joinSession a retourné false");
+  //       throw new Error("Échec de l'envoi de la demande de connexion");
+  //     }
+
+  //     console.log("✅ joinSession appelé avec succès");
+  //     // Le reste sera géré par les listeners Socket.IO
+  //   } catch (error) {
+  //     console.error("💥 Erreur dans onJoinSession:", error);
+
+  //     setJoining(false);
+  //     setStep("session-info");
+
+  //     toast.error(error.message || "Erreur lors de la connexion à la session");
+  //   }
+  // };
+
   const onJoinSession = async (data) => {
-    if (!sessionInfo) {
-      toast.error("Informations de session manquantes");
-      return;
-    }
-
-    const name = data.participantName.trim();
-    if (!name || name.length < 2) {
-      toast.error("Veuillez entrer un nom d'au moins 2 caractères");
-      return;
-    }
-
-    if (!sessionInfo.canJoin) {
-      toast.error("Cette session n'accepte plus de nouveaux participants");
-      return;
-    }
-
-    setJoining(true);
-    setStep("joining");
-
     try {
-      // Vérifier la connexion socket
-      if (!socket || !isConnected) {
-        throw new Error("Connexion au serveur non établie");
-      }
-
-      // Dans onJoinSession, juste avant joinSession()
-      console.log("🧪 DEBUG - Données avant envoi:", {
-        sessionCode: sessionInfo.code,
-        participantName: data.participantName,
-        isAnonymous: data.isAnonymous,
-        sessionInfo: sessionInfo,
-      });
-
-      // Vérifiez que ces valeurs ne sont pas undefined/null
-      if (!sessionInfo?.code) {
-        console.error("❌ sessionInfo.code est manquant!");
+      if (!sessionInfo || !sessionInfo.code) {
         toast.error("Informations de session manquantes");
         return;
       }
 
-      if (!data.participantName?.trim()) {
-        console.error("❌ participantName est manquant!");
-        toast.error("Nom de participant manquant");
+      const participantName = data.participantName?.trim();
+      if (!participantName || participantName.length < 2) {
+        toast.error("Veuillez entrer un nom valide (2 caractères minimum)");
         return;
       }
 
-      joinSession(sessionInfo.code, name, data.isAnonymous);
+      if (!sessionInfo.canJoin) {
+        toast.error("Cette session n'accepte plus de nouveaux participants");
+        return;
+      }
+
+      if (!socket || !isConnected) {
+        toast.error("Connexion au serveur non établie");
+        return;
+      }
+
+      setJoining(true);
+      setStep("joining");
+
+      // Appel simple et direct
+      joinSession(sessionInfo.code, participantName, data.isAnonymous);
     } catch (error) {
       console.error("Erreur lors de la connexion:", error);
       setJoining(false);
       setStep("session-info");
-      toast.error(error.message || "Erreur lors de la connexion à la session");
+      toast.error("Erreur lors de la connexion à la session");
     }
   };
-
   const renderEnterCodeStep = () => (
     <div className="max-w-md w-full mx-auto">
       <div className="text-center mb-8">

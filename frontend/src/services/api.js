@@ -140,72 +140,6 @@ export const quizService = {
 
 // Service de gestion des sessions
 export const sessionService = {
-  // Récupérer la liste des sessions
-  // getSessions: async (params = {}) => {
-  //   const response = await apiClient.get("/session", { params });
-  //   return response.data;
-  // },
-
-  // Récupérer une session spécifique
-  // getSession: async (sessionId) => {
-  //   const response = await apiClient.get(`/session/${sessionId}`);
-  //   return response.data;
-  // },
-
-  // Rejoindre une session par code
-  // getSessionByCode: async (code) => {
-  //   const response = await apiClient.get(`/session/code/${code}`);
-  //   return response.data;
-  // },
-
-  // Créer une session
-  // createSession: async (sessionData) => {
-  //   const response = await apiClient.post("/session", sessionData);
-  //   return response.data;
-  // },
-
-  // Mettre à jour une session
-  // updateSession: async (sessionId, sessionData) => {
-  //   const response = await apiClient.put(`/session/${sessionId}`, sessionData);
-  //   return response.data;
-  // },
-
-  // // Supprimer une session
-  // deleteSession: async (sessionId) => {
-  //   const response = await apiClient.delete(`/session/${sessionId}`);
-  //   return response.data;
-  // },
-
-  // Démarrer une session
-  // startSession: async (sessionId) => {
-  //   const response = await apiClient.post(`/session/${sessionId}/start`);
-  //   return response.data;
-  // },
-
-  // // Mettre en pause une session
-  // pauseSession: async (sessionId) => {
-  //   const response = await apiClient.post(`/session/${sessionId}/pause`);
-  //   return response.data;
-  // },
-
-  // // Reprendre une session
-  // resumeSession: async (sessionId) => {
-  //   const response = await apiClient.post(`/session/${sessionId}/resume`);
-  //   return response.data;
-  // },
-
-  // // Terminer une session
-  // endSession: async (sessionId) => {
-  //   const response = await apiClient.post(`/session/${sessionId}/end`);
-  //   return response.data;
-  // },
-
-  // Récupérer le classement
-  // getLeaderboard: async (sessionId) => {
-  //   const response = await apiClient.get(`/session/${sessionId}/leaderboard`);
-  //   return response.data;
-  // },
-
   // Récupérer les résultats détaillés
   getResults: async (sessionId) => {
     const response = await apiClient.get(`/session/${sessionId}/results`);
@@ -291,6 +225,69 @@ export const sessionService = {
   // Récupérer les résultats détaillés - NOUVELLE MÉTHODE
   getSessionResults: async (sessionId) => {
     const response = await apiClient.get(`/session/${sessionId}/results`);
+    return response.data;
+  },
+
+  joinSession: async (sessionId, participantData) => {
+    // Validation des données côté client
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    if (
+      !participantData?.participantName ||
+      participantData.participantName.trim().length < 2
+    ) {
+      throw new Error("Nom de participant requis (minimum 2 caractères)");
+    }
+
+    // Nettoyer les données
+    const cleanData = {
+      participantName: participantData.participantName.trim(),
+      isAnonymous: Boolean(participantData.isAnonymous),
+    };
+
+    console.log("📡 sessionService.joinSession:", {
+      sessionId,
+      data: cleanData,
+    });
+
+    try {
+      const response = await apiClient.post(
+        `/session/${sessionId}/join`,
+        cleanData
+      );
+
+      console.log("✅ Join session success:", response.data);
+
+      return response.data;
+    } catch (error) {
+      console.error(
+        "❌ Join session error:",
+        error.response?.data || error.message
+      );
+
+      // Reformater l'erreur pour le frontend
+      if (error.response?.data) {
+        const apiError = error.response.data;
+        throw new Error(
+          apiError.error || apiError.message || "Erreur lors de la connexion"
+        );
+      }
+
+      throw error;
+    }
+  },
+
+  // Quitter une session (BONUS - si nécessaire)
+  leaveSession: async (sessionId, participantId) => {
+    if (!sessionId || !participantId) {
+      throw new Error("ID de session et participant requis");
+    }
+
+    const response = await apiClient.delete(
+      `/session/${sessionId}/participants/${participantId}`
+    );
     return response.data;
   },
 };
