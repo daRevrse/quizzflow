@@ -1,82 +1,75 @@
-import { useState, useEffect, useCallback } from "react";
+// SessionHost corrigé - frontend/src/pages/session/SessionHost.js
+
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { useSocket } from "../../contexts/SocketContext";
 import { sessionService } from "../../services/api";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
 import toast from "react-hot-toast";
-import {
-  PlayIcon,
-  PauseIcon,
-  StopIcon,
-  UserGroupIcon,
-  ChartBarIcon,
-  QrCodeIcon,
-  ShareIcon,
-  ClockIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ExclamationTriangleIcon,
-  ArrowRightIcon,
-  ArrowLeftIcon,
-  EyeIcon,
-  Cog6ToothIcon,
-  QuestionMarkCircleIcon,
-} from "@heroicons/react/24/outline";
-import { format } from "date-fns";
-import { fr } from "date-fns/locale";
 
 const SessionHost = () => {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, hostSession } = useSocket();
 
-  // États
-  const [session, setSession] = useState(null);
+  // États principaux
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [session, setSession] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [responses, setResponses] = useState({});
+  const [currentQuestion, setCurrentQuestion] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
-  const [timer, setTimer] = useState(null);
-  const [showQRCode, setShowQRCode] = useState(false);
-  const [showResults, setShowResults] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Charger la session
+  // Refs pour éviter les actions multiples
+  const isInitializedRef = useRef(false);
+  const isLoadingRef = useRef(false);
+  const lastActionRef = useRef(null);
+
+  // Fonction pour charger la session - OPTIMISÉE
   const loadSession = useCallback(async () => {
+    if (isLoadingRef.current) return;
+
     try {
+      isLoadingRef.current = true;
       setLoading(true);
+
       const response = await sessionService.getSession(sessionId);
       const sessionData = response.session;
 
-      // Vérifier les permissions
-      const canHost =
-        sessionData.hostId === user.id ||
-        sessionData.quiz?.creatorId === user.id ||
-        user.role === "admin";
+      // Vérifications de sécurité
+      if (!sessionData) {
+        throw new Error("Session non trouvée");
+      }
 
-      if (!canHost) {
-        toast.error("Vous n'avez pas les permissions pour gérer cette session");
+      if (!response.permissions?.canControl) {
+        toast.error(
+          "Vous n'avez pas les permissions pour contrôler cette session"
+        );
         navigate("/dashboard");
         return;
       }
 
+      // Mettre à jour les états
       setSession(sessionData);
       setParticipants(sessionData.participants || []);
       setResponses(sessionData.responses || {});
+      setLeaderboard(sessionData.stats?.leaderboard || []);
 
-      // Définir la question courante
-      if (sessionData.currentQuestionIndex !== undefined) {
+      // Question actuelle
+      if (sessionData.quiz?.questions) {
         const question =
-          sessionData.quiz.questions?.[sessionData.currentQuestionIndex];
+          sessionData.quiz.questions[sessionData.currentQuestionIndex];
         setCurrentQuestion(question);
       }
 
-      // Rejoindre la room de la session
-      if (socket && isConnected) {
-        socket.emit("host_join_session", { sessionId });
+      // Connexion socket UNE SEULE FOIS
+      if (socket && isConnected && !isInitializedRef.current) {
+        console.log("🔌 Connexion socket hôte pour session:", sessionId);
+        hostSession(sessionId);
+        isInitializedRef.current = true;
       }
     } catch (error) {
       console.error("Erreur lors du chargement de la session:", error);
@@ -84,23 +77,49 @@ const SessionHost = () => {
       navigate("/dashboard");
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
-  }, [sessionId, user, socket, isConnected, navigate]);
+  }, [sessionId, user, socket, isConnected, navigate, hostSession]);
 
+  // Chargement initial
   useEffect(() => {
-    loadSession();
-  }, [loadSession]);
+    if (sessionId && user) {
+      loadSession();
+    }
+  }, [sessionId, user, loadSession]);
 
-  // Événements Socket.IO
+  // Événements Socket.IO avec nettoyage strict
   useEffect(() => {
-    if (!socket || !isConnected) return;
+    if (!socket || !isConnected || !isInitializedRef.current) return;
+
+    let isComponentMounted = true;
 
     const handleParticipantJoined = (data) => {
-      setParticipants((prev) => [...prev, data.participant]);
-      toast.success(`${data.participant.name} a rejoint la session`);
+      if (!isComponentMounted) return;
+      console.log("👤 Participant rejoint:", data);
+
+      setParticipants((prev) => {
+        // Éviter les doublons
+        const exists = prev.some((p) => p.id === data.participantId);
+        if (exists) return prev;
+
+        const newParticipant = {
+          id: data.participantId,
+          name: data.participantName,
+          joinedAt: new Date(),
+          isConnected: true,
+          score: 0,
+        };
+        return [...prev, newParticipant];
+      });
+
+      toast.success(`${data.participantName} a rejoint la session`);
     };
 
     const handleParticipantLeft = (data) => {
+      if (!isComponentMounted) return;
+      console.log("👤 Participant parti:", data);
+
       setParticipants((prev) =>
         prev.filter((p) => p.id !== data.participantId)
       );
@@ -108,6 +127,9 @@ const SessionHost = () => {
     };
 
     const handleNewResponse = (data) => {
+      if (!isComponentMounted) return;
+      console.log("📝 Nouvelle réponse:", data);
+
       setResponses((prev) => ({
         ...prev,
         [data.questionId]: {
@@ -117,622 +139,572 @@ const SessionHost = () => {
       }));
     };
 
-    const handleLeaderboardUpdate = (data) => {
-      setLeaderboard(data.leaderboard);
+    const handleNewResponsesBatch = (data) => {
+      if (!isComponentMounted) return;
+      console.log("📝 Lot de réponses:", data);
+
+      // Traitement groupé des réponses pour optimiser les performances
+      setResponses((prev) => {
+        const updated = { ...prev };
+        data.responses.forEach((response) => {
+          if (!updated[response.questionId]) {
+            updated[response.questionId] = {};
+          }
+          updated[response.questionId][response.participantId] = response;
+        });
+        return updated;
+      });
     };
 
+    const handleLeaderboardUpdate = (data) => {
+      if (!isComponentMounted) return;
+      setLeaderboard(data.leaderboard || []);
+    };
+
+    const handleHostConnected = (data) => {
+      if (!isComponentMounted) return;
+      console.log("🎯 Hôte connecté confirmé:", data.sessionId);
+
+      // Synchroniser les données si nécessaire
+      if (data.session) {
+        setSession((prevSession) => ({ ...prevSession, ...data.session }));
+        setParticipants(data.session.participants || []);
+        setResponses(data.session.responses || {});
+      }
+    };
+
+    const handleError = (error) => {
+      if (!isComponentMounted) return;
+      console.error("❌ Erreur socket:", error);
+      toast.error(error.message || "Erreur de connexion");
+    };
+
+    // Enregistrement des événements
     socket.on("participant_joined", handleParticipantJoined);
     socket.on("participant_left", handleParticipantLeft);
     socket.on("new_response", handleNewResponse);
+    socket.on("new_responses_batch", handleNewResponsesBatch);
     socket.on("leaderboard_updated", handleLeaderboardUpdate);
+    socket.on("host_connected", handleHostConnected);
+    socket.on("error", handleError);
 
     return () => {
+      isComponentMounted = false;
       socket.off("participant_joined", handleParticipantJoined);
       socket.off("participant_left", handleParticipantLeft);
       socket.off("new_response", handleNewResponse);
+      socket.off("new_responses_batch", handleNewResponsesBatch);
       socket.off("leaderboard_updated", handleLeaderboardUpdate);
+      socket.off("host_connected", handleHostConnected);
+      socket.off("error", handleError);
     };
   }, [socket, isConnected]);
 
-  // Actions de session
-  const handleStartSession = async () => {
-    try {
-      setActionLoading(true);
-      await sessionService.startSession(sessionId);
+  // Actions de session avec protection contre les doubles clics
+  const executeAction = useCallback(
+    async (actionName, actionFn) => {
+      const now = Date.now();
+      const actionKey = `${actionName}_${sessionId}`;
 
-      if (socket) {
-        socket.emit("start_session", { sessionId });
+      // Empêcher les actions multiples
+      if (
+        lastActionRef.current === actionKey &&
+        now - lastActionRef.current < 2000
+      ) {
+        console.warn("Action déjà en cours:", actionName);
+        return;
       }
 
+      lastActionRef.current = actionKey;
+
+      try {
+        setActionLoading(true);
+        await actionFn();
+      } catch (error) {
+        console.error(`Erreur lors de ${actionName}:`, error);
+        toast.error(`Erreur lors de ${actionName}`);
+      } finally {
+        setActionLoading(false);
+        // Reset après délai
+        setTimeout(() => {
+          if (lastActionRef.current === actionKey) {
+            lastActionRef.current = null;
+          }
+        }, 2000);
+      }
+    },
+    [sessionId]
+  );
+
+  const handleStartSession = useCallback(() => {
+    executeAction("démarrage", async () => {
+      await sessionService.startSession(sessionId);
       setSession((prev) => ({ ...prev, status: "active" }));
       toast.success("Session démarrée !");
-    } catch (error) {
-      console.error("Erreur lors du démarrage:", error);
-      toast.error("Erreur lors du démarrage de la session");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    });
+  }, [sessionId, executeAction]);
 
-  const handlePauseSession = async () => {
-    try {
-      setActionLoading(true);
+  const handlePauseSession = useCallback(() => {
+    executeAction("pause", async () => {
       await sessionService.pauseSession(sessionId);
-
-      if (socket) {
-        socket.emit("pause_session", { sessionId });
-      }
-
       setSession((prev) => ({ ...prev, status: "paused" }));
       toast.success("Session mise en pause");
-    } catch (error) {
-      console.error("Erreur lors de la pause:", error);
-      toast.error("Erreur lors de la pause de la session");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    });
+  }, [sessionId, executeAction]);
 
-  const handleResumeSession = async () => {
-    try {
-      setActionLoading(true);
+  const handleResumeSession = useCallback(() => {
+    executeAction("reprise", async () => {
       await sessionService.resumeSession(sessionId);
-
-      if (socket) {
-        socket.emit("resume_session", { sessionId });
-      }
-
       setSession((prev) => ({ ...prev, status: "active" }));
       toast.success("Session reprise");
-    } catch (error) {
-      console.error("Erreur lors de la reprise:", error);
-      toast.error("Erreur lors de la reprise de la session");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    });
+  }, [sessionId, executeAction]);
 
-  const handleEndSession = async () => {
+  const handleEndSession = useCallback(() => {
     if (!window.confirm("Êtes-vous sûr de vouloir terminer cette session ?")) {
       return;
     }
 
-    try {
-      setActionLoading(true);
+    executeAction("fin", async () => {
       await sessionService.endSession(sessionId);
-
-      if (socket) {
-        socket.emit("end_session", { sessionId });
-      }
-
       setSession((prev) => ({ ...prev, status: "finished" }));
       toast.success("Session terminée");
+      setTimeout(() => navigate("/dashboard"), 2000);
+    });
+  }, [sessionId, executeAction, navigate]);
 
-      // Rediriger vers les résultats après un délai
-      setTimeout(() => {
-        navigate(`/session/${sessionId}/results`);
-      }, 2000);
-    } catch (error) {
-      console.error("Erreur lors de la fin:", error);
-      toast.error("Erreur lors de la fin de la session");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const handleNextQuestion = useCallback(() => {
+    if (!socket || !isConnected) return;
 
-  const handleNextQuestion = () => {
-    if (!session || !session.quiz.questions) return;
+    const totalQuestions = session?.quiz?.questions?.length || 0;
+    const currentIndex = session?.currentQuestionIndex || 0;
 
-    const nextIndex = (session.currentQuestionIndex || 0) + 1;
-    if (nextIndex >= session.quiz.questions.length) {
-      toast.info("C'était la dernière question");
+    if (currentIndex >= totalQuestions - 1) {
+      toast.error("C'est déjà la dernière question");
       return;
     }
 
+    socket.emit("next_question");
+    const nextIndex = currentIndex + 1;
     const nextQuestion = session.quiz.questions[nextIndex];
-    setCurrentQuestion(nextQuestion);
+
     setSession((prev) => ({ ...prev, currentQuestionIndex: nextIndex }));
+    setCurrentQuestion(nextQuestion);
+    toast.success("Question suivante");
+  }, [socket, isConnected, session]);
 
-    if (socket) {
-      socket.emit("next_question", {
-        sessionId,
-        questionIndex: nextIndex,
-        question: nextQuestion,
-      });
-    }
+  const handlePreviousQuestion = useCallback(() => {
+    if (!socket || !isConnected) return;
 
-    setShowResults(false);
-    toast.success("Question suivante affichée");
-  };
+    const currentIndex = session?.currentQuestionIndex || 0;
 
-  const handlePreviousQuestion = () => {
-    if (!session || !session.quiz.questions) return;
-
-    const prevIndex = (session.currentQuestionIndex || 0) - 1;
-    if (prevIndex < 0) {
-      toast.info("C'était la première question");
+    if (currentIndex <= 0) {
+      toast.error("C'est déjà la première question");
       return;
     }
 
+    socket.emit("previous_question");
+    const prevIndex = currentIndex - 1;
     const prevQuestion = session.quiz.questions[prevIndex];
-    setCurrentQuestion(prevQuestion);
+
     setSession((prev) => ({ ...prev, currentQuestionIndex: prevIndex }));
+    setCurrentQuestion(prevQuestion);
+    toast.success("Question précédente");
+  }, [socket, isConnected, session]);
 
-    if (socket) {
-      socket.emit("previous_question", {
-        sessionId,
-        questionIndex: prevIndex,
-        question: prevQuestion,
-      });
-    }
-
-    setShowResults(false);
-    toast.success("Question précédente affichée");
-  };
-
-  const handleShowResults = () => {
-    setShowResults(true);
-
-    if (socket) {
-      socket.emit("show_question_results", {
-        sessionId,
-        questionId: currentQuestion?.id,
-        results: responses[currentQuestion?.id] || {},
-      });
-    }
-  };
-
-  const handleShareSession = () => {
-    const shareUrl = `${window.location.origin}/join/${session.code}`;
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      toast.success("Lien de participation copié !");
-    });
-  };
-
-  // Calculer les statistiques des réponses
-  const getQuestionStats = () => {
-    if (!currentQuestion || !responses[currentQuestion.id]) {
-      return { total: 0, answers: {} };
-    }
-
-    const questionResponses = responses[currentQuestion.id];
-    const total = Object.keys(questionResponses).length;
-    const answers = {};
-
-    Object.values(questionResponses).forEach((response) => {
-      const answer = response.answer;
-      answers[answer] = (answers[answer] || 0) + 1;
-    });
-
-    return { total, answers };
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "waiting":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-      case "active":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-      case "paused":
-        return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
-      case "finished":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
-    }
-  };
-
+  // Rendu conditionnel
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-64">
-        <LoadingSpinner />
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <LoadingSpinner size="xl" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Chargement de la session...
+          </p>
+        </div>
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="text-center py-12">
-        <ExclamationTriangleIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-          Session non trouvée
-        </h3>
-        <p className="text-gray-500 dark:text-gray-400">
-          Cette session n'existe pas ou vous n'avez pas les permissions pour y
-          accéder.
-        </p>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Session non trouvée
+          </h2>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            La session demandée n'existe pas ou vous n'y avez pas accès.
+          </p>
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+          >
+            Retour au tableau de bord
+          </button>
+        </div>
       </div>
     );
   }
 
-  const questionStats = getQuestionStats();
+  const totalQuestions = session.quiz?.questions?.length || 0;
+  const currentIndex = session.currentQuestionIndex || 0;
+  const progress =
+    totalQuestions > 0 ? ((currentIndex + 1) / totalQuestions) * 100 : 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header de session */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 shadow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="py-4 flex items-center justify-between">
             <div>
-              <div className="flex items-center space-x-3">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {session.title}
-                </h1>
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
-                    session.status
-                  )}`}
-                >
-                  {session.status === "waiting"
-                    ? "En attente"
-                    : session.status === "active"
-                    ? "En cours"
-                    : session.status === "paused"
-                    ? "En pause"
-                    : "Terminée"}
-                </span>
-              </div>
-              <div className="flex items-center mt-2 space-x-4 text-sm text-gray-500 dark:text-gray-400">
-                <span>
-                  Code:{" "}
-                  <span className="font-mono font-bold text-lg">
-                    {session.code}
-                  </span>
-                </span>
-                <span>
-                  {participants.length} participant
-                  {participants.length !== 1 ? "s" : ""}
-                </span>
-                <span>{session.quiz.title}</span>
-              </div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                {session.title}
+              </h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Code:{" "}
+                <span className="font-mono font-bold">{session.code}</span>
+              </p>
             </div>
 
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={handleShareSession}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md transition-colors"
+            <div className="flex items-center space-x-4">
+              <div
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  session.status === "waiting"
+                    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                    : session.status === "active"
+                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                    : session.status === "paused"
+                    ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+                    : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+                }`}
               >
-                <ShareIcon className="h-4 w-4 mr-2" />
-                Partager
-              </button>
+                {session.status === "waiting"
+                  ? "En attente"
+                  : session.status === "active"
+                  ? "En cours"
+                  : session.status === "paused"
+                  ? "En pause"
+                  : session.status}
+              </div>
 
-              {session.status === "waiting" && (
-                <button
-                  onClick={handleStartSession}
-                  disabled={actionLoading || participants.length === 0}
-                  className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-md transition-colors"
-                >
-                  <PlayIcon className="h-4 w-4 mr-2" />
-                  Démarrer
-                </button>
-              )}
-
-              {session.status === "active" && (
-                <>
-                  <button
-                    onClick={handlePauseSession}
-                    disabled={actionLoading}
-                    className="inline-flex items-center px-3 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-sm font-medium rounded-md transition-colors"
-                  >
-                    <PauseIcon className="h-4 w-4 mr-2" />
-                    Pause
-                  </button>
-                  <button
-                    onClick={handleEndSession}
-                    disabled={actionLoading}
-                    className="inline-flex items-center px-3 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium rounded-md transition-colors"
-                  >
-                    <StopIcon className="h-4 w-4 mr-2" />
-                    Terminer
-                  </button>
-                </>
-              )}
-
-              {session.status === "paused" && (
-                <button
-                  onClick={handleResumeSession}
-                  disabled={actionLoading}
-                  className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-md transition-colors"
-                >
-                  <PlayIcon className="h-4 w-4 mr-2" />
-                  Reprendre
-                </button>
-              )}
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                {participants.length} participant
+                {participants.length !== 1 ? "s" : ""}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Question courante */}
-        <div className="lg:col-span-2 space-y-6">
-          {currentQuestion ? (
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                  Question {(session.currentQuestionIndex || 0) + 1} /{" "}
-                  {session.quiz.questions?.length || 0}
-                </h2>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handlePreviousQuestion}
-                    disabled={session.currentQuestionIndex === 0}
-                    className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                    title="Question précédente"
-                  >
-                    <ArrowLeftIcon className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={handleNextQuestion}
-                    disabled={
-                      session.currentQuestionIndex >=
-                      (session.quiz.questions?.length || 1) - 1
-                    }
-                    className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                    title="Question suivante"
-                  >
-                    <ArrowRightIcon className="h-4 w-4" />
-                  </button>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Contrôles de session */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Barre de progression */}
+            {totalQuestions > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                    Progression
+                  </h3>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {currentIndex + 1} / {totalQuestions}
+                  </span>
                 </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="text-lg font-medium text-gray-900 dark:text-white">
-                  {currentQuestion.question}
-                </div>
-
-                {currentQuestion.media && (
-                  <div>
-                    <img
-                      src={currentQuestion.media.url}
-                      alt="Media de la question"
-                      className="max-w-md h-auto rounded-lg"
-                    />
-                  </div>
-                )}
-
-                {/* Options pour QCM */}
-                {currentQuestion.type === "qcm" && currentQuestion.options && (
-                  <div className="space-y-2">
-                    {currentQuestion.options.map((option, index) => (
-                      <div
-                        key={index}
-                        className={`p-3 rounded-lg border ${
-                          showResults && option.isCorrect
-                            ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
-                            : "bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span
-                            className={`${
-                              showResults && option.isCorrect
-                                ? "text-green-800 dark:text-green-200 font-medium"
-                                : "text-gray-700 dark:text-gray-300"
-                            }`}
-                          >
-                            {String.fromCharCode(65 + index)}. {option.text}
-                          </span>
-                          {showResults && (
-                            <div className="flex items-center space-x-2">
-                              <span className="text-sm text-gray-600 dark:text-gray-400">
-                                {questionStats.answers[option.text] || 0}{" "}
-                                réponse
-                                {(questionStats.answers[option.text] || 0) !== 1
-                                  ? "s"
-                                  : ""}
-                              </span>
-                              {option.isCorrect && (
-                                <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Réponse correcte pour Vrai/Faux */}
-                {currentQuestion.type === "vrai_faux" && showResults && (
-                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <div className="flex items-center space-x-2">
-                      <CheckCircleIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                      <span className="text-blue-800 dark:text-blue-200 font-medium">
-                        Réponse correcte :{" "}
-                        {currentQuestion.correctAnswer === "true"
-                          ? "Vrai"
-                          : "Faux"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    {questionStats.total} réponse
-                    {questionStats.total !== 1 ? "s" : ""} reçue
-                    {questionStats.total !== 1 ? "s" : ""}
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    {!showResults ? (
-                      <button
-                        onClick={handleShowResults}
-                        disabled={questionStats.total === 0}
-                        className="inline-flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium rounded-md transition-colors"
-                      >
-                        <EyeIcon className="h-4 w-4 mr-2" />
-                        Afficher les résultats
-                      </button>
-                    ) : (
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm text-green-600 dark:text-green-400 font-medium">
-                          Résultats affichés
-                        </span>
-                        <CheckCircleIcon className="h-4 w-4 text-green-600 dark:text-green-400" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-              <div className="text-center py-8">
-                <QuestionMarkCircleIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  Aucune question sélectionnée
-                </h3>
-                <p className="text-gray-500 dark:text-gray-400">
-                  Démarrez la session pour afficher la première question.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Participants */}
-          <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                Participants ({participants.length})
-              </h3>
-              <UserGroupIcon className="h-5 w-5 text-gray-400" />
-            </div>
-
-            {participants.length === 0 ? (
-              <div className="text-center py-4">
-                <UserGroupIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Aucun participant pour le moment
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Partagez le code:{" "}
-                  <span className="font-mono font-bold">{session.code}</span>
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {participants.map((participant) => (
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div
-                    key={participant.id}
-                    className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 bg-primary-100 dark:bg-primary-900 rounded-full flex items-center justify-center">
-                        <span className="text-xs font-medium text-primary-600 dark:text-primary-400">
-                          {participant.name?.charAt(0)?.toUpperCase()}
-                        </span>
-                      </div>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {participant.name}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {participant.score !== undefined && (
-                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                          {participant.score} pts
-                        </span>
-                      )}
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          participant.isConnected
-                            ? "bg-green-400"
-                            : "bg-gray-400"
-                        }`}
-                      />
-                    </div>
-                  </div>
-                ))}
+                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
               </div>
             )}
-          </div>
 
-          {/* Classement */}
-          {leaderboard.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                  Classement
+            {/* Question actuelle */}
+            {currentQuestion && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                  Question actuelle
                 </h3>
-                <ChartBarIcon className="h-5 w-5 text-gray-400" />
-              </div>
+                <div className="space-y-4">
+                  <p className="text-gray-900 dark:text-white font-medium">
+                    {currentQuestion.question}
+                  </p>
 
-              <div className="space-y-2">
-                {leaderboard.slice(0, 5).map((entry, index) => (
-                  <div
-                    key={entry.id}
-                    className={`flex items-center justify-between p-2 rounded-lg ${
-                      index === 0
-                        ? "bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800"
-                        : "bg-gray-50 dark:bg-gray-700"
-                    }`}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span
-                        className={`text-sm font-bold ${
-                          index === 0
-                            ? "text-yellow-600 dark:text-yellow-400"
-                            : "text-gray-600 dark:text-gray-400"
+                  {currentQuestion.type === "qcm" &&
+                    currentQuestion.options && (
+                      <div className="space-y-2">
+                        {currentQuestion.options.map((option, index) => (
+                          <div
+                            key={index}
+                            className={`p-3 rounded border ${
+                              currentQuestion.correctAnswer === index
+                                ? "bg-green-50 border-green-200 dark:bg-green-900 dark:border-green-700"
+                                : "bg-gray-50 border-gray-200 dark:bg-gray-700 dark:border-gray-600"
+                            }`}
+                          >
+                            <span className="font-medium mr-2">
+                              {String.fromCharCode(65 + index)}.
+                            </span>
+                            {option}
+                            {currentQuestion.correctAnswer === index && (
+                              <span className="text-green-600 dark:text-green-400 ml-2">
+                                ✓ Bonne réponse
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  {currentQuestion.type === "vrai_faux" && (
+                    <div className="flex space-x-4">
+                      <div
+                        className={`px-4 py-2 rounded ${
+                          currentQuestion.correctAnswer === true
+                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                            : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
                         }`}
                       >
-                        #{entry.rank}
-                      </span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {entry.name}
+                        Vrai {currentQuestion.correctAnswer === true && "✓"}
+                      </div>
+                      <div
+                        className={`px-4 py-2 rounded ${
+                          currentQuestion.correctAnswer === false
+                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                            : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        Faux {currentQuestion.correctAnswer === false && "✓"}
+                      </div>
+                    </div>
+                  )}
+
+                  {currentQuestion.type === "reponse_libre" && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded dark:bg-green-900 dark:border-green-700">
+                      <span className="text-green-800 dark:text-green-200">
+                        Réponse attendue: {currentQuestion.correctAnswer}
                       </span>
                     </div>
-                    <span className="text-sm font-bold text-gray-900 dark:text-white">
-                      {entry.score} pts
-                    </span>
+                  )}
+
+                  {/* Statistiques des réponses */}
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">
+                        Réponses reçues:
+                      </span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {
+                          Object.keys(responses[currentQuestion.id] || {})
+                            .length
+                        }{" "}
+                        / {participants.length}
+                      </span>
+                    </div>
                   </div>
-                ))}
+                </div>
+              </div>
+            )}
+
+            {/* Contrôles */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                Contrôles de session
+              </h3>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Démarrer/Pause/Reprendre */}
+                {session.status === "waiting" && (
+                  <button
+                    onClick={handleStartSession}
+                    disabled={actionLoading || participants.length === 0}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading ? <LoadingSpinner size="sm" /> : "Démarrer"}
+                  </button>
+                )}
+
+                {session.status === "active" && (
+                  <button
+                    onClick={handlePauseSession}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 disabled:opacity-50"
+                  >
+                    {actionLoading ? <LoadingSpinner size="sm" /> : "Pause"}
+                  </button>
+                )}
+
+                {session.status === "paused" && (
+                  <button
+                    onClick={handleResumeSession}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {actionLoading ? <LoadingSpinner size="sm" /> : "Reprendre"}
+                  </button>
+                )}
+
+                {/* Navigation questions */}
+                <button
+                  onClick={handlePreviousQuestion}
+                  disabled={currentIndex <= 0 || session.status !== "active"}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ← Précédente
+                </button>
+
+                <button
+                  onClick={handleNextQuestion}
+                  disabled={
+                    currentIndex >= totalQuestions - 1 ||
+                    session.status !== "active"
+                  }
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Suivante →
+                </button>
+
+                {/* Terminer */}
+                <button
+                  onClick={handleEndSession}
+                  disabled={actionLoading}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                >
+                  {actionLoading ? <LoadingSpinner size="sm" /> : "Terminer"}
+                </button>
+              </div>
+
+              {/* Avertissement participants */}
+              {session.status === "waiting" && participants.length === 0 && (
+                <div className="mt-4 p-3 bg-yellow-100 border border-yellow-200 rounded-lg dark:bg-yellow-900 dark:border-yellow-700">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                    ⚠️ Aucun participant connecté. Partagez le code{" "}
+                    <strong>{session.code}</strong> pour que les participants
+                    puissent rejoindre.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sidebar - Participants et Stats */}
+          <div className="space-y-6">
+            {/* Participants */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                Participants ({participants.length})
+              </h3>
+
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {participants.length === 0 ? (
+                  <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-8">
+                    Aucun participant connecté
+                  </p>
+                ) : (
+                  participants.map((participant) => (
+                    <div
+                      key={participant.id}
+                      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            participant.isConnected
+                              ? "bg-green-400"
+                              : "bg-gray-400"
+                          }`}
+                        />
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {participant.name}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        {participant.score || 0} pts
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
-          )}
 
-          {/* Statistiques */}
-          <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Statistiques
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  Durée
-                </span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {session.startedAt
-                    ? Math.floor(
-                        (Date.now() - new Date(session.startedAt)) / 1000 / 60
-                      )
-                    : 0}{" "}
-                  min
-                </span>
+            {/* Leaderboard */}
+            {leaderboard.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                  Classement
+                </h3>
+
+                <div className="space-y-2">
+                  {leaderboard.slice(0, 10).map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between p-2 rounded"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <span
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                            entry.rank === 1
+                              ? "bg-yellow-400 text-yellow-900"
+                              : entry.rank === 2
+                              ? "bg-gray-300 text-gray-800"
+                              : entry.rank === 3
+                              ? "bg-yellow-600 text-white"
+                              : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                          }`}
+                        >
+                          {entry.rank}
+                        </span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {entry.name}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-primary-600 dark:text-primary-400">
+                        {entry.score} pts
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  Questions
-                </span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {(session.currentQuestionIndex || 0) + 1} /{" "}
-                  {session.quiz.questions?.length || 0}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  Taux de participation
-                </span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {participants.length > 0
-                    ? Math.round(
-                        (questionStats.total / participants.length) * 100
-                      )
-                    : 0}
-                  %
-                </span>
+            )}
+
+            {/* Statistiques rapides */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                Statistiques
+              </h3>
+
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    Total participants
+                  </span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    {participants.length}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    Connectés
+                  </span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    {participants.filter((p) => p.isConnected).length}
+                  </span>
+                </div>
+
+                {currentQuestion && (
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Ont répondu
+                    </span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {Object.keys(responses[currentQuestion.id] || {}).length}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

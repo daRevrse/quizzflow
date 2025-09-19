@@ -4,6 +4,7 @@ import {
   useEffect,
   useState,
   useCallback,
+  useRef,
 } from "react";
 import io from "socket.io-client";
 import { useAuthStore } from "../stores/authStore";
@@ -11,7 +12,7 @@ import toast from "react-hot-toast";
 
 const SocketContext = createContext();
 
-// Configuration Socket.IO
+// Configuration Socket.IO optimisée
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || "http://localhost:3001";
 
 export const useSocket = () => {
@@ -28,92 +29,164 @@ export const SocketProvider = ({ children }) => {
   const [connectionError, setConnectionError] = useState(null);
   const { accessToken, user } = useAuthStore();
 
-  // Initialiser la connexion Socket.IO
+  // Refs pour éviter les re-renders inutiles
+  const heartbeatIntervalRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const lastHeartbeatRef = useRef(null);
+
+  // Configuration optimisée
+  const socketConfig = {
+    auth: {
+      token: accessToken,
+    },
+    // Reconnexion moins agressive
+    reconnection: true,
+    reconnectionAttempts: 3, // Réduit de 5 à 3
+    reconnectionDelay: 2000, // Augmenté de 1000 à 2000ms
+    reconnectionDelayMax: 10000, // Augmenté de 5000 à 10000ms
+    timeout: 10000, // Réduit de 20000 à 10000ms
+
+    // Optimisations transport
+    transports: ["websocket", "polling"], // Privilégier WebSocket
+    upgrade: true,
+    rememberUpgrade: true,
+
+    // Buffer et compression
+    forceNew: false,
+    compress: true,
+  };
+
+  // Initialiser la connexion Socket.IO avec lazy loading
   useEffect(() => {
-    if (accessToken && user) {
-      const socketInstance = io(SOCKET_URL, {
-        auth: {
-          token: accessToken,
-        },
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        timeout: 20000,
-      });
-
-      // Événements de connexion
-      socketInstance.on("connect", () => {
-        console.log("📡 Connecté au serveur Socket.IO");
-        setIsConnected(true);
-        setConnectionError(null);
-      });
-
-      socketInstance.on("disconnect", (reason) => {
-        console.log("📡 Déconnecté du serveur Socket.IO:", reason);
-        setIsConnected(false);
-
-        if (reason === "io server disconnect") {
-          // Reconnexion forcée si le serveur ferme la connexion
-          socketInstance.connect();
-        }
-      });
-
-      socketInstance.on("connect_error", (error) => {
-        console.error("❌ Erreur de connexion Socket.IO:", error);
-        setConnectionError(error.message);
-        setIsConnected(false);
-      });
-
-      socketInstance.on("reconnect", (attemptNumber) => {
-        console.log(`📡 Reconnecté après ${attemptNumber} tentatives`);
-        setIsConnected(true);
-        setConnectionError(null);
-        toast.success("Connexion rétablie");
-      });
-
-      socketInstance.on("reconnect_failed", () => {
-        console.error("❌ Échec de la reconnexion Socket.IO");
-        setConnectionError("Impossible de se reconnecter au serveur");
-        toast.error("Connexion perdue - Veuillez actualiser la page");
-      });
-
-      // Événements d'erreur génériques
-      socketInstance.on("error", (error) => {
-        console.error("❌ Erreur Socket.IO:", error);
-        toast.error(error.message || "Erreur de connexion");
-      });
-
-      setSocket(socketInstance);
-
-      return () => {
-        console.log("📡 Fermeture de la connexion Socket.IO");
-        socketInstance.disconnect();
-        setSocket(null);
-        setIsConnected(false);
-      };
-    } else {
-      // Pas de token, fermer la connexion existante
-      if (socket) {
-        socket.disconnect();
-        setSocket(null);
-        setIsConnected(false);
-      }
+    if (!accessToken || !user) {
+      return;
     }
-  }, [accessToken, user, socket]);
 
-  // Fonctions utilitaires pour les sessions
+    let socketInstance = null;
+    let isDestroyed = false;
+
+    const initSocket = async () => {
+      try {
+        socketInstance = io(SOCKET_URL, socketConfig);
+
+        // Événements de connexion optimisés
+        socketInstance.on("connect", () => {
+          if (isDestroyed) return;
+          console.log("📡 Connecté au serveur Socket.IO");
+          setIsConnected(true);
+          setConnectionError(null);
+
+          // Réinitialiser le heartbeat lors de la connexion
+          clearInterval(heartbeatIntervalRef.current);
+          startHeartbeat();
+        });
+
+        socketInstance.on("disconnect", (reason) => {
+          if (isDestroyed) return;
+          console.log("📡 Déconnecté du serveur Socket.IO:", reason);
+          setIsConnected(false);
+          stopHeartbeat();
+
+          // Reconnexion intelligente basée sur la raison
+          if (reason === "io server disconnect") {
+            // Le serveur a fermé la connexion - attendre avant de reconnecter
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (!isDestroyed && socketInstance) {
+                socketInstance.connect();
+              }
+            }, 5000);
+          }
+        });
+
+        socketInstance.on("connect_error", (error) => {
+          if (isDestroyed) return;
+          console.error("❌ Erreur de connexion Socket.IO:", error);
+          setConnectionError(error.message);
+          setIsConnected(false);
+          stopHeartbeat();
+        });
+
+        socketInstance.on("reconnect", (attemptNumber) => {
+          if (isDestroyed) return;
+          console.log(`📡 Reconnecté après ${attemptNumber} tentatives`);
+          setIsConnected(true);
+          setConnectionError(null);
+          toast.success("Connexion rétablie");
+          startHeartbeat();
+        });
+
+        socketInstance.on("reconnect_failed", () => {
+          if (isDestroyed) return;
+          console.error("❌ Échec de reconnexion définitif");
+          toast.error("Impossible de se reconnecter au serveur");
+          stopHeartbeat();
+        });
+
+        setSocket(socketInstance);
+      } catch (error) {
+        console.error("Erreur lors de l'initialisation du socket:", error);
+        setConnectionError(error.message);
+      }
+    };
+
+    initSocket();
+
+    return () => {
+      isDestroyed = true;
+      stopHeartbeat();
+
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+
+      if (socketInstance) {
+        socketInstance.removeAllListeners();
+        socketInstance.disconnect();
+      }
+    };
+  }, [accessToken, user?.id]); // Dépendances optimisées
+
+  // Heartbeat optimisé avec throttling
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+    }
+
+    heartbeatIntervalRef.current = setInterval(() => {
+      const now = Date.now();
+
+      // Throttling: éviter les heartbeats trop fréquents
+      if (lastHeartbeatRef.current && now - lastHeartbeatRef.current < 55000) {
+        return;
+      }
+
+      if (socket && isConnected) {
+        socket.emit("participant_heartbeat");
+        lastHeartbeatRef.current = now;
+      }
+    }, 60000); // Augmenté de 30s à 60s
+  }, [socket, isConnected]);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  }, []);
+
+  // Actions optimisées avec debouncing
   const joinSession = useCallback(
     (sessionCode, participantName, isAnonymous = false) => {
-      if (socket && isConnected) {
-        socket.emit("join_session", {
-          sessionCode,
-          participantName,
-          isAnonymous,
-        });
-      } else {
+      if (!socket || !isConnected) {
         toast.error("Connexion non établie");
+        return;
       }
+
+      socket.emit("join_session", {
+        sessionCode,
+        participantName,
+        isAnonymous,
+      });
     },
     [socket, isConnected]
   );
@@ -122,19 +195,19 @@ export const SocketProvider = ({ children }) => {
     if (socket && isConnected) {
       socket.emit("leave_session");
     }
-  }, [socket, isConnected]);
+    stopHeartbeat();
+  }, [socket, isConnected, stopHeartbeat]);
 
   const hostSession = useCallback(
     (sessionId) => {
       if (socket && isConnected) {
         socket.emit("host_session", { sessionId });
-      } else {
-        toast.error("Connexion non établie");
       }
     },
     [socket, isConnected]
   );
 
+  // Actions d'hôte optimisées
   const startSession = useCallback(() => {
     if (socket && isConnected) {
       socket.emit("start_session");
@@ -171,17 +244,28 @@ export const SocketProvider = ({ children }) => {
     }
   }, [socket, isConnected]);
 
+  // Debounced submit response pour éviter les doubles soumissions
+  const submitResponseDebounced = useRef(null);
   const submitResponse = useCallback(
     (questionId, answer, timeSpent) => {
-      if (socket && isConnected) {
+      if (!socket || !isConnected) {
+        toast.error("Impossible d'envoyer la réponse - Connexion perdue");
+        return;
+      }
+
+      // Annuler la précédente soumission si elle existe
+      if (submitResponseDebounced.current) {
+        clearTimeout(submitResponseDebounced.current);
+      }
+
+      // Debounce pour éviter les doubles clics
+      submitResponseDebounced.current = setTimeout(() => {
         socket.emit("submit_response", {
           questionId,
           answer,
           timeSpent,
         });
-      } else {
-        toast.error("Impossible d'envoyer la réponse - Connexion perdue");
-      }
+      }, 100);
     },
     [socket, isConnected]
   );
@@ -195,24 +279,20 @@ export const SocketProvider = ({ children }) => {
     [socket, isConnected]
   );
 
-  const participantHeartbeat = useCallback(() => {
-    if (socket && isConnected) {
-      socket.emit("participant_heartbeat");
-    }
-  }, [socket, isConnected]);
-
-  // État de la session actuelle
+  // État de la session optimisé
   const [sessionState, setSessionState] = useState({
     sessionId: null,
     participantId: null,
     isHost: false,
-    status: "disconnected", // disconnected, joining, joined, playing
+    status: "disconnected",
   });
 
-  // Gestionnaires d'événements de session communs
+  // Gestionnaires d'événements avec cleanup automatique
   useEffect(() => {
-    if (socket) {
-      const handleSessionJoined = (data) => {
+    if (!socket) return;
+
+    const eventHandlers = {
+      session_joined: (data) => {
         console.log("✅ Session rejointe:", data);
         setSessionState((prev) => ({
           ...prev,
@@ -220,9 +300,10 @@ export const SocketProvider = ({ children }) => {
           participantId: data.participantId,
           status: "joined",
         }));
-      };
+        startHeartbeat();
+      },
 
-      const handleHostConnected = (data) => {
+      host_connected: (data) => {
         console.log("🎯 Hôte connecté:", data);
         setSessionState((prev) => ({
           ...prev,
@@ -230,54 +311,61 @@ export const SocketProvider = ({ children }) => {
           isHost: true,
           status: "hosting",
         }));
-      };
+      },
 
-      const handleSessionStarted = () => {
+      session_started: () => {
         console.log("🚀 Session démarrée");
         setSessionState((prev) => ({
           ...prev,
           status: "playing",
         }));
-      };
+      },
 
-      const handleSessionEnded = () => {
+      session_ended: () => {
         console.log("🏁 Session terminée");
         setSessionState((prev) => ({
           ...prev,
           status: "ended",
         }));
-      };
+        stopHeartbeat();
+      },
 
-      // Enregistrer les événements
-      socket.on("session_joined", handleSessionJoined);
-      socket.on("host_connected", handleHostConnected);
-      socket.on("session_started", handleSessionStarted);
-      socket.on("session_ended", handleSessionEnded);
+      error: (error) => {
+        console.error("Socket error:", error);
+        toast.error(error.message || "Erreur de connexion");
+      },
+    };
 
-      return () => {
-        socket.off("session_joined", handleSessionJoined);
-        socket.off("host_connected", handleHostConnected);
-        socket.off("session_started", handleSessionStarted);
-        socket.off("session_ended", handleSessionEnded);
-      };
-    }
-  }, [socket]);
+    // Enregistrer tous les événements
+    Object.entries(eventHandlers).forEach(([event, handler]) => {
+      socket.on(event, handler);
+    });
 
-  // Heartbeat automatique pour les participants
+    // Cleanup automatique
+    return () => {
+      Object.keys(eventHandlers).forEach((event) => {
+        socket.off(event);
+      });
+    };
+  }, [socket, startHeartbeat, stopHeartbeat]);
+
+  // Heartbeat conditionnel - seulement pour les participants
   useEffect(() => {
     if (
       sessionState.sessionId &&
       sessionState.participantId &&
-      !sessionState.isHost
+      !sessionState.isHost &&
+      isConnected
     ) {
-      const interval = setInterval(() => {
-        participantHeartbeat();
-      }, 30000); // Toutes les 30 secondes
-
-      return () => clearInterval(interval);
+      startHeartbeat();
+    } else {
+      stopHeartbeat();
     }
-  }, [sessionState, participantHeartbeat]);
 
+    return stopHeartbeat;
+  }, [sessionState, isConnected, startHeartbeat, stopHeartbeat]);
+
+  // Context value optimisé avec memoization
   const contextValue = {
     // État de connexion
     socket,
@@ -303,12 +391,11 @@ export const SocketProvider = ({ children }) => {
 
     // Actions de participant
     submitResponse,
-    participantHeartbeat,
 
     // Communication
     sendMessage,
 
-    // Helpers
+    // Helpers optimisés
     emit: useCallback(
       (event, data) => {
         if (socket && isConnected) {
@@ -322,7 +409,10 @@ export const SocketProvider = ({ children }) => {
       (event, handler) => {
         if (socket) {
           socket.on(event, handler);
+          // Retourner une fonction de cleanup
+          return () => socket.off(event, handler);
         }
+        return () => {};
       },
       [socket]
     ),

@@ -1,3 +1,5 @@
+// SessionJoin corrigé - frontend/src/pages/session/SessionJoin.js
+
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -10,7 +12,6 @@ import {
   UserGroupIcon,
   UserIcon,
   InformationCircleIcon,
-  ExclamationTriangleIcon,
   CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 
@@ -43,45 +44,59 @@ const SessionJoin = () => {
   const participantName = watch("participantName");
   const isAnonymous = watch("isAnonymous");
 
+  // Validation du bouton - CORRIGÉ
+  const isCodeValid = sessionCode && sessionCode.trim().length >= 6;
+  const isNameValid = participantName && participantName.trim().length >= 2;
+
   // Charger les infos de la session si code fourni dans l'URL
   useEffect(() => {
-    if (urlCode) {
+    if (urlCode && urlCode.length >= 6) {
       loadSessionInfo(urlCode);
     }
   }, [urlCode]);
 
-  // Écouter les événements Socket.IO
+  // Écouter les événements Socket.IO - NETTOYAGE AUTOMATIQUE
   useEffect(() => {
     if (!socket || !isConnected) return;
 
+    let isComponentMounted = true;
+
     const handleSessionJoined = (data) => {
+      if (!isComponentMounted) return;
       console.log("Session rejointe:", data);
       setJoining(false);
       setStep("joined");
       toast.success("Session rejointe avec succès !");
 
       setTimeout(() => {
-        navigate(`/session/${data.sessionId}/play`);
+        if (isComponentMounted) {
+          navigate(`/session/${data.sessionId}/play`);
+        }
       }, 2000);
     };
 
     const handleError = (error) => {
+      if (!isComponentMounted) return;
       console.error("Erreur Socket.IO:", error);
       setJoining(false);
       toast.error(error.message || "Erreur lors de la connexion");
       setStep("session-info");
     };
 
+    // Événements socket avec nettoyage
     socket.on("session_joined", handleSessionJoined);
     socket.on("error", handleError);
 
     return () => {
+      isComponentMounted = false;
       socket.off("session_joined", handleSessionJoined);
       socket.off("error", handleError);
     };
   }, [socket, isConnected, navigate]);
 
   const loadSessionInfo = async (code) => {
+    if (!code || code.trim().length < 6) return;
+
     try {
       setLoading(true);
       const response = await sessionService.getSessionByCode(code);
@@ -91,6 +106,7 @@ const SessionJoin = () => {
       console.error("Erreur lors du chargement de la session:", error);
       toast.error("Code de session invalide ou session introuvable");
       setStep("enter-code");
+      setSessionInfo(null);
     } finally {
       setLoading(false);
     }
@@ -99,7 +115,9 @@ const SessionJoin = () => {
   const onSubmitCode = async (data) => {
     const code = data.sessionCode.toUpperCase().trim();
     if (!code || code.length < 6) {
-      toast.error("Veuillez entrer un code valide");
+      toast.error(
+        "Veuillez entrer un code de session valide (6 caractères minimum)"
+      );
       return;
     }
 
@@ -108,11 +126,19 @@ const SessionJoin = () => {
   };
 
   const onJoinSession = async (data) => {
-    if (!sessionInfo) return;
+    if (!sessionInfo) {
+      toast.error("Informations de session manquantes");
+      return;
+    }
 
     const name = data.participantName.trim();
-    if (!name) {
-      toast.error("Veuillez entrer votre nom");
+    if (!name || name.length < 2) {
+      toast.error("Veuillez entrer un nom d'au moins 2 caractères");
+      return;
+    }
+
+    if (!sessionInfo.canJoin) {
+      toast.error("Cette session n'accepte plus de nouveaux participants");
       return;
     }
 
@@ -120,12 +146,17 @@ const SessionJoin = () => {
     setStep("joining");
 
     try {
+      // Vérifier la connexion socket
+      if (!socket || !isConnected) {
+        throw new Error("Connexion au serveur non établie");
+      }
+
       joinSession(sessionInfo.code, name, data.isAnonymous);
     } catch (error) {
       console.error("Erreur lors de la connexion:", error);
       setJoining(false);
       setStep("session-info");
-      toast.error("Erreur lors de la connexion à la session");
+      toast.error(error.message || "Erreur lors de la connexion à la session");
     }
   };
 
@@ -169,7 +200,11 @@ const SessionJoin = () => {
             autoComplete="off"
             disabled={loading}
             onChange={(e) => {
-              e.target.value = e.target.value.toUpperCase();
+              const value = e.target.value
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, "");
+              e.target.value = value;
+              setValue("sessionCode", value);
             }}
           />
           {errors.sessionCode && (
@@ -181,8 +216,8 @@ const SessionJoin = () => {
 
         <button
           type="submit"
-          disabled={loading || !sessionCode}
-          className="w-full inline-flex items-center justify-center px-4 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          disabled={loading || !isCodeValid}
+          className="w-full inline-flex items-center justify-center px-4 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
         >
           {loading ? <LoadingSpinner size="sm" className="mr-2" /> : null}
           {loading ? "Recherche..." : "Rechercher la session"}
@@ -212,68 +247,63 @@ const SessionJoin = () => {
   const renderSessionInfoStep = () => (
     <div className="max-w-md w-full mx-auto">
       <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-green-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-          <CheckCircleIcon className="h-8 w-8 text-white" />
+        <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-blue-500 rounded-xl flex items-center justify-center mx-auto mb-4">
+          <UserGroupIcon className="h-8 w-8 text-white" />
         </div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           Session trouvée !
         </h1>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          Entrez vos informations pour rejoindre
+        </p>
       </div>
 
+      {/* Informations de la session */}
       {sessionInfo && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            {sessionInfo.title}
-          </h2>
-
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">Quiz:</span>
-              <span className="font-medium text-gray-900 dark:text-white">
-                {sessionInfo.quiz?.title}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">
-                Formateur:
-              </span>
-              <span className="font-medium text-gray-900 dark:text-white">
-                {sessionInfo.host?.firstName || sessionInfo.host?.username}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">
-                Participants:
-              </span>
-              <span className="font-medium text-gray-900 dark:text-white">
-                {sessionInfo.participantCount || 0} /{" "}
-                {sessionInfo.settings?.maxParticipants || 100}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">Statut:</span>
-              <span
-                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  sessionInfo.status === "waiting"
-                    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                {sessionInfo.title}
+              </h3>
+              {sessionInfo.quiz && (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {sessionInfo.quiz.title}
+                </p>
+              )}
+              {sessionInfo.host && (
+                <p className="text-sm text-gray-500 dark:text-gray-500">
+                  Animé par{" "}
+                  {sessionInfo.host.displayName || sessionInfo.host.username}
+                </p>
+              )}
+              <div className="mt-2 flex items-center space-x-4 text-sm">
+                <span className="text-gray-600 dark:text-gray-400">
+                  {sessionInfo.participantCount} participants
+                </span>
+                <span
+                  className={`px-2 py-1 text-xs rounded-full ${
+                    sessionInfo.status === "waiting"
+                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                      : sessionInfo.status === "active"
+                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                      : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+                  }`}
+                >
+                  {sessionInfo.status === "waiting"
+                    ? "En attente"
                     : sessionInfo.status === "active"
-                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                    : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-                }`}
-              >
-                {sessionInfo.status === "waiting"
-                  ? "En attente"
-                  : sessionInfo.status === "active"
-                  ? "En cours"
-                  : sessionInfo.status}
-              </span>
+                    ? "En cours"
+                    : sessionInfo.status}
+                </span>
+              </div>
             </div>
           </div>
 
-          {sessionInfo.quiz?.description && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {sessionInfo.quiz.description}
+          {!sessionInfo.canJoin && (
+            <div className="mt-3 p-3 bg-orange-100 dark:bg-orange-900 rounded border-l-4 border-orange-400">
+              <p className="text-sm text-orange-800 dark:text-orange-200">
+                Cette session n'accepte plus de nouveaux participants.
               </p>
             </div>
           )}
@@ -293,6 +323,10 @@ const SessionJoin = () => {
                 minLength: {
                   value: 2,
                   message: "Le nom doit contenir au moins 2 caractères",
+                },
+                maxLength: {
+                  value: 30,
+                  message: "Le nom ne peut dépasser 30 caractères",
                 },
               })}
               type="text"
@@ -329,7 +363,10 @@ const SessionJoin = () => {
         <div className="flex space-x-3">
           <button
             type="button"
-            onClick={() => setStep("enter-code")}
+            onClick={() => {
+              setStep("enter-code");
+              setSessionInfo(null);
+            }}
             className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md transition-colors"
             disabled={joining}
           >
@@ -337,10 +374,11 @@ const SessionJoin = () => {
           </button>
           <button
             type="submit"
-            disabled={joining || !participantName}
-            className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium rounded-md transition-colors"
+            disabled={joining || !isNameValid || !sessionInfo?.canJoin}
+            className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors"
           >
-            Rejoindre
+            {joining ? <LoadingSpinner size="sm" className="mr-1" /> : null}
+            {joining ? "Connexion..." : "Rejoindre"}
           </button>
         </div>
       </form>

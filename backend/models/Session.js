@@ -262,61 +262,127 @@ Session.prototype.removeParticipant = function (participantId) {
   return this.update({ participants });
 };
 
+// Session.prototype.updateParticipantConnection = function (
+//   participantId,
+//   isConnected
+// ) {
+//   const participants = [...(this.participants || [])];
+//   const participantIndex = participants.findIndex(
+//     (p) => p.id === participantId
+//   );
+
+//   if (participantIndex !== -1) {
+//     participants[participantIndex].isConnected = isConnected;
+//     if (!isConnected) {
+//       participants[participantIndex].disconnectedAt = new Date();
+//     }
+//     return this.update({ participants });
+//   }
+
+//   return Promise.resolve(this);
+// };
 Session.prototype.updateParticipantConnection = function (
   participantId,
   isConnected
 ) {
-  const participants = [...(this.participants || [])];
-  const participantIndex = participants.findIndex(
-    (p) => p.id === participantId
-  );
+  try {
+    const participants = [...(this.participants || [])];
+    const participantIndex = participants.findIndex(
+      (p) => p.id === participantId
+    );
 
-  if (participantIndex !== -1) {
-    participants[participantIndex].isConnected = isConnected;
-    if (!isConnected) {
-      participants[participantIndex].disconnectedAt = new Date();
+    if (participantIndex !== -1) {
+      participants[participantIndex].isConnected = isConnected;
+      participants[participantIndex].lastSeen = new Date();
+
+      return this.update({ participants });
     }
-    return this.update({ participants });
-  }
 
-  return Promise.resolve(this);
+    return Promise.resolve(this);
+  } catch (error) {
+    console.error("Erreur lors de la mise à jour de connexion:", error);
+    throw error;
+  }
 };
 
+// Session.prototype.addResponse = function (participantId, questionId, response) {
+//   const responses = { ...this.responses };
+
+//   if (!responses[questionId]) {
+//     responses[questionId] = {};
+//   }
+
+//   responses[questionId][participantId] = {
+//     answer: response.answer,
+//     submittedAt: new Date(),
+//     timeSpent: response.timeSpent || 0,
+//   };
+
+//   // Mettre à jour le score du participant
+//   const participants = [...(this.participants || [])];
+//   const participantIndex = participants.findIndex(
+//     (p) => p.id === participantId
+//   );
+
+//   if (participantIndex !== -1) {
+//     if (!participants[participantIndex].responses) {
+//       participants[participantIndex].responses = {};
+//     }
+//     participants[participantIndex].responses[questionId] = response;
+
+//     // Calculer le nouveau score si fourni
+//     if (response.points !== undefined) {
+//       participants[participantIndex].score =
+//         (participants[participantIndex].score || 0) + response.points;
+//     }
+//   }
+
+//   return this.update({ responses, participants });
+// };
 Session.prototype.addResponse = function (participantId, questionId, response) {
-  const responses = { ...this.responses };
+  try {
+    const responses = { ...(this.responses || {}) };
+    const participants = [...(this.participants || [])];
 
-  if (!responses[questionId]) {
-    responses[questionId] = {};
-  }
-
-  responses[questionId][participantId] = {
-    answer: response.answer,
-    submittedAt: new Date(),
-    timeSpent: response.timeSpent || 0,
-  };
-
-  // Mettre à jour le score du participant
-  const participants = [...(this.participants || [])];
-  const participantIndex = participants.findIndex(
-    (p) => p.id === participantId
-  );
-
-  if (participantIndex !== -1) {
-    if (!participants[participantIndex].responses) {
-      participants[participantIndex].responses = {};
+    // Initialiser les réponses pour cette question si nécessaire
+    if (!responses[questionId]) {
+      responses[questionId] = {};
     }
-    participants[participantIndex].responses[questionId] = response;
 
-    // Calculer le nouveau score si fourni
-    if (response.points !== undefined) {
-      participants[participantIndex].score =
-        (participants[participantIndex].score || 0) + response.points;
+    // Ajouter la réponse
+    responses[questionId][participantId] = {
+      answer: response.answer,
+      submittedAt: response.submittedAt || new Date(),
+      timeSpent: response.timeSpent || 0,
+      points: response.points || 0,
+      isCorrect: response.isCorrect || false,
+    };
+
+    // Mettre à jour le participant
+    const participantIndex = participants.findIndex(
+      (p) => p.id === participantId
+    );
+
+    if (participantIndex !== -1) {
+      if (!participants[participantIndex].responses) {
+        participants[participantIndex].responses = {};
+      }
+
+      participants[participantIndex].responses[questionId] = response;
+
+      // Mettre à jour le score
+      if (response.points !== undefined) {
+        const currentScore = participants[participantIndex].score || 0;
+        participants[participantIndex].score = currentScore + response.points;
+      }
     }
-  }
 
-  return this.update({ responses, participants });
+    return this.update({ responses, participants });
+  } catch (error) {
+    console.error("Erreur lors de l'ajout de réponse:", error);
+    throw error;
+  }
 };
-
 Session.prototype.nextQuestion = function () {
   const newIndex = this.currentQuestionIndex + 1;
   return this.update({
@@ -336,7 +402,29 @@ Session.prototype.previousQuestion = function () {
   return Promise.resolve(this);
 };
 
+// Session.prototype.startSession = function () {
+//   return this.update({
+//     status: "active",
+//     startedAt: new Date(),
+//     currentQuestionIndex: 0,
+//     currentQuestionStartedAt: new Date(),
+//   });
+// };
 Session.prototype.startSession = function () {
+  // Vérifications avant démarrage
+  if (this.status !== "waiting") {
+    throw new Error(
+      "La session ne peut être démarrée que depuis l'état 'waiting'"
+    );
+  }
+
+  const participants = this.participants || [];
+  if (participants.length === 0) {
+    throw new Error(
+      "Au moins un participant est requis pour démarrer la session"
+    );
+  }
+
   return this.update({
     status: "active",
     startedAt: new Date(),
@@ -345,64 +433,216 @@ Session.prototype.startSession = function () {
   });
 };
 
+// Session.prototype.pauseSession = function () {
+//   return this.update({ status: "paused" });
+// };
+
+// Session.prototype.resumeSession = function () {
+//   return this.update({
+//     status: "active",
+//     currentQuestionStartedAt: new Date(),
+//   });
+// };
 Session.prototype.pauseSession = function () {
+  if (this.status !== "active") {
+    throw new Error("Seules les sessions actives peuvent être mises en pause");
+  }
+
   return this.update({ status: "paused" });
 };
 
+// Méthode resumeSession corrigée avec validation
 Session.prototype.resumeSession = function () {
+  if (this.status !== "paused") {
+    throw new Error("Seules les sessions en pause peuvent être reprises");
+  }
+
   return this.update({
     status: "active",
     currentQuestionStartedAt: new Date(),
   });
 };
 
+// Session.prototype.endSession = function () {
+//   return this.update({
+//     status: "finished",
+//     endedAt: new Date(),
+//   });
+// };
+
 Session.prototype.endSession = function () {
-  return this.update({
-    status: "finished",
-    endedAt: new Date(),
-  });
-};
+  const now = new Date();
 
-Session.prototype.getLeaderboard = function () {
-  const participants = [...(this.participants || [])];
-
-  return participants
-    .filter((p) => p.score !== undefined)
-    .sort((a, b) => b.score - a.score)
-    .map((participant, index) => ({
-      rank: index + 1,
-      id: participant.id,
-      name: participant.name,
-      score: participant.score,
-      avatar: participant.avatar,
-    }));
-};
-
-Session.prototype.getQuestionResults = function (questionId) {
-  const responses = this.responses[questionId] || {};
+  // Calculer les statistiques finales
   const participants = this.participants || [];
+  const totalParticipants = participants.length;
+  const totalResponses = Object.keys(this.responses || {}).length;
 
-  const results = {
-    totalResponses: Object.keys(responses).length,
-    totalParticipants: participants.length,
-    responses: [],
+  let totalScore = 0;
+  let completedParticipants = 0;
+
+  participants.forEach((participant) => {
+    if (participant.score !== undefined && participant.score !== null) {
+      totalScore += participant.score;
+      completedParticipants++;
+    }
+  });
+
+  const averageScore =
+    completedParticipants > 0 ? totalScore / completedParticipants : 0;
+  const completionRate =
+    totalParticipants > 0
+      ? (completedParticipants / totalParticipants) * 100
+      : 0;
+
+  const finalStats = {
+    totalParticipants,
+    totalResponses,
+    averageScore: Math.round(averageScore * 100) / 100,
+    completionRate: Math.round(completionRate * 100) / 100,
+    duration: this.startedAt
+      ? Math.floor((now - new Date(this.startedAt)) / 1000)
+      : 0,
   };
 
-  Object.entries(responses).forEach(([participantId, response]) => {
-    const participant = participants.find((p) => p.id === participantId);
-    results.responses.push({
-      participantId,
-      participantName: participant?.name || "Anonyme",
-      answer: response.answer,
-      submittedAt: response.submittedAt,
-      timeSpent: response.timeSpent,
-    });
+  return this.update({
+    status: "finished",
+    endedAt: now,
+    stats: {
+      ...this.stats,
+      ...finalStats,
+    },
   });
-
-  return results;
 };
 
+// Session.prototype.getLeaderboard = function () {
+//   const participants = [...(this.participants || [])];
+
+//   return participants
+//     .filter((p) => p.score !== undefined)
+//     .sort((a, b) => b.score - a.score)
+//     .map((participant, index) => ({
+//       rank: index + 1,
+//       id: participant.id,
+//       name: participant.name,
+//       score: participant.score,
+//       avatar: participant.avatar,
+//     }));
+// };
+Session.prototype.getLeaderboard = function () {
+  try {
+    const participants = [...(this.participants || [])];
+
+    return participants
+      .filter((p) => p.score !== undefined && p.score !== null)
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .map((participant, index) => ({
+        rank: index + 1,
+        id: participant.id,
+        name: participant.name || "Participant",
+        score: participant.score || 0,
+        avatar: participant.avatar || null,
+        isConnected: participant.isConnected || false,
+        lastSeen: participant.lastSeen || null,
+      }));
+  } catch (error) {
+    console.error("Erreur lors de la génération du leaderboard:", error);
+    return [];
+  }
+};
+// Session.prototype.getQuestionResults = function (questionId) {
+//   const responses = this.responses[questionId] || {};
+//   const participants = this.participants || [];
+
+//   const results = {
+//     totalResponses: Object.keys(responses).length,
+//     totalParticipants: participants.length,
+//     responses: [],
+//   };
+
+//   Object.entries(responses).forEach(([participantId, response]) => {
+//     const participant = participants.find((p) => p.id === participantId);
+//     results.responses.push({
+//       participantId,
+//       participantName: participant?.name || "Anonyme",
+//       answer: response.answer,
+//       submittedAt: response.submittedAt,
+//       timeSpent: response.timeSpent,
+//     });
+//   });
+
+//   return results;
+// };
+
 // Méthodes statiques
+Session.prototype.getQuestionResults = function (questionId) {
+  try {
+    const responses = (this.responses || {})[questionId] || {};
+    const participants = this.participants || [];
+
+    const results = {
+      questionId,
+      totalResponses: Object.keys(responses).length,
+      totalParticipants: participants.length,
+      responses: [],
+      stats: {
+        correctAnswers: 0,
+        averageTimeSpent: 0,
+        responseRate: 0,
+      },
+    };
+
+    let totalTimeSpent = 0;
+    let correctCount = 0;
+
+    Object.entries(responses).forEach(([participantId, response]) => {
+      const participant = participants.find((p) => p.id === participantId);
+
+      const responseData = {
+        participantId,
+        participantName: participant?.name || "Participant",
+        answer: response.answer,
+        submittedAt: response.submittedAt,
+        timeSpent: response.timeSpent || 0,
+        points: response.points || 0,
+        isCorrect: response.isCorrect || false,
+      };
+
+      results.responses.push(responseData);
+
+      // Calculer les statistiques
+      if (response.isCorrect) {
+        correctCount++;
+      }
+
+      totalTimeSpent += response.timeSpent || 0;
+    });
+
+    // Calculer les moyennes
+    const responseCount = results.responses.length;
+    if (responseCount > 0) {
+      results.stats.averageTimeSpent = Math.round(
+        totalTimeSpent / responseCount
+      );
+      results.stats.correctAnswers = correctCount;
+      results.stats.responseRate = Math.round(
+        (responseCount / results.totalParticipants) * 100
+      );
+    }
+
+    return results;
+  } catch (error) {
+    console.error("Erreur lors de la récupération des résultats:", error);
+    return {
+      questionId,
+      totalResponses: 0,
+      totalParticipants: 0,
+      responses: [],
+      stats: { correctAnswers: 0, averageTimeSpent: 0, responseRate: 0 },
+    };
+  }
+};
+
 Session.findByCode = function (code) {
   return this.findOne({
     where: { code: code.toUpperCase() },
