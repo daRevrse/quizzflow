@@ -10,6 +10,7 @@ import {
 import io from "socket.io-client";
 import { useAuthStore } from "../stores/authStore";
 import toast from "react-hot-toast";
+import { sessionService } from "../services/api";
 
 const SocketContext = createContext();
 
@@ -29,6 +30,14 @@ export const SocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
   const { accessToken, user } = useAuthStore();
+
+  // État de la session actuelle
+  const [sessionState, setSessionState] = useState({
+    sessionId: null,
+    participantId: null,
+    isHost: false,
+    status: "disconnected", // disconnected, joining, joined, playing
+  });
 
   // Initialiser la connexion Socket.IO
   useEffect(() => {
@@ -145,86 +154,165 @@ export const SocketProvider = ({ children }) => {
   //   [socket, isConnected]
   // );
 
+  // const joinSession = useCallback(
+  //   async (sessionId, participantData) => {
+  //     if (!sessionId || !participantData) {
+  //       toast.error("Informations de session manquantes");
+  //       return false;
+  //     }
+
+  //     // Validation côté client
+  //     if (
+  //       !participantData.participantName ||
+  //       participantData.participantName.trim().length < 2
+  //     ) {
+  //       toast.error("Nom de participant requis (minimum 2 caractères)");
+  //       return false;
+  //     }
+
+  //     try {
+  //       setSessionState((prev) => ({
+  //         ...prev,
+  //         status: "connecting",
+  //       }));
+
+  //       console.log("📡 Jointure session via API:", {
+  //         sessionId,
+  //         participantData,
+  //       });
+
+  //       // ✅ ÉTAPE 1: Appel API pour ajouter le participant en BDD
+  //       const apiResponse = await sessionService.joinSession(
+  //         sessionId,
+  //         participantData
+  //       );
+
+  //       console.log("✅ Participant ajouté en BDD:", apiResponse);
+
+  //       // ✅ ÉTAPE 2: Connexion Socket.IO avec les données du participant
+  //       if (socket && isConnected && apiResponse.participant) {
+  //         const socketData = {
+  //           sessionId: apiResponse.session.id,
+  //           participantId: apiResponse.participant.id,
+  //           participantName: apiResponse.participant.name,
+  //           role: "participant",
+  //         };
+
+  //         console.log("🔌 Connexion Socket.IO:", socketData);
+  //         socket.emit("join_session_socket", socketData);
+
+  //         // Mettre à jour l'état local
+  //         setSessionState((prev) => ({
+  //           ...prev,
+  //           sessionId: apiResponse.session.id,
+  //           participantId: apiResponse.participant.id,
+  //           participantName: apiResponse.participant.name,
+  //           status: "joined",
+  //           currentRoom: `session_${apiResponse.session.id}`,
+  //         }));
+
+  //         return true;
+  //       } else {
+  //         throw new Error("Connexion Socket.IO non disponible");
+  //       }
+  //     } catch (error) {
+  //       console.error("❌ Erreur jointure session:", error);
+
+  //       setSessionState((prev) => ({
+  //         ...prev,
+  //         status: "disconnected",
+  //       }));
+
+  //       const errorMessage =
+  //         error.message || "Erreur lors de la connexion à la session";
+  //       toast.error(errorMessage);
+  //       return false;
+  //     }
+  //   },
+  //   [isConnected, setSessionState]
+  // );
+  // SocketContext.js - Modifier la fonction joinSession
   const joinSession = useCallback(
-    (sessionCode, participantName, isAnonymous = false) => {
-      console.log(`🔄 joinSession appelé avec:`, {
-        sessionCode,
-        participantName,
-        isAnonymous,
-        socketExists: !!socket,
-        isConnected,
-      });
-
-      // Validation de la connexion
-      if (!socket || !isConnected) {
-        console.error("❌ Socket non connecté");
-        toast.error("Connexion non établie");
+    async (sessionId, participantData) => {
+      if (!sessionId || !participantData) {
+        toast.error("Informations de session manquantes");
         return false;
       }
 
-      // Validation stricte des paramètres
-      if (!sessionCode) {
-        console.error("❌ sessionCode manquant:", sessionCode);
-        toast.error("Code de session manquant");
-        return false;
-      }
-
-      if (!participantName) {
-        console.error("❌ participantName manquant:", participantName);
-        toast.error("Nom de participant manquant");
-        return false;
-      }
-
-      // Nettoyage et validation des données
-      const cleanSessionCode = String(sessionCode).trim().toUpperCase();
-      const cleanParticipantName = String(participantName).trim();
-      const cleanIsAnonymous = Boolean(isAnonymous);
-
-      // Validation des longueurs
-      if (cleanSessionCode.length < 6) {
-        console.error("❌ Code trop court:", cleanSessionCode);
-        toast.error("Code de session requis (minimum 6 caractères)");
-        return false;
-      }
-
-      if (cleanParticipantName.length < 2) {
-        console.error("❌ Nom trop court:", cleanParticipantName);
+      // Validation côté client
+      if (
+        !participantData.participantName ||
+        participantData.participantName.trim().length < 2
+      ) {
         toast.error("Nom de participant requis (minimum 2 caractères)");
         return false;
       }
 
-      // Préparation des données avec validation finale
-      const joinData = {
-        sessionCode: cleanSessionCode,
-        participantName: cleanParticipantName,
-        isAnonymous: cleanIsAnonymous,
-      };
-
-      console.log("🎯 Données finales à envoyer:", joinData);
-
-      // Vérification finale avant envoi
-      if (!joinData.sessionCode || !joinData.participantName) {
-        console.error("❌ Données finales invalides:", joinData);
-        toast.error("Erreur de validation des données");
-        return false;
-      }
-
-      console.log("📡 Envoi join_session via socket.emit");
-
       try {
-        // Envoi avec gestion d'erreur
-        socket.emit("join_session", joinData);
+        setSessionState((prev) => ({
+          ...prev,
+          status: "connecting",
+        }));
 
-        // Log de confirmation d'envoi
-        console.log("✅ join_session envoyé avec succès");
-        return true;
+        console.log("📡 Jointure session via API:", {
+          sessionId,
+          participantData,
+        });
+
+        // ✅ ÉTAPE 1: Appel API pour ajouter le participant en BDD
+        const apiResponse = await sessionService.joinSession(
+          sessionId,
+          participantData
+        );
+
+        console.log("✅ Participant ajouté en BDD:", apiResponse);
+
+        // ✅ ÉTAPE 2: Connexion Socket.IO avec les données du participant
+        if (socket && isConnected && apiResponse.participant) {
+          const socketData = {
+            sessionId: apiResponse.session.id,
+            participantId: apiResponse.participant.id,
+            participantName: apiResponse.participant.name,
+            role: "participant",
+          };
+
+          console.log("🔌 Connexion Socket.IO:", socketData);
+          socket.emit("join_session_socket", socketData);
+
+          // Mettre à jour l'état local
+          setSessionState((prev) => ({
+            ...prev,
+            sessionId: apiResponse.session.id,
+            participantId: apiResponse.participant.id,
+            participantName: apiResponse.participant.name,
+            status: "joined",
+            currentRoom: `session_${apiResponse.session.id}`,
+          }));
+
+          // ✅ RETOURNER LES DONNÉES POUR LA NAVIGATION
+          return {
+            success: true,
+            session: apiResponse.session,
+            participant: apiResponse.participant,
+          };
+        } else {
+          throw new Error("Connexion Socket.IO non disponible");
+        }
       } catch (error) {
-        console.error("❌ Erreur lors de l'envoi:", error);
-        toast.error("Erreur lors de l'envoi de la requête");
-        return false;
+        console.error("❌ Erreur jointure session:", error);
+
+        setSessionState((prev) => ({
+          ...prev,
+          status: "disconnected",
+        }));
+
+        const errorMessage =
+          error.message || "Erreur lors de la connexion à la session";
+        toast.error(errorMessage);
+        return { success: false, error: errorMessage };
       }
     },
-    [socket, isConnected]
+    [socket, isConnected, setSessionState]
   );
 
   const leaveSession = useCallback(() => {
@@ -316,14 +404,6 @@ export const SocketProvider = ({ children }) => {
       socket.emit("participant_heartbeat");
     }
   }, [socket, isConnected]);
-
-  // État de la session actuelle
-  const [sessionState, setSessionState] = useState({
-    sessionId: null,
-    participantId: null,
-    isHost: false,
-    status: "disconnected", // disconnected, joining, joined, playing
-  });
 
   // Gestionnaires d'événements de session communs
   useEffect(() => {

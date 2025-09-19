@@ -34,23 +34,141 @@ const SessionResults = () => {
     const loadResults = async () => {
       try {
         setLoading(true);
-        const response = await sessionService.getSessionResults(sessionId);
-        setResults(response);
+
+        // Utiliser getSession au lieu de getSessionResults
+        const response = await sessionService.getSession(sessionId);
+        const sessionData = response.session;
+
+        if (!sessionData) {
+          throw new Error("Session non trouvée");
+        }
+
+        // Transformer les données de session en format de résultats
+        const transformedResults = {
+          session: {
+            id: sessionData.id,
+            code: sessionData.code,
+            title: sessionData.title,
+            status: sessionData.status,
+            startedAt: sessionData.startedAt,
+            endedAt: sessionData.endedAt,
+            createdAt: sessionData.createdAt,
+            updatedAt: sessionData.updatedAt,
+            stats: sessionData.stats || {
+              totalParticipants: sessionData.participantCount || 0,
+              averageScore: 0,
+              completionRate: 0,
+            },
+          },
+
+          // Participants avec formatage pour les résultats
+          participants: (sessionData.participants || []).map((participant) => ({
+            id: participant.id,
+            name: participant.name,
+            isAnonymous: participant.isAnonymous || false,
+            score: participant.score || 0,
+            joinedAt: participant.joinedAt,
+            lastSeen: participant.lastSeen,
+            isConnected: participant.isConnected || false,
+            responses: participant.responses || {},
+            userId: participant.userId,
+          })),
+
+          // Créer le classement basé sur les participants
+          leaderboard: (sessionData.participants || [])
+            .filter((p) => p && typeof p.score === "number")
+            .sort((a, b) => (b.score || 0) - (a.score || 0))
+            .map((participant, index) => ({
+              rank: index + 1,
+              id: participant.id,
+              name: participant.name,
+              score: participant.score || 0,
+              isAnonymous: participant.isAnonymous || false,
+              isConnected: participant.isConnected || false,
+            })),
+
+          // Quiz associé
+          quiz: sessionData.quiz || null,
+
+          // Construire les résultats par question à partir des réponses
+          questionResults: (() => {
+            const responses = sessionData.responses || {};
+            const results = {};
+
+            Object.keys(responses).forEach((questionId) => {
+              const questionResponses = responses[questionId] || [];
+
+              results[questionId] = {
+                questionId: questionId,
+                totalResponses: questionResponses.length,
+                totalParticipants: sessionData.participantCount || 0,
+                responses: questionResponses.map((response) => ({
+                  participantId: response.participantId,
+                  participantName:
+                    (sessionData.participants || []).find(
+                      (p) => p.id === response.participantId
+                    )?.name || "Participant inconnu",
+                  answer: response.answer,
+                  isCorrect: response.isCorrect || false,
+                  points: response.points || 0,
+                  timeSpent: response.timeSpent || 0,
+                  submittedAt: response.submittedAt,
+                })),
+                stats: {
+                  correctAnswers: questionResponses.filter((r) => r.isCorrect)
+                    .length,
+                  averageTimeSpent:
+                    questionResponses.length > 0
+                      ? questionResponses.reduce(
+                          (sum, r) => sum + (r.timeSpent || 0),
+                          0
+                        ) / questionResponses.length
+                      : 0,
+                  responseRate:
+                    sessionData.participantCount > 0
+                      ? Math.round(
+                          (questionResponses.length /
+                            sessionData.participantCount) *
+                            100
+                        )
+                      : 0,
+                },
+              };
+            });
+
+            return results;
+          })(),
+        };
+
+        setResults(transformedResults);
 
         // Sélectionner la première question par défaut
-        if (response.quiz?.questions?.length > 0) {
-          setSelectedQuestion(response.quiz.questions[0]);
+        if (transformedResults.quiz?.questions?.length > 0) {
+          setSelectedQuestion(transformedResults.quiz.questions[0]);
         }
       } catch (error) {
         console.error("Erreur lors du chargement des résultats:", error);
-        toast.error("Erreur lors du chargement des résultats");
-        navigate("/sessions");
+
+        if (
+          error.message?.includes("non trouvée") ||
+          error.response?.status === 404
+        ) {
+          toast.error("Session non trouvée");
+          navigate("/sessions");
+        } else if (error.response?.status === 403) {
+          toast.error("Vous n'avez pas accès à cette session");
+          navigate("/sessions");
+        } else {
+          toast.error("Erreur lors du chargement des résultats");
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    loadResults();
+    if (sessionId) {
+      loadResults();
+    }
   }, [sessionId, navigate]);
 
   // Fonction d'export (simple - peut être améliorée)
@@ -62,13 +180,15 @@ const SessionResults = () => {
       participants: results.participants,
       leaderboard: results.leaderboard,
       questionResults: results.questionResults,
+      quiz: results.quiz,
       exportedAt: new Date().toISOString(),
-      exportedBy: user?.username,
+      exportedBy: user?.username || user?.firstName || "Utilisateur inconnu",
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: "application/json",
     });
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -477,7 +597,7 @@ const SessionResults = () => {
                     <div className="space-y-2">
                       {quiz?.questions?.map((question, index) => (
                         <button
-                          key={question.id}
+                          key={question.order}
                           onClick={() => setSelectedQuestion(question)}
                           className={`w-full text-left p-3 rounded-lg border transition-colors ${
                             selectedQuestion?.id === question.id

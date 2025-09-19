@@ -8,10 +8,11 @@ const API_BASE_URL =
 // Instance Axios principale
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 15000, // Augmenté pour les requêtes lentes
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true, // Important pour les cookies de session
 });
 
 // Intercepteur pour ajouter automatiquement le token
@@ -26,53 +27,105 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Services API organisés par domaine
+// Intercepteur pour gérer les erreurs de réponse
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Si token expiré et qu'on n'a pas déjà essayé de le rafraîchir
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      originalRequest.url !== "/auth/refresh"
+    ) {
+      originalRequest._retry = true;
+
+      try {
+        const refreshToken = Cookies.get("refreshToken");
+        if (refreshToken) {
+          const response = await apiClient.post("/auth/refresh", {
+            refreshToken,
+          });
+          const { accessToken } = response.data;
+
+          Cookies.set("accessToken", accessToken, { expires: 1 });
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+
+          return apiClient(originalRequest);
+        }
+      } catch (refreshError) {
+        // Refresh failed, redirect to login
+        Cookies.remove("accessToken");
+        Cookies.remove("refreshToken");
+        window.location.href = "/login";
+        return Promise.reject(refreshError);
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 // Service d'authentification
 export const authService = {
-  // Connexion
   login: async (credentials) => {
-    const response = await apiClient.post("/auth/login", credentials);
-    return response.data;
+    try {
+      const response = await apiClient.post("/auth/login", credentials);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          "Erreur de connexion"
+      );
+    }
   },
 
-  // Inscription
   register: async (userData) => {
-    const response = await apiClient.post("/auth/register", userData);
-    return response.data;
+    try {
+      const response = await apiClient.post("/auth/register", userData);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          "Erreur d'inscription"
+      );
+    }
   },
 
-  // Déconnexion
   logout: async () => {
-    const response = await apiClient.post("/auth/logout");
-    return response.data;
+    try {
+      const response = await apiClient.post("/auth/logout");
+      return response.data;
+    } catch (error) {
+      console.warn("Erreur lors de la déconnexion:", error);
+      // Continuer même en cas d'erreur côté serveur
+      return { success: true };
+    }
   },
 
-  // Rafraîchir le token
   refreshToken: async (refreshToken) => {
     const response = await apiClient.post("/auth/refresh", { refreshToken });
     return response.data;
   },
 
-  // Récupérer le profil utilisateur
   getProfile: async () => {
     const response = await apiClient.get("/auth/me");
     return response.data;
   },
 
-  // Mettre à jour le profil
   updateProfile: async (profileData) => {
     const response = await apiClient.put("/auth/me", profileData);
     return response.data;
   },
 
-  // Changer le mot de passe
   changePassword: async (passwordData) => {
     const response = await apiClient.put("/auth/password", passwordData);
     return response.data;
   },
 
-  // Supprimer le compte
   deleteAccount: async (passwordData) => {
     const response = await apiClient.delete("/auth/account", {
       data: passwordData,
@@ -80,7 +133,6 @@ export const authService = {
     return response.data;
   },
 
-  // Vérifier un token
   verifyToken: async () => {
     const response = await apiClient.get("/auth/verify");
     return response.data;
@@ -89,212 +141,380 @@ export const authService = {
 
 // Service de gestion des quiz
 export const quizService = {
-  // Récupérer la liste des quiz avec filtres
   getQuizzes: async (params = {}) => {
     const response = await apiClient.get("/quiz", { params });
     return response.data;
   },
 
-  // Récupérer mes quiz
   getMyQuizzes: async (params = {}) => {
     const response = await apiClient.get("/quiz/my", { params });
     return response.data;
   },
 
-  // Récupérer les catégories
   getCategories: async () => {
     const response = await apiClient.get("/quiz/categories");
     return response.data;
   },
 
-  // Récupérer un quiz spécifique
   getQuiz: async (quizId) => {
+    if (!quizId) {
+      throw new Error("ID de quiz requis");
+    }
     const response = await apiClient.get(`/quiz/${quizId}`);
     return response.data;
   },
 
-  // Créer un quiz
   createQuiz: async (quizData) => {
     const response = await apiClient.post("/quiz", quizData);
     return response.data;
   },
 
-  // Mettre à jour un quiz
   updateQuiz: async (quizId, quizData) => {
+    if (!quizId) {
+      throw new Error("ID de quiz requis");
+    }
     const response = await apiClient.put(`/quiz/${quizId}`, quizData);
     return response.data;
   },
 
-  // Supprimer un quiz
   deleteQuiz: async (quizId) => {
+    if (!quizId) {
+      throw new Error("ID de quiz requis");
+    }
     const response = await apiClient.delete(`/quiz/${quizId}`);
     return response.data;
   },
 
-  // Dupliquer un quiz
   duplicateQuiz: async (quizId) => {
+    if (!quizId) {
+      throw new Error("ID de quiz requis");
+    }
     const response = await apiClient.post(`/quiz/${quizId}/duplicate`);
     return response.data;
   },
 };
 
-// Service de gestion des sessions
+// Service de gestion des sessions - CORRIGÉ ET OPTIMISÉ
 export const sessionService = {
-  // Récupérer les résultats détaillés
-  getResults: async (sessionId) => {
-    const response = await apiClient.get(`/session/${sessionId}/results`);
-    return response.data;
-  },
-
   // Récupérer la liste des sessions avec filtres
   getSessions: async (params = {}) => {
-    const queryParams = new URLSearchParams();
+    try {
+      const queryParams = new URLSearchParams();
 
-    // Paramètres de pagination
-    if (params.page) queryParams.set("page", params.page);
-    if (params.limit) queryParams.set("limit", params.limit);
+      // Paramètres de pagination
+      if (params.page) queryParams.set("page", params.page.toString());
+      if (params.limit) queryParams.set("limit", params.limit.toString());
 
-    // Filtres
-    if (params.search) queryParams.set("search", params.search);
-    if (params.status) queryParams.set("status", params.status);
-    if (params.quizId) queryParams.set("quizId", params.quizId);
-    if (params.hostId) queryParams.set("hostId", params.hostId);
-    if (params.my) queryParams.set("my", params.my);
+      // Filtres
+      if (params.search && params.search.trim()) {
+        queryParams.set("search", params.search.trim());
+      }
+      if (params.status && params.status !== "all") {
+        queryParams.set("status", params.status);
+      }
+      if (params.quizId) queryParams.set("quizId", params.quizId.toString());
+      if (params.hostId) queryParams.set("hostId", params.hostId.toString());
+      if (params.my === true || params.my === "true") {
+        queryParams.set("my", "true");
+      }
 
-    const response = await apiClient.get(`/session?${queryParams.toString()}`);
-    return response.data;
+      const response = await apiClient.get(
+        `/session?${queryParams.toString()}`
+      );
+      return response.data;
+    } catch (error) {
+      console.error("❌ getSessions error:", error);
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la récupération des sessions"
+      );
+    }
   },
 
-  // Récupérer une session spécifique
+  // Récupérer les détails d'une session par ID
   getSession: async (sessionId) => {
-    const response = await apiClient.get(`/session/${sessionId}`);
-    return response.data;
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    try {
+      console.log("📡 sessionService.getSession:", sessionId);
+
+      const response = await apiClient.get(`/session/${sessionId}`);
+
+      console.log("✅ getSession response:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("❌ getSession error:", error);
+
+      if (error.response?.status === 404) {
+        throw new Error("Session non trouvée");
+      }
+
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la récupération de la session"
+      );
+    }
   },
 
-  // Récupérer une session par code
+  // Récupérer une session par son code
   getSessionByCode: async (code) => {
-    const response = await apiClient.get(`/session/code/${code}`);
-    return response.data;
+    if (!code || typeof code !== "string" || code.length !== 6) {
+      throw new Error("Code de session invalide (doit faire 6 caractères)");
+    }
+
+    try {
+      console.log("📡 sessionService.getSessionByCode:", code);
+
+      const response = await apiClient.get(
+        `/session/code/${code.toUpperCase().trim()}`
+      );
+
+      console.log("✅ getSessionByCode response:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("❌ getSessionByCode error:", error);
+
+      if (error.response?.status === 404) {
+        throw new Error("Session non trouvée avec ce code");
+      }
+
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la recherche de la session"
+      );
+    }
   },
 
-  // Créer une session
+  // Créer une nouvelle session
   createSession: async (sessionData) => {
-    const response = await apiClient.post("/session", sessionData);
-    return response.data;
+    if (!sessionData.quizId || !sessionData.title) {
+      throw new Error("Quiz et titre requis pour créer une session");
+    }
+
+    try {
+      console.log("📡 sessionService.createSession:", sessionData);
+
+      const cleanData = {
+        quizId: parseInt(sessionData.quizId),
+        title: sessionData.title.trim(),
+        description: sessionData.description
+          ? sessionData.description.trim()
+          : undefined,
+        settings: {
+          allowAnonymous: sessionData.settings?.allowAnonymous !== false,
+          allowLateJoin: sessionData.settings?.allowLateJoin || false,
+          showLeaderboard: sessionData.settings?.showLeaderboard !== false,
+          maxParticipants: sessionData.settings?.maxParticipants || 100,
+          autoAdvance: sessionData.settings?.autoAdvance || false,
+          shuffleQuestions: sessionData.settings?.shuffleQuestions || false,
+          shuffleAnswers: sessionData.settings?.shuffleAnswers || false,
+        },
+      };
+
+      const response = await apiClient.post("/session", cleanData);
+
+      console.log("✅ createSession response:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("❌ createSession error:", error);
+
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la création de la session"
+      );
+    }
   },
 
-  // Mettre à jour une session
-  updateSession: async (sessionId, sessionData) => {
-    const response = await apiClient.put(`/session/${sessionId}`, sessionData);
-    return response.data;
-  },
-
-  // Supprimer une session
-  deleteSession: async (sessionId) => {
-    const response = await apiClient.delete(`/session/${sessionId}`);
-    return response.data;
-  },
-
-  // Actions de session
-  startSession: async (sessionId) => {
-    const response = await apiClient.post(`/session/${sessionId}/start`);
-    return response.data;
-  },
-
-  pauseSession: async (sessionId) => {
-    const response = await apiClient.post(`/session/${sessionId}/pause`);
-    return response.data;
-  },
-
-  resumeSession: async (sessionId) => {
-    const response = await apiClient.post(`/session/${sessionId}/resume`);
-    return response.data;
-  },
-
-  endSession: async (sessionId) => {
-    const response = await apiClient.post(`/session/${sessionId}/end`);
-    return response.data;
-  },
-
-  // Récupérer le classement
-  getLeaderboard: async (sessionId) => {
-    const response = await apiClient.get(`/session/${sessionId}/leaderboard`);
-    return response.data;
-  },
-
-  // Récupérer les résultats détaillés - NOUVELLE MÉTHODE
-  getSessionResults: async (sessionId) => {
-    const response = await apiClient.get(`/session/${sessionId}/results`);
-    return response.data;
-  },
-
+  // Rejoindre une session - MÉTHODE CORRIGÉE
   joinSession: async (sessionId, participantData) => {
-    // Validation des données côté client
     if (!sessionId) {
       throw new Error("ID de session requis");
     }
 
     if (
-      !participantData?.participantName ||
+      !participantData.participantName ||
+      typeof participantData.participantName !== "string" ||
       participantData.participantName.trim().length < 2
     ) {
       throw new Error("Nom de participant requis (minimum 2 caractères)");
     }
 
-    // Nettoyer les données
     const cleanData = {
       participantName: participantData.participantName.trim(),
       isAnonymous: Boolean(participantData.isAnonymous),
     };
 
-    console.log("📡 sessionService.joinSession:", {
-      sessionId,
-      data: cleanData,
-    });
-
     try {
+      console.log("📡 sessionService.joinSession:", {
+        sessionId,
+        data: cleanData,
+      });
+
       const response = await apiClient.post(
         `/session/${sessionId}/join`,
         cleanData
       );
 
-      console.log("✅ Join session success:", response.data);
-
+      console.log("✅ joinSession response:", response.data);
       return response.data;
     } catch (error) {
-      console.error(
-        "❌ Join session error:",
-        error.response?.data || error.message
-      );
+      console.error("❌ joinSession error:", error);
 
       // Reformater l'erreur pour le frontend
-      if (error.response?.data) {
-        const apiError = error.response.data;
-        throw new Error(
-          apiError.error || apiError.message || "Erreur lors de la connexion"
-        );
-      }
+      const errorMessage =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        "Erreur lors de la connexion à la session";
 
-      throw error;
+      throw new Error(errorMessage);
     }
   },
 
-  // Quitter une session (BONUS - si nécessaire)
+  // Démarrer une session
+  startSession: async (sessionId) => {
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    try {
+      console.log("📡 sessionService.startSession:", sessionId);
+
+      const response = await apiClient.post(`/session/${sessionId}/start`);
+
+      console.log("✅ startSession response:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("❌ startSession error:", error);
+
+      throw new Error(
+        error.response?.data?.error || "Erreur lors du démarrage de la session"
+      );
+    }
+  },
+
+  // Mettre en pause une session
+  pauseSession: async (sessionId) => {
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    try {
+      const response = await apiClient.post(`/session/${sessionId}/pause`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Erreur lors de la mise en pause"
+      );
+    }
+  },
+
+  // Reprendre une session
+  resumeSession: async (sessionId) => {
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    try {
+      const response = await apiClient.post(`/session/${sessionId}/resume`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Erreur lors de la reprise"
+      );
+    }
+  },
+
+  // Terminer une session
+  endSession: async (sessionId) => {
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    try {
+      const response = await apiClient.post(`/session/${sessionId}/end`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Erreur lors de la fermeture"
+      );
+    }
+  },
+
+  // Supprimer une session
+  deleteSession: async (sessionId) => {
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    try {
+      const response = await apiClient.delete(`/session/${sessionId}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Erreur lors de la suppression"
+      );
+    }
+  },
+
+  // Mettre à jour une session
+  updateSession: async (sessionId, sessionData) => {
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    try {
+      const response = await apiClient.put(
+        `/session/${sessionId}`,
+        sessionData
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Erreur lors de la mise à jour"
+      );
+    }
+  },
+
+  // Récupérer les résultats détaillés d'une session
+  getResults: async (sessionId) => {
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
+
+    try {
+      const response = await apiClient.get(`/session/${sessionId}/results`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la récupération des résultats"
+      );
+    }
+  },
+
+  // Quitter une session (optionnel)
   leaveSession: async (sessionId, participantId) => {
     if (!sessionId || !participantId) {
       throw new Error("ID de session et participant requis");
     }
 
-    const response = await apiClient.delete(
-      `/session/${sessionId}/participants/${participantId}`
-    );
-    return response.data;
+    try {
+      const response = await apiClient.delete(
+        `/session/${sessionId}/participants/${participantId}`
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Erreur lors de la déconnexion"
+      );
+    }
   },
 };
 
 // Service de gestion des fichiers (pour les futurs uploads)
 export const fileService = {
-  // Upload d'un fichier
   uploadFile: async (file, onProgress = null) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -314,112 +534,135 @@ export const fileService = {
       };
     }
 
-    const response = await apiClient.post("/upload", formData, config);
-    return response.data;
+    try {
+      const response = await apiClient.post("/upload", formData, config);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Erreur lors de l'upload du fichier"
+      );
+    }
   },
 
-  // Supprimer un fichier
   deleteFile: async (fileId) => {
-    const response = await apiClient.delete(`/upload/${fileId}`);
-    return response.data;
+    if (!fileId) {
+      throw new Error("ID de fichier requis");
+    }
+
+    try {
+      const response = await apiClient.delete(`/upload/${fileId}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la suppression du fichier"
+      );
+    }
   },
 };
 
 // Service de statistiques et rapports
 export const statsService = {
-  // Statistiques du dashboard
   getDashboardStats: async () => {
-    const response = await apiClient.get("/stats/dashboard");
-    return response.data;
+    try {
+      const response = await apiClient.get("/stats/dashboard");
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la récupération des statistiques"
+      );
+    }
   },
 
-  // Statistiques des quiz
-  getQuizStats: async (quizId, params = {}) => {
-    const response = await apiClient.get(`/stats/quiz/${quizId}`, { params });
-    return response.data;
+  getQuizStats: async (quizId, period = "7d") => {
+    if (!quizId) {
+      throw new Error("ID de quiz requis");
+    }
+
+    try {
+      const response = await apiClient.get(`/stats/quiz/${quizId}`, {
+        params: { period },
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la récupération des statistiques du quiz"
+      );
+    }
   },
 
-  // Statistiques des sessions
   getSessionStats: async (sessionId) => {
-    const response = await apiClient.get(`/stats/session/${sessionId}`);
-    return response.data;
-  },
+    if (!sessionId) {
+      throw new Error("ID de session requis");
+    }
 
-  // Export des données
-  exportData: async (type, params = {}) => {
-    const response = await apiClient.get(`/export/${type}`, {
-      params,
-      responseType: "blob", // Pour les fichiers
-    });
-    return response.data;
+    try {
+      const response = await apiClient.get(`/stats/session/${sessionId}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la récupération des statistiques de la session"
+      );
+    }
   },
 };
 
-// Utilitaires pour les erreurs API
+// Helper pour analyser et formater les erreurs API
 export const handleApiError = (error) => {
-  if (error.response) {
-    // Erreur de réponse du serveur
-    const { status, data } = error.response;
+  console.error("API Error:", error);
 
-    switch (status) {
-      case 400:
-        return {
-          type: "validation",
-          message: data.error || "Données invalides",
-          details: data.details || [],
-        };
-      case 401:
-        return {
-          type: "auth",
-          message: "Vous devez être connecté pour accéder à cette ressource",
-          code: data.code,
-        };
-      case 403:
-        return {
-          type: "permission",
-          message: "Vous n'avez pas les permissions nécessaires",
-          code: data.code,
-        };
-      case 404:
-        return {
-          type: "notFound",
-          message: "Ressource non trouvée",
-          code: data.code,
-        };
-      case 409:
-        return {
-          type: "conflict",
-          message: data.error || "Conflit de données",
-          code: data.code,
-        };
-      case 429:
-        return {
-          type: "rateLimit",
-          message: "Trop de requêtes, veuillez patienter",
-          code: data.code,
-        };
-      case 500:
-        return {
-          type: "server",
-          message: "Erreur interne du serveur",
-          code: data.code,
-        };
-      default:
-        return {
-          type: "unknown",
-          message: data.error || "Une erreur inattendue s'est produite",
-          code: data.code,
-        };
-    }
-  } else if (error.request) {
-    // Erreur de réseau
+  if (!error.response) {
+    // Erreur réseau ou pas de réponse
     return {
       type: "network",
-      message:
-        "Impossible de contacter le serveur. Vérifiez votre connexion internet.",
+      message: "Problème de connexion. Vérifiez votre connexion internet.",
+    };
+  }
+
+  const status = error.response.status;
+  const data = error.response.data;
+
+  if (status === 400) {
+    return {
+      type: "validation",
+      message: data?.error || data?.message || "Données invalides",
+      details: data?.details,
+    };
+  } else if (status === 401) {
+    return {
+      type: "auth",
+      message: "Session expirée. Veuillez vous reconnecter.",
+    };
+  } else if (status === 403) {
+    return {
+      type: "permission",
+      message: data?.error || "Permissions insuffisantes",
+    };
+  } else if (status === 404) {
+    return {
+      type: "notFound",
+      message: data?.error || "Ressource non trouvée",
+    };
+  } else if (status === 409) {
+    return {
+      type: "conflict",
+      message: data?.error || "Conflit de données",
+    };
+  } else if (status === 422) {
+    return {
+      type: "validation",
+      message: data?.error || "Données invalides",
+      details: data?.details,
+    };
+  } else if (status >= 500) {
+    return {
+      type: "server",
+      message: "Erreur du serveur. Veuillez réessayer plus tard.",
     };
   } else {
-    // Autre erreur
     return {
       type: "unknown",
       message: error.message || "Une erreur inattendue s'est produite",

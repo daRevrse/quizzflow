@@ -1,4 +1,3 @@
-// Serveur optimisé CORRIGÉ - backend/server.js
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
@@ -27,23 +26,6 @@ config.displayConfig();
 
 const app = express();
 const server = http.createServer(app);
-
-// Fix CORS temporaire - à ajouter après les imports
-// app.use((req, res, next) => {
-//   res.header("Access-Control-Allow-Origin", "http://localhost:3000");
-//   res.header("Access-Control-Allow-Credentials", "true");
-//   res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
-//   res.header(
-//     "Access-Control-Allow-Headers",
-//     "Origin,X-Requested-With,Content-Type,Accept,Authorization"
-//   );
-
-//   if (req.method === "OPTIONS") {
-//     res.sendStatus(200);
-//   } else {
-//     next();
-//   }
-// });
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -88,9 +70,6 @@ const io = socketIo(server, {
   // Options de connexion simplifiées
   connectTimeout: 45000,
   serveClient: false,
-
-  // Pas de configuration parser custom pour éviter les erreurs
-  // parser: config.socket.parser, // RETIRÉ
 });
 
 // Middleware de compression HTTP (seulement si compression disponible)
@@ -121,16 +100,6 @@ try {
 // Middlewares de sécurité avec CORS corrigé
 app.use(helmet(config.security?.helmet || {}));
 
-// Configuration CORS simple et directe
-// app.use(
-//   cors({
-//     origin: config.cors.origins, // Utilise le tableau d'origins
-//     credentials: config.cors.credentials,
-//     methods: config.cors.methods,
-//     allowedHeaders: config.cors.allowedHeaders,
-//     optionsSuccessStatus: 200, // Pour compatibilité avec certains navigateurs
-//   })
-// );
 app.use(
   cors({
     origin: config.cors.origins, // Utilise directement le tableau d'origins

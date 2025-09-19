@@ -1,135 +1,118 @@
-const { DataTypes } = require("sequelize");
+const { DataTypes, QueryTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
-const sessionHooks = {
-  beforeCreate: (session) => {
-    console.log(`🪝 beforeCreate hook - session:`, session.id);
-
-    // Générer un code unique si pas fourni
-    if (!session.code) {
-      session.code = generateSessionCode();
-      console.log(`✅ Code généré: ${session.code}`);
-    }
-
-    // S'assurer que participants est un tableau vide
-    if (!Array.isArray(session.participants)) {
-      console.log(`🔧 beforeCreate: Initialisation participants array`);
-      session.participants = [];
-    }
-
-    // Initialiser les stats
-    session.stats = calculateSessionStats(session);
-  },
-
-  beforeUpdate: (session) => {
-    console.log(`🪝 beforeUpdate hook - session:`, session.id);
-    console.log(`   Champs modifiés:`, session.changed());
-
-    // S'assurer que participants est un tableau
-    if (session.changed("participants")) {
-      if (!Array.isArray(session.participants)) {
-        console.log(
-          `🔧 beforeUpdate: Correction participants non-array:`,
-          typeof session.participants
-        );
-        session.participants = [];
-      } else {
-        // Nettoyer les participants invalides
-        const validParticipants = session.participants.filter(
-          (p) => p && typeof p === "object" && p.id
-        );
-        if (validParticipants.length !== session.participants.length) {
-          console.log(
-            `🧹 beforeUpdate: Nettoyage participants - ${session.participants.length} -> ${validParticipants.length}`
-          );
-          session.participants = validParticipants;
-        }
-      }
-    }
-
-    // Recalculer les stats si nécessaire
-    if (session.changed("responses") || session.changed("participants")) {
-      console.log(`📊 beforeUpdate: Recalcul des stats`);
-      session.stats = calculateSessionStats(session);
-    }
-  },
-
-  beforeValidate: (session) => {
-    console.log(`🪝 beforeValidate hook - session:`, session.id);
-
-    // S'assurer que participants est toujours un tableau avant validation
-    if (!Array.isArray(session.participants)) {
-      console.log(`🔧 beforeValidate: Force participants array`);
-      session.participants = [];
-    }
-  },
-
-  afterFind: (result) => {
-    // Hook appelé après récupération depuis la DB
-    if (!result) return;
-
-    const sessions = Array.isArray(result) ? result : [result];
-
-    sessions.forEach((session) => {
-      if (session && !Array.isArray(session.participants)) {
-        console.log(
-          `🔧 afterFind: Correction participants pour session ${session.id}:`,
-          typeof session.participants
-        );
-        session.participants = [];
-      }
-    });
-  },
-};
-
-// Fonction pour générer un code de session unique
-function generateSessionCode() {
+// Fonction utilitaire pour générer un code de session unique
+const generateSessionCode = () => {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let code = "";
   for (let i = 0; i < 6; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return code;
-}
+};
 
+// Fonction pour calculer les statistiques de session
+const calculateSessionStats = (session) => {
+  const participants = Array.isArray(session.participants)
+    ? session.participants
+    : [];
+  const responses = session.responses || {};
+
+  const totalParticipants = participants.length;
+  const totalResponses = Object.keys(responses).reduce((total, questionId) => {
+    return total + (responses[questionId]?.length || 0);
+  }, 0);
+
+  let totalScore = 0;
+  let activeParticipants = 0;
+
+  participants.forEach((participant) => {
+    if (participant && typeof participant === "object") {
+      if (typeof participant.score === "number" && !isNaN(participant.score)) {
+        totalScore += participant.score;
+        activeParticipants++;
+      }
+    }
+  });
+
+  const averageScore =
+    activeParticipants > 0
+      ? Math.round((totalScore / activeParticipants) * 100) / 100
+      : 0;
+  const participationRate =
+    totalParticipants > 0
+      ? Math.round((activeParticipants / totalParticipants) * 100)
+      : 0;
+
+  return {
+    totalParticipants,
+    totalResponses,
+    averageScore,
+    participationRate,
+    activeParticipants,
+  };
+};
+
+// Définition du modèle Session
 const Session = sequelize.define(
   "Session",
   {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
+      type: DataTypes.INTEGER,
       primaryKey: true,
+      autoIncrement: true,
     },
+
     code: {
-      type: DataTypes.STRING(8),
+      type: DataTypes.STRING(6),
       allowNull: false,
-      unique: true,
+      unique: {
+        name: "unique_session_code",
+        msg: "Ce code de session est déjà utilisé",
+      },
       validate: {
-        len: [6, 8],
-        isAlphanumeric: true,
-        isUppercase: true,
+        len: {
+          args: [6, 6],
+          msg: "Le code de session doit faire exactement 6 caractères",
+        },
+        isAlphanumeric: {
+          msg: "Le code de session ne peut contenir que des lettres et des chiffres",
+        },
+      },
+      set(value) {
+        // Toujours stocker en majuscules
+        this.setDataValue(
+          "code",
+          value ? value.toString().toUpperCase().trim() : ""
+        );
       },
     },
-    quizId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      references: {
-        model: "quizzes",
-        key: "id",
-      },
-    },
-    hostId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      references: {
-        model: "users",
-        key: "id",
-      },
-    },
+
     title: {
-      type: DataTypes.STRING(200),
+      type: DataTypes.STRING(255),
       allowNull: false,
+      validate: {
+        notEmpty: {
+          msg: "Le titre de la session est requis",
+        },
+        len: {
+          args: [3, 255],
+          msg: "Le titre doit contenir entre 3 et 255 caractères",
+        },
+      },
     },
+
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      validate: {
+        len: {
+          args: [0, 1000],
+          msg: "La description ne peut pas dépasser 1000 caractères",
+        },
+      },
+    },
+
     status: {
       type: DataTypes.ENUM(
         "waiting",
@@ -138,508 +121,942 @@ const Session = sequelize.define(
         "finished",
         "cancelled"
       ),
+      allowNull: false,
       defaultValue: "waiting",
-    },
-    currentQuestionIndex: {
-      type: DataTypes.INTEGER,
-      defaultValue: -1,
       validate: {
-        min: -1,
+        isIn: {
+          args: [["waiting", "active", "paused", "finished", "cancelled"]],
+          msg: "Statut de session invalide",
+        },
       },
     },
+
+    // Clés étrangères
+    quizId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: "quizzes",
+        key: "id",
+      },
+      validate: {
+        notNull: {
+          msg: "Un quiz est requis pour créer une session",
+        },
+        isInt: {
+          msg: "ID de quiz invalide",
+        },
+      },
+    },
+
+    hostId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: "users",
+        key: "id",
+      },
+      validate: {
+        notNull: {
+          msg: "Un hôte est requis pour créer une session",
+        },
+        isInt: {
+          msg: "ID d'hôte invalide",
+        },
+      },
+    },
+
+    // Participants (JSON array)
     participants: {
       type: DataTypes.JSON,
+      allowNull: false,
       defaultValue: [],
       validate: {
         isValidParticipants(value) {
           if (!Array.isArray(value)) {
             throw new Error("Les participants doivent être un tableau");
           }
+
+          // Validation de chaque participant
           value.forEach((participant, index) => {
-            if (!participant.id || !participant.name) {
-              throw new Error(`Participant invalide à l'index ${index}`);
+            if (!participant || typeof participant !== "object") {
+              throw new Error(
+                `Participant ${index + 1} invalide : doit être un objet`
+              );
+            }
+
+            if (!participant.id || typeof participant.id !== "string") {
+              throw new Error(`Participant ${index + 1} invalide : ID requis`);
+            }
+
+            if (
+              !participant.name ||
+              typeof participant.name !== "string" ||
+              participant.name.trim().length < 2
+            ) {
+              throw new Error(
+                `Participant ${
+                  index + 1
+                } invalide : nom requis (minimum 2 caractères)`
+              );
+            }
+
+            // Vérifier l'unicité des IDs
+            const duplicateId = value.find(
+              (p, i) => i !== index && p.id === participant.id
+            );
+            if (duplicateId) {
+              throw new Error(`ID de participant dupliqué : ${participant.id}`);
+            }
+
+            // Vérifier l'unicité des noms
+            const duplicateName = value.find(
+              (p, i) =>
+                i !== index &&
+                p.name.toLowerCase() === participant.name.toLowerCase()
+            );
+            if (duplicateName) {
+              throw new Error(
+                `Nom de participant dupliqué : ${participant.name}`
+              );
             }
           });
         },
       },
     },
+
+    // Réponses (JSON object)
     responses: {
       type: DataTypes.JSON,
+      allowNull: false,
       defaultValue: {},
       validate: {
         isValidResponses(value) {
-          if (typeof value !== "object") {
+          if (!value || typeof value !== "object") {
             throw new Error("Les réponses doivent être un objet");
           }
+
+          // Validation des réponses par question
+          Object.keys(value).forEach((questionId) => {
+            const questionResponses = value[questionId];
+
+            if (!Array.isArray(questionResponses)) {
+              throw new Error(
+                `Réponses pour la question ${questionId} doivent être un tableau`
+              );
+            }
+
+            questionResponses.forEach((response, index) => {
+              if (!response || typeof response !== "object") {
+                throw new Error(
+                  `Réponse ${index + 1} pour la question ${questionId} invalide`
+                );
+              }
+
+              if (
+                !response.participantId ||
+                typeof response.participantId !== "string"
+              ) {
+                throw new Error(
+                  `Réponse ${
+                    index + 1
+                  } pour la question ${questionId} : participantId requis`
+                );
+              }
+
+              if (response.answer === undefined || response.answer === null) {
+                throw new Error(
+                  `Réponse ${
+                    index + 1
+                  } pour la question ${questionId} : answer requis`
+                );
+              }
+            });
+          });
         },
       },
     },
+
+    // Paramètres de la session
     settings: {
       type: DataTypes.JSON,
+      allowNull: false,
       defaultValue: {
-        allowLateJoin: true,
+        allowAnonymous: true,
+        allowLateJoin: false,
         showLeaderboard: true,
-        autoAdvance: false,
-        questionTimeLimit: null,
         maxParticipants: 100,
+        autoAdvance: false,
+        shuffleQuestions: false,
+        shuffleAnswers: false,
       },
       validate: {
         isValidSettings(value) {
-          if (value && typeof value === "object") {
-            const { maxParticipants, questionTimeLimit } = value;
+          if (!value || typeof value !== "object") {
+            throw new Error("Les paramètres doivent être un objet");
+          }
+
+          // Validation des paramètres optionnels
+          if (value.maxParticipants !== undefined) {
             if (
-              maxParticipants &&
-              (maxParticipants < 1 || maxParticipants > 1000)
-            ) {
-              throw new Error("maxParticipants doit être entre 1 et 1000");
-            }
-            if (
-              questionTimeLimit &&
-              (questionTimeLimit < 5 || questionTimeLimit > 600)
+              !Number.isInteger(value.maxParticipants) ||
+              value.maxParticipants < 1 ||
+              value.maxParticipants > 1000
             ) {
               throw new Error(
-                "questionTimeLimit doit être entre 5 et 600 secondes"
+                "maxParticipants doit être un entier entre 1 et 1000"
               );
             }
           }
+
+          // Validation des booléens
+          const booleanSettings = [
+            "allowAnonymous",
+            "allowLateJoin",
+            "showLeaderboard",
+            "autoAdvance",
+            "shuffleQuestions",
+            "shuffleAnswers",
+          ];
+          booleanSettings.forEach((setting) => {
+            if (
+              value[setting] !== undefined &&
+              typeof value[setting] !== "boolean"
+            ) {
+              throw new Error(`${setting} doit être un booléen`);
+            }
+          });
         },
       },
     },
-    startedAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
+
+    // Statistiques (JSON object)
+    stats: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      defaultValue: {},
     },
-    endedAt: {
-      type: DataTypes.DATE,
+
+    // Horodatage
+    currentQuestionIndex: {
+      type: DataTypes.INTEGER,
       allowNull: true,
+      defaultValue: null,
+      validate: {
+        min: {
+          args: [0],
+          msg: "L'index de question ne peut pas être négatif",
+        },
+      },
     },
+
     currentQuestionStartedAt: {
       type: DataTypes.DATE,
       allowNull: true,
+      defaultValue: null,
     },
-    stats: {
-      type: DataTypes.JSON,
-      defaultValue: {
-        totalParticipants: 0,
-        totalResponses: 0,
-        averageScore: 0,
-        completionRate: 0,
-      },
+
+    startedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
     },
+
+    endedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
+    // participantCount: {
+    //   type: DataTypes.VIRTUAL,
+    //   get() {
+    //     return this.getParticipantCount();
+    //   },
+    // },
   },
   {
     tableName: "sessions",
+    timestamps: true,
     indexes: [
       {
         unique: true,
         fields: ["code"],
       },
       {
-        fields: ["quizId"],
+        fields: ["status"],
       },
       {
         fields: ["hostId"],
       },
       {
-        fields: ["status"],
+        fields: ["quizId"],
       },
       {
         fields: ["createdAt"],
       },
     ],
-    // hooks: {
-    //   beforeCreate: (session) => {
-    //     // Générer un code unique si pas fourni
-    //     if (!session.code) {
-    //       session.code = generateSessionCode();
-    //     }
-    //   },
-    //   beforeUpdate: (session) => {
-    //     // Calculer les stats automatiquement
-    //     if (session.changed("responses") || session.changed("participants")) {
-    //       session.stats = calculateSessionStats(session);
-    //     }
-    //   },
-    // },
-    hooks: sessionHooks,
   }
 );
 
-// Fonction pour générer un code de session unique
-function generateSessionCode() {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+Session.prototype.addParticipant = async function (participantData) {
+  console.log(`\n🔄 === addParticipant SQL BRUT ===`);
+  console.log(`   Session ID: ${this.id}`);
+  console.log(`   Participant:`, participantData);
+
+  const {
+    id,
+    name,
+    isAnonymous = false,
+    userId = null,
+    socketId = null,
+  } = participantData;
+
+  // Validation basique
+  if (!id || typeof id !== "string") {
+    throw new Error("ID de participant requis");
   }
-  return code;
-}
+  if (!name || typeof name !== "string" || name.trim().length < 2) {
+    throw new Error("Nom de participant requis (minimum 2 caractères)");
+  }
 
-// Fonction pour calculer les statistiques
-// function calculateSessionStats(session) {
-//   const participants = session.participants || [];
-//   const responses = session.responses || {};
-
-//   const totalParticipants = participants.length;
-//   const totalResponses = Object.values(responses).reduce(
-//     (total, questionResponses) => {
-//       return total + Object.keys(questionResponses || {}).length;
-//     },
-//     0
-//   );
-
-//   let totalScore = 0;
-//   let participantsWithScore = 0;
-
-//   participants.forEach((participant) => {
-//     if (participant.score !== undefined) {
-//       totalScore += participant.score;
-//       participantsWithScore++;
-//     }
-//   });
-
-//   const averageScore =
-//     participantsWithScore > 0
-//       ? Math.round(totalScore / participantsWithScore)
-//       : 0;
-//   const completionRate =
-//     totalParticipants > 0
-//       ? Math.round((participantsWithScore / totalParticipants) * 100)
-//       : 0;
-
-//   return {
-//     totalParticipants,
-//     totalResponses,
-//     averageScore,
-//     completionRate,
-//   };
-// }
-
-function calculateSessionStats(session) {
   try {
-    // S'assurer que participants est un tableau
-    let participants = session.participants;
+    // 1. RÉCUPÉRER LES PARTICIPANTS ACTUELS DIRECTEMENT DEPUIS LA DB
+    console.log(`🔍 Récupération état actuel depuis DB...`);
+
+    const [currentSessionData] = await sequelize.query(
+      `SELECT participants, settings FROM sessions WHERE id = :sessionId`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { sessionId: this.id },
+      }
+    );
+
+    if (!currentSessionData) {
+      throw new Error("Session non trouvée en base de données");
+    }
+
+    console.log(`📊 Données DB récupérées:`, {
+      participantsType: typeof currentSessionData.participants,
+      participantsRaw: currentSessionData.participants,
+    });
+
+    // 2. PARSER LES PARTICIPANTS ACTUELS
+    let participants = currentSessionData.participants;
+
+    // Gestion des différents formats de stockage
+    if (typeof participants === "string") {
+      try {
+        participants = JSON.parse(participants);
+        console.log(`🔧 Parsing JSON string réussi`);
+      } catch (parseError) {
+        console.log(`⚠️ Erreur parsing JSON, initialisation tableau vide`);
+        participants = [];
+      }
+    }
+
     if (!Array.isArray(participants)) {
-      console.log(
-        `⚠️  calculateSessionStats: participants n'est pas un tableau:`,
-        typeof participants
-      );
+      console.log(`🔧 Conversion en tableau: ${typeof participants} -> array`);
       participants = [];
     }
 
-    // Filtrer les participants valides
-    const validParticipants = participants.filter(
-      (p) => p && typeof p === "object" && p.id
-    );
+    console.log(`📋 Participants actuels: ${participants.length}`);
 
-    const responses = session.responses || {};
-    const totalParticipants = validParticipants.length;
-    const totalResponses = Object.values(responses).reduce(
-      (total, questionResponses) => {
-        return total + Object.keys(questionResponses || {}).length;
-      },
-      0
-    );
-
-    let totalScore = 0;
-    let participantsWithScore = 0;
-
-    validParticipants.forEach((participant) => {
-      if (participant.score !== undefined && participant.score !== null) {
-        totalScore += Number(participant.score) || 0;
-        participantsWithScore++;
-      }
-    });
-
-    const averageScore =
-      participantsWithScore > 0
-        ? Math.round((totalScore / participantsWithScore) * 100) / 100
-        : 0;
-
-    const completionRate =
-      totalParticipants > 0
-        ? Math.round((participantsWithScore / totalParticipants) * 100)
-        : 0;
-
-    const stats = {
-      totalParticipants,
-      totalResponses,
-      averageScore,
-      completionRate,
-    };
-
-    console.log(`📊 Stats calculées:`, stats);
-    return stats;
-  } catch (error) {
-    console.error("❌ Erreur dans calculateSessionStats:", error);
-    return {
-      totalParticipants: 0,
-      totalResponses: 0,
-      averageScore: 0,
-      completionRate: 0,
-    };
-  }
-}
-
-// Méthodes d'instance
-// Session.prototype.addParticipant = function (participantData) {
-//   const participants = [...(this.participants || [])];
-//   const existingIndex = participants.findIndex(
-//     (p) => p.id === participantData.id
-//   );
-
-//   if (existingIndex !== -1) {
-//     // Mettre à jour participant existant
-//     participants[existingIndex] = {
-//       ...participants[existingIndex],
-//       ...participantData,
-//     };
-//   } else {
-//     // Ajouter nouveau participant
-//     if (participants.length >= (this.settings?.maxParticipants || 100)) {
-//       throw new Error("Nombre maximum de participants atteint");
-//     }
-//     participants.push({
-//       id: participantData.id,
-//       name: participantData.name,
-//       avatar: participantData.avatar || null,
-//       joinedAt: new Date(),
-//       score: 0,
-//       responses: {},
-//       isConnected: true,
-//     });
-//   }
-
-//   return this.update({ participants });
-// };
-Session.prototype.addParticipant = function (participantData) {
-  // S'assurer que participants est un tableau
-  let participants = this.participants;
-  if (!Array.isArray(participants)) {
-    console.log(
-      `⚠️  addParticipant: participants n'est pas un tableau, initialisation:`,
-      {
-        type: typeof participants,
-        value: participants,
-      }
-    );
-    participants = [];
-  }
-
-  const participantsList = [...participants];
-  const existingIndex = participantsList.findIndex(
-    (p) => p && p.id === participantData.id
-  );
-
-  if (existingIndex !== -1) {
-    // Mettre à jour participant existant
-    participantsList[existingIndex] = {
-      ...participantsList[existingIndex],
-      ...participantData,
-    };
-  } else {
-    // Ajouter nouveau participant
-    const maxParticipants = this.settings?.maxParticipants || 100;
-    if (participantsList.length >= maxParticipants) {
-      throw new Error("Nombre maximum de participants atteint");
+    // 3. VALIDATIONS
+    const existingById = participants.find((p) => p && p.id === id);
+    if (existingById) {
+      throw new Error(`Participant avec l'ID ${id} existe déjà`);
     }
 
-    participantsList.push({
-      id: participantData.id,
-      name: participantData.name,
-      avatar: participantData.avatar || null,
+    const existingByName = participants.find(
+      (p) => p && p.name && p.name.toLowerCase() === name.toLowerCase()
+    );
+    if (existingByName) {
+      throw new Error(`Le nom "${name}" est déjà utilisé`);
+    }
+
+    // Récupérer les settings pour la limite
+    let settings = currentSessionData.settings;
+    if (typeof settings === "string") {
+      try {
+        settings = JSON.parse(settings);
+      } catch {
+        settings = { maxParticipants: 100 };
+      }
+    }
+    if (!settings || typeof settings !== "object") {
+      settings = { maxParticipants: 100 };
+    }
+
+    const maxParticipants = settings.maxParticipants || 100;
+    if (participants.length >= maxParticipants) {
+      throw new Error(`Limite de participants atteinte (${maxParticipants})`);
+    }
+
+    // 4. CRÉER LE NOUVEAU PARTICIPANT
+    const newParticipant = {
+      id,
+      name: name.trim(),
+      isAnonymous: Boolean(isAnonymous),
+      userId,
+      socketId,
       joinedAt: new Date().toISOString(),
       score: 0,
       responses: {},
-      isConnected: true,
-      ...participantData,
-    });
-  }
-
-  return this.update({ participants: participantsList });
-};
-
-// Session.prototype.removeParticipant = function (participantId) {
-//   const participants = (this.participants || []).filter(
-//     (p) => p.id !== participantId
-//   );
-//   return this.update({ participants });
-// };
-Session.prototype.removeParticipant = function (participantId) {
-  // S'assurer que participants est un tableau
-  let participants = this.participants;
-  if (!Array.isArray(participants)) {
-    console.log(`⚠️  removeParticipant: participants n'est pas un tableau:`, {
-      type: typeof participants,
-      value: participants,
-    });
-    participants = [];
-  }
-
-  const updatedParticipants = participants.filter(
-    (p) => p && p.id !== participantId
-  );
-
-  return this.update({ participants: updatedParticipants });
-};
-
-// Session.prototype.updateParticipantConnection = function (
-//   participantId,
-//   isConnected
-// ) {
-//   const participants = [...(this.participants || [])];
-//   const participantIndex = participants.findIndex(
-//     (p) => p.id === participantId
-//   );
-
-//   if (participantIndex !== -1) {
-//     participants[participantIndex].isConnected = isConnected;
-//     if (!isConnected) {
-//       participants[participantIndex].disconnectedAt = new Date();
-//     }
-//     return this.update({ participants });
-//   }
-
-//   return Promise.resolve(this);
-// };
-Session.prototype.updateParticipantConnection = function (
-  participantId,
-  isConnected
-) {
-  try {
-    const participants = [...(this.participants || [])];
-    const participantIndex = participants.findIndex(
-      (p) => p.id === participantId
-    );
-
-    if (participantIndex !== -1) {
-      participants[participantIndex].isConnected = isConnected;
-      participants[participantIndex].lastSeen = new Date();
-
-      return this.update({ participants });
-    }
-
-    return Promise.resolve(this);
-  } catch (error) {
-    console.error("Erreur lors de la mise à jour de connexion:", error);
-    throw error;
-  }
-};
-
-// Session.prototype.addResponse = function (participantId, questionId, response) {
-//   const responses = { ...this.responses };
-
-//   if (!responses[questionId]) {
-//     responses[questionId] = {};
-//   }
-
-//   responses[questionId][participantId] = {
-//     answer: response.answer,
-//     submittedAt: new Date(),
-//     timeSpent: response.timeSpent || 0,
-//   };
-
-//   // Mettre à jour le score du participant
-//   const participants = [...(this.participants || [])];
-//   const participantIndex = participants.findIndex(
-//     (p) => p.id === participantId
-//   );
-
-//   if (participantIndex !== -1) {
-//     if (!participants[participantIndex].responses) {
-//       participants[participantIndex].responses = {};
-//     }
-//     participants[participantIndex].responses[questionId] = response;
-
-//     // Calculer le nouveau score si fourni
-//     if (response.points !== undefined) {
-//       participants[participantIndex].score =
-//         (participants[participantIndex].score || 0) + response.points;
-//     }
-//   }
-
-//   return this.update({ responses, participants });
-// };
-Session.prototype.addResponse = function (participantId, questionId, response) {
-  try {
-    const responses = { ...(this.responses || {}) };
-    const participants = [...(this.participants || [])];
-
-    // Initialiser les réponses pour cette question si nécessaire
-    if (!responses[questionId]) {
-      responses[questionId] = {};
-    }
-
-    // Ajouter la réponse
-    responses[questionId][participantId] = {
-      answer: response.answer,
-      submittedAt: response.submittedAt || new Date(),
-      timeSpent: response.timeSpent || 0,
-      points: response.points || 0,
-      isCorrect: response.isCorrect || false,
+      isConnected: !!socketId,
+      stats: {
+        correctAnswers: 0,
+        totalAnswers: 0,
+        averageTime: 0,
+      },
     };
 
-    // Mettre à jour le participant
-    const participantIndex = participants.findIndex(
-      (p) => p.id === participantId
+    // 5. AJOUTER AU TABLEAU
+    const updatedParticipants = [...participants, newParticipant];
+    console.log(
+      `➕ Ajout participant. Nouveau total: ${updatedParticipants.length}`
     );
 
-    if (participantIndex !== -1) {
-      if (!participants[participantIndex].responses) {
-        participants[participantIndex].responses = {};
-      }
+    // 6. CALCULER LES NOUVELLES STATS
+    const newStats = {
+      totalParticipants: updatedParticipants.length,
+      totalResponses: 0, // Sera calculé plus tard
+      averageScore: 0,
+      participationRate: 100,
+      activeParticipants: updatedParticipants.filter((p) => p.isConnected)
+        .length,
+    };
 
-      participants[participantIndex].responses[questionId] = response;
+    // 7. MISE À JOUR DIRECTE EN BASE AVEC SQL BRUT
+    console.log(`💾 Mise à jour SQL directe...`);
 
-      // Mettre à jour le score
-      if (response.points !== undefined) {
-        const currentScore = participants[participantIndex].score || 0;
-        participants[participantIndex].score = currentScore + response.points;
+    const [updateResult] = await sequelize.query(
+      `UPDATE sessions 
+       SET participants = :participants, 
+           stats = :stats, 
+           updatedAt = NOW() 
+       WHERE id = :sessionId`,
+      {
+        type: QueryTypes.UPDATE,
+        replacements: {
+          sessionId: this.id,
+          participants: JSON.stringify(updatedParticipants),
+          stats: JSON.stringify(newStats),
+        },
       }
+    );
+
+    console.log(`📝 Résultat UPDATE SQL:`, updateResult);
+
+    // 8. VÉRIFICATION IMMÉDIATE
+    console.log(`🔍 Vérification immédiate...`);
+
+    const [verificationData] = await sequelize.query(
+      `SELECT participants FROM sessions WHERE id = :sessionId`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { sessionId: this.id },
+      }
+    );
+
+    let verifiedParticipants = verificationData.participants;
+    if (typeof verifiedParticipants === "string") {
+      verifiedParticipants = JSON.parse(verifiedParticipants);
     }
 
-    return this.update({ responses, participants });
+    const participantFound =
+      verifiedParticipants &&
+      Array.isArray(verifiedParticipants) &&
+      verifiedParticipants.find((p) => p && p.id === id);
+
+    console.log(`📊 Vérification:`, {
+      participantsInDB: verifiedParticipants ? verifiedParticipants.length : 0,
+      participantFound: !!participantFound,
+      targetId: id,
+    });
+
+    if (!participantFound) {
+      console.error(
+        `❌ ÉCHEC CRITIQUE: Participant non trouvé après UPDATE SQL`
+      );
+      throw new Error("Échec de persistance en base de données");
+    }
+
+    // 9. RECHARGER L'INSTANCE SEQUELIZE
+    await this.reload();
+
+    console.log(`✅ === addParticipant SQL BRUT RÉUSSI ===`);
+    console.log(`   Participant "${name}" ajouté avec succès`);
+    console.log(`   Total participants: ${updatedParticipants.length}\n`);
+
+    return this;
   } catch (error) {
-    console.error("Erreur lors de l'ajout de réponse:", error);
+    console.error(`💥 Erreur dans addParticipant SQL:`, error.message);
     throw error;
   }
 };
-Session.prototype.nextQuestion = function () {
-  const newIndex = this.currentQuestionIndex + 1;
+
+// Méthode de vérification améliorée
+Session.prototype.verifyParticipantAdded = async function (participantId) {
+  console.log(`🔍 Vérification SQL directe participant ${participantId}`);
+
+  try {
+    const [sessionData] = await sequelize.query(
+      `SELECT participants FROM sessions WHERE id = :sessionId`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { sessionId: this.id },
+      }
+    );
+
+    if (!sessionData) {
+      console.log(`❌ Session non trouvée en DB`);
+      return false;
+    }
+
+    let participants = sessionData.participants;
+
+    if (typeof participants === "string") {
+      participants = JSON.parse(participants);
+    }
+
+    if (!Array.isArray(participants)) {
+      console.log(`❌ Participants n'est pas un array en DB`);
+      return false;
+    }
+
+    const found = participants.find((p) => p && p.id === participantId);
+
+    console.log(`📊 Vérification SQL:`, {
+      totalParticipants: participants.length,
+      participantFound: !!found,
+      searchedId: participantId,
+    });
+
+    return !!found;
+  } catch (error) {
+    console.error(`❌ Erreur vérification SQL:`, error.message);
+    return false;
+  }
+};
+
+// Méthode pour nettoyer/réparer une session spécifique
+Session.prototype.repairParticipantsSQL = async function () {
+  console.log(`🔧 Réparation SQL session ${this.id}`);
+
+  try {
+    const [sessionData] = await sequelize.query(
+      `SELECT participants FROM sessions WHERE id = :sessionId`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { sessionId: this.id },
+      }
+    );
+
+    let participants = sessionData.participants;
+    let needsRepair = false;
+
+    if (typeof participants === "string") {
+      try {
+        participants = JSON.parse(participants);
+      } catch {
+        participants = [];
+        needsRepair = true;
+      }
+    }
+
+    if (!Array.isArray(participants)) {
+      participants = [];
+      needsRepair = true;
+    }
+
+    if (needsRepair) {
+      await sequelize.query(
+        `UPDATE sessions SET participants = :participants WHERE id = :sessionId`,
+        {
+          type: QueryTypes.UPDATE,
+          replacements: {
+            sessionId: this.id,
+            participants: JSON.stringify(participants),
+          },
+        }
+      );
+
+      console.log(`✅ Session réparée: participants -> array vide`);
+    }
+
+    return participants;
+  } catch (error) {
+    console.error(`❌ Erreur réparation SQL:`, error.message);
+    throw error;
+  }
+};
+
+// Hook beforeCreate simplifié
+Session.addHook("beforeCreate", (session) => {
+  console.log(`🪝 beforeCreate - nouvelle session`);
+
+  if (!session.code) {
+    session.code = generateSessionCode();
+  }
+
+  // Initialisation SIMPLE
+  if (!Array.isArray(session.participants)) {
+    session.participants = [];
+  }
+  if (!session.responses || typeof session.responses !== "object") {
+    session.responses = {};
+  }
+  if (!session.settings || typeof session.settings !== "object") {
+    session.settings = {
+      allowAnonymous: true,
+      allowLateJoin: false,
+      showLeaderboard: true,
+      maxParticipants: 100,
+      autoAdvance: false,
+      shuffleQuestions: false,
+      shuffleAnswers: false,
+    };
+  }
+
+  session.stats = calculateSessionStats(session);
+});
+
+// Hook beforeUpdate très simplifié - ÉVITER LES MODIFICATIONS AUTOMATIQUES
+Session.addHook("beforeUpdate", (session) => {
+  console.log(`🪝 beforeUpdate - session ${session.id}`);
+  console.log(`   Champs modifiés:`, session.changed());
+
+  // SEULEMENT recalculer les stats si participants ou responses changent
+  if (session.changed("participants") || session.changed("responses")) {
+    console.log(`📊 beforeUpdate: Recalcul des stats uniquement`);
+    session.stats = calculateSessionStats(session);
+  }
+
+  // ⚠️ NE PAS MODIFIER participants ici pour éviter les conflits
+});
+
+// Hook afterFind pour nettoyer seulement à la lecture
+Session.addHook("afterFind", (result) => {
+  if (!result) return;
+
+  const sessions = Array.isArray(result) ? result : [result];
+
+  sessions.forEach((session) => {
+    if (!session) return;
+
+    // 🔧 CORRECTION : Parser le JSON au lieu de l'effacer
+    if (session.participants && typeof session.participants === "string") {
+      try {
+        console.log(
+          `🔧 afterFind: Parsing JSON participants pour session ${session.id}`
+        );
+        session.participants = JSON.parse(session.participants);
+      } catch (parseError) {
+        console.log(
+          `⚠️ afterFind: Erreur parsing JSON, initialisation array vide`
+        );
+        session.participants = [];
+      }
+    }
+
+    // Seulement initialiser si null/undefined, pas si c'est un string valide
+    if (!session.participants) {
+      console.log(
+        `🔧 afterFind: Initialisation participants vides pour session ${session.id}`
+      );
+      session.participants = [];
+    }
+
+    // S'assurer que c'est un array à la fin
+    if (!Array.isArray(session.participants)) {
+      console.log(
+        `🔧 afterFind: Force conversion array pour session ${session.id}`
+      );
+      session.participants = [];
+    }
+
+    // Même traitement pour responses
+    if (session.responses && typeof session.responses === "string") {
+      try {
+        session.responses = JSON.parse(session.responses);
+      } catch (parseError) {
+        session.responses = {};
+      }
+    }
+    if (!session.responses || typeof session.responses !== "object") {
+      session.responses = {};
+    }
+
+    // Même traitement pour settings
+    if (session.settings && typeof session.settings === "string") {
+      try {
+        session.settings = JSON.parse(session.settings);
+      } catch (parseError) {
+        session.settings = {
+          allowAnonymous: true,
+          allowLateJoin: false,
+          showLeaderboard: true,
+          maxParticipants: 100,
+          autoAdvance: false,
+          shuffleQuestions: false,
+          shuffleAnswers: false,
+        };
+      }
+    }
+  });
+});
+
+// 🔧 FONCTION UTILITAIRE pour calculer participantCount correct
+Session.prototype.getParticipantCount = function () {
+  if (!this.participants) return 0;
+
+  let participants = this.participants;
+
+  // Parse si c'est un string JSON
+  if (typeof participants === "string") {
+    try {
+      participants = JSON.parse(participants);
+    } catch {
+      return 0;
+    }
+  }
+
+  // Compter seulement les participants valides
+  if (Array.isArray(participants)) {
+    return participants.filter((p) => p && p.id && p.name).length;
+  }
+
+  return 0;
+};
+
+// 🔧 MÉTHODE pour obtenir les participants nettoyés
+Session.prototype.getCleanParticipants = function () {
+  if (!this.participants) return [];
+
+  let participants = this.participants;
+
+  // Parse si c'est un string JSON
+  if (typeof participants === "string") {
+    try {
+      participants = JSON.parse(participants);
+    } catch {
+      return [];
+    }
+  }
+
+  // Retourner seulement les participants valides
+  if (Array.isArray(participants)) {
+    return participants.filter((p) => p && p.id && p.name);
+  }
+
+  return [];
+};
+
+Session.prototype.debugParticipants = function () {
+  console.log(`\n📊 === DEBUG PARTICIPANTS SESSION ${this.id} ===`);
+  console.log(`   Code: ${this.code}`);
+  console.log(`   Status: ${this.status}`);
+  console.log(`   Type participants: ${typeof this.participants}`);
+  console.log(`   Is Array: ${Array.isArray(this.participants)}`);
+  console.log(`   Length: ${this.participants?.length || "undefined"}`);
+
+  if (Array.isArray(this.participants)) {
+    console.log(`   Participants détails:`);
+    this.participants.forEach((p, i) => {
+      console.log(
+        `      ${i + 1}. ${p?.name || "NO_NAME"} (ID: ${p?.id || "NO_ID"})`
+      );
+    });
+  } else {
+    console.log(`   Valeur brute:`, this.participants);
+  }
+  console.log(`=== FIN DEBUG ===\n`);
+
+  return this.participants;
+};
+
+// Méthodes d'instance
+
+// Ajouter un participant
+// Session.prototype.addParticipant = function (participantData) {
+//   const { id, name, isAnonymous = false, userId = null } = participantData;
+
+//   // Validation
+//   if (!id || typeof id !== "string") {
+//     throw new Error("ID de participant requis");
+//   }
+
+//   if (!name || typeof name !== "string" || name.trim().length < 2) {
+//     throw new Error("Nom de participant requis (minimum 2 caractères)");
+//   }
+
+//   const participants = Array.isArray(this.participants)
+//     ? [...this.participants]
+//     : [];
+
+//   // Vérifier si le participant existe déjà
+//   const existingParticipant = participants.find((p) => p.id === id);
+//   if (existingParticipant) {
+//     throw new Error(`Participant avec l'ID ${id} existe déjà`);
+//   }
+
+//   // Vérifier si le nom est déjà utilisé
+//   const duplicateName = participants.find(
+//     (p) => p.name.toLowerCase() === name.toLowerCase()
+//   );
+//   if (duplicateName) {
+//     throw new Error(`Le nom "${name}" est déjà utilisé`);
+//   }
+
+//   // Vérifier la limite de participants
+//   const maxParticipants = this.settings?.maxParticipants || 100;
+//   if (participants.length >= maxParticipants) {
+//     throw new Error(`Limite de participants atteinte (${maxParticipants})`);
+//   }
+
+//   // Créer le nouveau participant
+//   const newParticipant = {
+//     id,
+//     name: name.trim(),
+//     isAnonymous,
+//     userId,
+//     joinedAt: new Date().toISOString(),
+//     score: 0,
+//     answeredQuestions: 0,
+//   };
+
+//   participants.push(newParticipant);
+
+//   return this.update({
+//     participants,
+//     stats: calculateSessionStats({ ...this.toJSON(), participants }),
+//   });
+// };
+
+Session.prototype.repairParticipants = async function () {
+  console.log(`🔧 Réparation participants pour session ${this.id}`);
+
+  let participants = this.participants;
+  let needsRepair = false;
+
+  // Cas 1: Pas un tableau
+  if (!Array.isArray(participants)) {
+    console.log(`   Correction: ${typeof participants} -> array`);
+    participants = [];
+    needsRepair = true;
+  }
+
+  // Cas 2: Participants invalides
+  if (Array.isArray(participants)) {
+    const validParticipants = participants.filter((p) => {
+      return (
+        p &&
+        typeof p === "object" &&
+        p.id &&
+        typeof p.id === "string" &&
+        p.name &&
+        typeof p.name === "string"
+      );
+    });
+
+    if (validParticipants.length !== participants.length) {
+      console.log(
+        `   Nettoyage: ${participants.length} -> ${validParticipants.length}`
+      );
+      participants = validParticipants;
+      needsRepair = true;
+    }
+  }
+
+  if (needsRepair) {
+    await this.update({ participants }, { validate: false });
+    console.log(`✅ Participants réparés`);
+  } else {
+    console.log(`✅ Participants déjà valides`);
+  }
+
+  return participants;
+};
+
+// Retirer un participant
+Session.prototype.removeParticipant = function (participantId) {
+  const participants = Array.isArray(this.participants)
+    ? [...this.participants]
+    : [];
+
+  const filteredParticipants = participants.filter(
+    (p) => p.id !== participantId
+  );
+
+  if (filteredParticipants.length === participants.length) {
+    throw new Error(`Participant avec l'ID ${participantId} non trouvé`);
+  }
+
   return this.update({
-    currentQuestionIndex: newIndex,
-    currentQuestionStartedAt: new Date(),
+    participants: filteredParticipants,
+    stats: calculateSessionStats({
+      ...this.toJSON(),
+      participants: filteredParticipants,
+    }),
   });
 };
 
-Session.prototype.previousQuestion = function () {
-  if (this.currentQuestionIndex > 0) {
-    const newIndex = this.currentQuestionIndex - 1;
-    return this.update({
-      currentQuestionIndex: newIndex,
-      currentQuestionStartedAt: new Date(),
-    });
+// Ajouter une réponse
+Session.prototype.addResponse = function (responseData) {
+  const { questionId, participantId, answer, submittedAt, timeSpent } =
+    responseData;
+
+  // Validation
+  if (!questionId || !participantId) {
+    throw new Error("questionId et participantId sont requis");
   }
-  return Promise.resolve(this);
+
+  const responses = { ...this.responses };
+
+  // Initialiser le tableau des réponses pour cette question si nécessaire
+  if (!Array.isArray(responses[questionId])) {
+    responses[questionId] = [];
+  }
+
+  // Vérifier si le participant a déjà répondu à cette question
+  const existingResponse = responses[questionId].find(
+    (r) => r.participantId === participantId
+  );
+  if (existingResponse) {
+    throw new Error(
+      `Le participant ${participantId} a déjà répondu à la question ${questionId}`
+    );
+  }
+
+  // Ajouter la réponse
+  const newResponse = {
+    participantId,
+    answer,
+    submittedAt: submittedAt || new Date().toISOString(),
+    timeSpent: timeSpent || null,
+    points: 0, // À calculer selon la logique métier
+    isCorrect: false, // À calculer selon la logique métier
+  };
+
+  responses[questionId].push(newResponse);
+
+  return this.update({
+    responses,
+    stats: calculateSessionStats({ ...this.toJSON(), responses }),
+  });
 };
 
-// Session.prototype.startSession = function () {
-//   return this.update({
-//     status: "active",
-//     startedAt: new Date(),
-//     currentQuestionIndex: 0,
-//     currentQuestionStartedAt: new Date(),
-//   });
-// };
+// Démarrer la session
 Session.prototype.startSession = function () {
-  // Vérifications avant démarrage
   if (this.status !== "waiting") {
     throw new Error(
       "La session ne peut être démarrée que depuis l'état 'waiting'"
     );
   }
 
-  const participants = this.participants || [];
+  const participants = Array.isArray(this.participants)
+    ? this.participants
+    : [];
   if (participants.length === 0) {
     throw new Error(
       "Au moins un participant est requis pour démarrer la session"
@@ -654,25 +1071,18 @@ Session.prototype.startSession = function () {
   });
 };
 
-// Session.prototype.pauseSession = function () {
-//   return this.update({ status: "paused" });
-// };
-
-// Session.prototype.resumeSession = function () {
-//   return this.update({
-//     status: "active",
-//     currentQuestionStartedAt: new Date(),
-//   });
-// };
+// Mettre en pause la session
 Session.prototype.pauseSession = function () {
   if (this.status !== "active") {
     throw new Error("Seules les sessions actives peuvent être mises en pause");
   }
 
-  return this.update({ status: "paused" });
+  return this.update({
+    status: "paused",
+  });
 };
 
-// Méthode resumeSession corrigée avec validation
+// Reprendre la session
 Session.prototype.resumeSession = function () {
   if (this.status !== "paused") {
     throw new Error("Seules les sessions en pause peuvent être reprises");
@@ -684,278 +1094,104 @@ Session.prototype.resumeSession = function () {
   });
 };
 
-// Session.prototype.endSession = function () {
-//   const now = new Date();
-
-//   // Calculer les statistiques finales
-//   const participants = this.participants || [];
-//   const totalParticipants = participants.length;
-//   const totalResponses = Object.keys(this.responses || {}).length;
-
-//   let totalScore = 0;
-//   let completedParticipants = 0;
-
-//   participants.forEach((participant) => {
-//     if (participant.score !== undefined && participant.score !== null) {
-//       totalScore += participant.score;
-//       completedParticipants++;
-//     }
-//   });
-
-//   const averageScore =
-//     completedParticipants > 0 ? totalScore / completedParticipants : 0;
-//   const completionRate =
-//     totalParticipants > 0
-//       ? (completedParticipants / totalParticipants) * 100
-//       : 0;
-
-//   const finalStats = {
-//     totalParticipants,
-//     totalResponses,
-//     averageScore: Math.round(averageScore * 100) / 100,
-//     completionRate: Math.round(completionRate * 100) / 100,
-//     duration: this.startedAt
-//       ? Math.floor((now - new Date(this.startedAt)) / 1000)
-//       : 0,
-//   };
-
-//   return this.update({
-//     status: "finished",
-//     endedAt: now,
-//     stats: {
-//       ...this.stats,
-//       ...finalStats,
-//     },
-//   });
-// };
+// Terminer la session
 Session.prototype.endSession = function () {
-  const now = new Date();
-
-  // 🔧 CORRECTION : S'assurer que participants est un tableau
-  let participants = this.participants;
-  if (!Array.isArray(participants)) {
-    console.log(`⚠️  endSession: participants n'est pas un tableau:`, {
-      type: typeof participants,
-      value: participants,
-    });
-    participants = [];
+  if (!["active", "paused"].includes(this.status)) {
+    throw new Error(
+      "Seules les sessions actives ou en pause peuvent être terminées"
+    );
   }
 
-  console.log(`🏁 Fin de session - participants validés:`, {
-    count: participants.length,
-    isArray: Array.isArray(participants),
-  });
+  const now = new Date();
+  const finalStats = calculateSessionStats(this);
 
-  // Calculer les statistiques finales avec tableau sécurisé
-  const totalParticipants = participants.length;
-  const totalResponses = Object.keys(this.responses || {}).length;
-
-  let totalScore = 0;
-  let completedParticipants = 0;
-
-  // 🔧 Utilisation sécurisée de forEach maintenant que c'est un tableau
-  participants.forEach((participant) => {
-    // Vérifier que participant est un objet valide
-    if (participant && typeof participant === "object") {
-      if (participant.score !== undefined && participant.score !== null) {
-        totalScore += Number(participant.score) || 0;
-        completedParticipants++;
-      }
-    } else {
-      console.warn(`⚠️  Participant invalide ignoré:`, participant);
-    }
-  });
-
-  const averageScore =
-    completedParticipants > 0 ? totalScore / completedParticipants : 0;
-  const completionRate =
-    totalParticipants > 0
-      ? (completedParticipants / totalParticipants) * 100
-      : 0;
-
-  // Calcul de la durée de session
-  const duration = this.startedAt
-    ? Math.floor((now - new Date(this.startedAt)) / 1000)
-    : 0;
-
-  const finalStats = {
-    totalParticipants,
-    totalResponses,
-    averageScore: Math.round(averageScore * 100) / 100,
-    completionRate: Math.round(completionRate * 100) / 100,
-    duration,
-    endedAt: now.toISOString(),
-  };
-
-  console.log(`📊 Statistiques finales calculées:`, finalStats);
-
-  // Mise à jour de la session avec les stats finales
   return this.update({
     status: "finished",
     endedAt: now,
     stats: {
-      ...(this.stats || {}),
       ...finalStats,
+      duration: this.startedAt
+        ? Math.round((now - new Date(this.startedAt)) / 1000)
+        : 0,
     },
   });
 };
 
-// Session.prototype.getLeaderboard = function () {
-//   try {
-//     const participants = [...(this.participants || [])];
+// Obtenir les résultats d'une question
+Session.prototype.getQuestionResults = function (questionId) {
+  const responses = this.responses || {};
+  const questionResponses = responses[questionId] || [];
+  const participants = Array.isArray(this.participants)
+    ? this.participants
+    : [];
 
-//     return participants
-//       .filter((p) => p.score !== undefined && p.score !== null)
-//       .sort((a, b) => (b.score || 0) - (a.score || 0))
-//       .map((participant, index) => ({
-//         rank: index + 1,
-//         id: participant.id,
-//         name: participant.name || "Participant",
-//         score: participant.score || 0,
-//         avatar: participant.avatar || null,
-//         isConnected: participant.isConnected || false,
-//         lastSeen: participant.lastSeen || null,
-//       }));
-//   } catch (error) {
-//     console.error("Erreur lors de la génération du leaderboard:", error);
-//     return [];
-//   }
-// };
-Session.prototype.getLeaderboard = function () {
-  try {
-    // S'assurer que participants est un tableau
-    let participants = this.participants;
-    if (!Array.isArray(participants)) {
-      console.log(`⚠️  getLeaderboard: participants n'est pas un tableau:`, {
-        type: typeof participants,
-        value: participants,
-      });
-      participants = [];
+  let correctCount = 0;
+  let totalTimeSpent = 0;
+
+  const results = {
+    questionId,
+    totalResponses: questionResponses.length,
+    totalParticipants: participants.length,
+    responses: [],
+    stats: {
+      correctAnswers: 0,
+      averageTimeSpent: 0,
+      responseRate: 0,
+    },
+  };
+
+  questionResponses.forEach((response) => {
+    const participant = participants.find(
+      (p) => p.id === response.participantId
+    );
+
+    const responseData = {
+      participantId: response.participantId,
+      participantName: participant?.name || "Participant inconnu",
+      answer: response.answer,
+      submittedAt: response.submittedAt,
+      timeSpent: response.timeSpent || 0,
+      points: response.points || 0,
+      isCorrect: response.isCorrect || false,
+    };
+
+    results.responses.push(responseData);
+
+    if (response.isCorrect) {
+      correctCount++;
     }
 
-    return participants
-      .filter(
-        (p) =>
-          p &&
-          typeof p === "object" &&
-          p.score !== undefined &&
-          p.score !== null
-      )
-      .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0))
-      .map((participant, index) => ({
-        rank: index + 1,
-        id: participant.id || `participant_${index}`,
-        name: participant.name || "Participant",
-        score: Number(participant.score) || 0,
-        avatar: participant.avatar || null,
-        isConnected: Boolean(participant.isConnected),
-        lastSeen: participant.lastSeen || null,
-      }));
-  } catch (error) {
-    console.error("❌ Erreur lors de la génération du leaderboard:", error);
-    return [];
+    totalTimeSpent += response.timeSpent || 0;
+  });
+
+  // Calculer les statistiques
+  if (questionResponses.length > 0) {
+    results.stats.averageTimeSpent = Math.round(
+      totalTimeSpent / questionResponses.length
+    );
+    results.stats.correctAnswers = correctCount;
+    results.stats.responseRate = Math.round(
+      (questionResponses.length / participants.length) * 100
+    );
   }
+
+  return results;
 };
-
-// Session.prototype.getQuestionResults = function (questionId) {
-//   const responses = this.responses[questionId] || {};
-//   const participants = this.participants || [];
-
-//   const results = {
-//     totalResponses: Object.keys(responses).length,
-//     totalParticipants: participants.length,
-//     responses: [],
-//   };
-
-//   Object.entries(responses).forEach(([participantId, response]) => {
-//     const participant = participants.find((p) => p.id === participantId);
-//     results.responses.push({
-//       participantId,
-//       participantName: participant?.name || "Anonyme",
-//       answer: response.answer,
-//       submittedAt: response.submittedAt,
-//       timeSpent: response.timeSpent,
-//     });
-//   });
-
-//   return results;
-// };
 
 // Méthodes statiques
-Session.prototype.getQuestionResults = function (questionId) {
-  try {
-    const responses = (this.responses || {})[questionId] || {};
-    const participants = this.participants || [];
 
-    const results = {
-      questionId,
-      totalResponses: Object.keys(responses).length,
-      totalParticipants: participants.length,
-      responses: [],
-      stats: {
-        correctAnswers: 0,
-        averageTimeSpent: 0,
-        responseRate: 0,
-      },
-    };
-
-    let totalTimeSpent = 0;
-    let correctCount = 0;
-
-    Object.entries(responses).forEach(([participantId, response]) => {
-      const participant = participants.find((p) => p.id === participantId);
-
-      const responseData = {
-        participantId,
-        participantName: participant?.name || "Participant",
-        answer: response.answer,
-        submittedAt: response.submittedAt,
-        timeSpent: response.timeSpent || 0,
-        points: response.points || 0,
-        isCorrect: response.isCorrect || false,
-      };
-
-      results.responses.push(responseData);
-
-      // Calculer les statistiques
-      if (response.isCorrect) {
-        correctCount++;
-      }
-
-      totalTimeSpent += response.timeSpent || 0;
-    });
-
-    // Calculer les moyennes
-    const responseCount = results.responses.length;
-    if (responseCount > 0) {
-      results.stats.averageTimeSpent = Math.round(
-        totalTimeSpent / responseCount
-      );
-      results.stats.correctAnswers = correctCount;
-      results.stats.responseRate = Math.round(
-        (responseCount / results.totalParticipants) * 100
-      );
-    }
-
-    return results;
-  } catch (error) {
-    console.error("Erreur lors de la récupération des résultats:", error);
-    return {
-      questionId,
-      totalResponses: 0,
-      totalParticipants: 0,
-      responses: [],
-      stats: { correctAnswers: 0, averageTimeSpent: 0, responseRate: 0 },
-    };
-  }
-};
-
+// Trouver par code
 Session.findByCode = function (code) {
+  if (!code || typeof code !== "string") {
+    return Promise.resolve(null);
+  }
+
   return this.findOne({
-    where: { code: code.toUpperCase() },
+    where: { code: code.toUpperCase().trim() },
   });
 };
 
+// Trouver les sessions actives d'un hôte
 Session.findActiveByHost = function (hostId) {
   return this.findAll({
     where: {
@@ -966,6 +1202,7 @@ Session.findActiveByHost = function (hostId) {
   });
 };
 
+// Trouver les sessions d'un quiz
 Session.findByQuiz = function (quizId, options = {}) {
   return this.findAll({
     where: {
@@ -977,6 +1214,7 @@ Session.findByQuiz = function (quizId, options = {}) {
   });
 };
 
+// Générer un code unique
 Session.generateUniqueCode = async function () {
   let code;
   let exists = true;
@@ -996,7 +1234,7 @@ Session.generateUniqueCode = async function () {
   return code;
 };
 
-// Scopes
+// Scopes pour les requêtes courantes
 Session.addScope("active", {
   where: { status: ["waiting", "active", "paused"] },
 });
@@ -1008,8 +1246,7 @@ Session.addScope("finished", {
 Session.addScope("withQuiz", {
   include: [
     {
-      model: require("./Quiz"),
-      as: "quiz",
+      association: "quiz",
     },
   ],
 });
@@ -1017,22 +1254,14 @@ Session.addScope("withQuiz", {
 Session.addScope("withHost", {
   include: [
     {
-      model: require("./User"),
-      as: "host",
+      association: "host",
       attributes: ["id", "username", "firstName", "lastName"],
     },
   ],
 });
 
-// module.exports = Session;
-// module.exports = {
-//   Session,
-//   calculateSessionStats,
-//   generateSessionCode,
-// };
-
+// Exporter les fonctions utilitaires
 Session.calculateSessionStats = calculateSessionStats;
 Session.generateSessionCode = generateSessionCode;
 
-// Export par défaut
 module.exports = Session;

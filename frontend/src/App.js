@@ -95,8 +95,6 @@ function App() {
                 </PublicOnlyRoute>
               }
             />
-            <Route path="/join/:code?" element={<SessionJoin />} />
-            <Route path="/session/:sessionId/play" element={<SessionPlay />} />
 
             {/* Routes avec layout principal */}
             <Route path="/*" element={<MainLayout />} />
@@ -243,6 +241,22 @@ function MainLayout() {
                 element={
                   <ProtectedRoute>
                     <SessionResults />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/join/:code?"
+                element={
+                  <ProtectedRoute>
+                    <SessionJoin />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/session/:sessionId/play"
+                element={
+                  <ProtectedRoute>
+                    <SessionPlay />
                   </ProtectedRoute>
                 }
               />
