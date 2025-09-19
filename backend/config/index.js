@@ -58,26 +58,49 @@ const config = {
   },
 
   // Configuration CORS optimisée
+  // cors: {
+  //   origin: function (origin, callback) {
+  //     // Permettre les requêtes sans origine (mobile apps, etc.)
+  //     if (!origin) return callback(null, true);
+
+  //     const allowedOrigins = process.env.CORS_ORIGINS
+  //       ? process.env.CORS_ORIGINS.split(",")
+  //       : [
+  //           "http://localhost:3000",
+  //           "http://localhost:3001",
+  //           "http://127.0.0.1:3000",
+  //           "http://127.0.0.1:3001",
+  //         ];
+
+  //     if (allowedOrigins.indexOf(origin) !== -1) {
+  //       callback(null, true);
+  //     } else {
+  //       callback(new Error("Not allowed by CORS"));
+  //     }
+  //   },
+  //   credentials: true,
+  //   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  //   allowedHeaders: [
+  //     "Content-Type",
+  //     "Authorization",
+  //     "X-Requested-With",
+  //     "Accept",
+  //     "Origin",
+  //   ],
+  //   // Nouvelles optimisations CORS
+  //   preflightContinue: false,
+  //   optionsSuccessStatus: 204,
+  // },
   cors: {
-    origin: function (origin, callback) {
-      // Permettre les requêtes sans origine (mobile apps, etc.)
-      if (!origin) return callback(null, true);
-
-      const allowedOrigins = process.env.CORS_ORIGINS
-        ? process.env.CORS_ORIGINS.split(",")
-        : [
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:3001",
-          ];
-
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origins: process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(",")
+      : [
+          "http://localhost:3000",
+          "http://localhost:3001",
+          "http://127.0.0.1:3000",
+          "http://127.0.0.1:3001",
+          "http://localhost:3002", // au cas où
+        ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
@@ -87,9 +110,8 @@ const config = {
       "Accept",
       "Origin",
     ],
-    // Nouvelles optimisations CORS
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
+    // Options simplifiées
+    optionsSuccessStatus: 200,
   },
 
   // Configuration Rate Limiting optimisée

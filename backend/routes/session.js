@@ -1326,6 +1326,55 @@ router.get("/:id/leaderboard", optionalAuth, loadSession, async (req, res) => {
 });
 
 // GET /api/session/:id/results - Résultats détaillés de la session
+// router.get(
+//   "/:id/results",
+//   authenticateToken,
+//   loadSession,
+//   requireSessionOwnership,
+//   async (req, res) => {
+//     try {
+//       const session = req.session;
+
+//       const results = {
+//         session: {
+//           id: session.id,
+//           code: session.code,
+//           title: session.title,
+//           status: session.status,
+//           stats: session.stats,
+//           startedAt: session.startedAt,
+//           endedAt: session.endedAt,
+//         },
+//         quiz: {
+//           id: session.quiz.id,
+//           title: session.quiz.title,
+//           questions: session.quiz.questions,
+//         },
+//         participants: session.participants || [],
+//         responses: session.responses || {},
+//         leaderboard: session.getLeaderboard(),
+//         questionResults: {},
+//       };
+
+//       // Analyser les résultats par question
+//       if (session.quiz.questions) {
+//         session.quiz.questions.forEach((question) => {
+//           results.questionResults[question.id] = session.getQuestionResults(
+//             question.id
+//           );
+//         });
+//       }
+
+//       res.json(results);
+//     } catch (error) {
+//       console.error("Erreur lors de la récupération des résultats:", error);
+//       res.status(500).json({
+//         error: "Erreur lors de la récupération des résultats",
+//       });
+//     }
+//   }
+// );
+// GET /api/session/:id/results - Résultats détaillés de la session
 router.get(
   "/:id/results",
   authenticateToken,
@@ -1335,33 +1384,109 @@ router.get(
     try {
       const session = req.session;
 
+      // Construire les résultats détaillés
       const results = {
         session: {
           id: session.id,
           code: session.code,
           title: session.title,
           status: session.status,
-          stats: session.stats,
+          stats: session.stats || {},
           startedAt: session.startedAt,
           endedAt: session.endedAt,
+          createdAt: session.createdAt,
+          currentQuestionIndex: session.currentQuestionIndex || 0,
         },
-        quiz: {
-          id: session.quiz.id,
-          title: session.quiz.title,
-          questions: session.quiz.questions,
-        },
+        quiz: session.quiz
+          ? {
+              id: session.quiz.id,
+              title: session.quiz.title,
+              category: session.quiz.category,
+              difficulty: session.quiz.difficulty,
+              questions: session.quiz.questions || [],
+            }
+          : null,
         participants: session.participants || [],
         responses: session.responses || {},
-        leaderboard: session.getLeaderboard(),
+        leaderboard: [],
         questionResults: {},
       };
 
+      // Générer le classement
+      if (session.participants && session.participants.length > 0) {
+        results.leaderboard = session.participants
+          .filter((p) => p.score !== undefined && p.score !== null)
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+          .map((participant, index) => ({
+            rank: index + 1,
+            id: participant.id,
+            name: participant.name || "Participant",
+            score: participant.score || 0,
+            isConnected: participant.isConnected || false,
+            lastSeen: participant.lastSeen || null,
+          }));
+      }
+
       // Analyser les résultats par question
-      if (session.quiz.questions) {
+      if (session.quiz && session.quiz.questions) {
         session.quiz.questions.forEach((question) => {
-          results.questionResults[question.id] = session.getQuestionResults(
-            question.id
+          const questionResponses = session.responses?.[question.id] || {};
+          const responseArray = [];
+
+          Object.entries(questionResponses).forEach(
+            ([participantId, response]) => {
+              const participant = session.participants?.find(
+                (p) => p.id === participantId
+              );
+              responseArray.push({
+                participantId,
+                participantName: participant?.name || "Participant",
+                answer: response.answer,
+                points: response.points || 0,
+                isCorrect: response.isCorrect || false,
+                timeSpent: response.timeSpent || 0,
+                submittedAt: response.submittedAt,
+              });
+            }
           );
+
+          // Calculer les statistiques de la question
+          const totalResponses = responseArray.length;
+          const correctAnswers = responseArray.filter(
+            (r) => r.isCorrect
+          ).length;
+          const averageTimeSpent =
+            totalResponses > 0
+              ? Math.round(
+                  responseArray.reduce(
+                    (sum, r) => sum + (r.timeSpent || 0),
+                    0
+                  ) / totalResponses
+                )
+              : 0;
+
+          results.questionResults[question.id] = {
+            questionId: question.id,
+            totalResponses,
+            totalParticipants: session.participants?.length || 0,
+            responses: responseArray.sort(
+              (a, b) => (b.points || 0) - (a.points || 0)
+            ),
+            stats: {
+              correctAnswers,
+              correctPercentage:
+                totalResponses > 0
+                  ? Math.round((correctAnswers / totalResponses) * 100)
+                  : 0,
+              averageTimeSpent,
+              responseRate:
+                session.participants?.length > 0
+                  ? Math.round(
+                      (totalResponses / session.participants.length) * 100
+                    )
+                  : 0,
+            },
+          };
         });
       }
 
@@ -1370,6 +1495,7 @@ router.get(
       console.error("Erreur lors de la récupération des résultats:", error);
       res.status(500).json({
         error: "Erreur lors de la récupération des résultats",
+        code: "GET_RESULTS_ERROR",
       });
     }
   }

@@ -1,11 +1,7 @@
-// Correction Socket Handlers - backend/socket/socketHandlers.js
+// Socket Handlers avec validation corrigée - backend/socket/socketHandlers.js
 
 const jwt = require("jsonwebtoken");
 const { Session, Quiz, User } = require("../models");
-
-// Cache simple pour éviter les sessions multiples
-const connectedHosts = new Map(); // sessionId -> socketId
-const connectedParticipants = new Map(); // sessionId -> Set(socketIds)
 
 // Middleware d'authentification optimisé
 const authenticateSocket = async (socket, next) => {
@@ -72,54 +68,138 @@ const socketHandlers = (io) => {
     });
   });
 
-  // Handler: Rejoindre une session (PARTICIPANT SEULEMENT)
+  // Handler: Rejoindre une session (CORRIGÉ AVEC LOGS DÉTAILLÉS)
   async function handleJoinSession(data) {
+    const socket = this;
+
     try {
-      const { sessionCode, participantName, isAnonymous = false } = data;
-      const socket = this;
+      console.log(`\n🎯 === DEBUT handleJoinSession ===`);
+      console.log(`   Socket ID: ${socket.id}`);
+      console.log(`   User: ${socket.user ? socket.user.username : "anonyme"}`);
+      console.log(`   Data reçue:`, JSON.stringify(data, null, 2));
 
-      console.log(
-        `🎯 Tentative de jointure: ${participantName} → ${sessionCode}`
-      );
-
-      if (!sessionCode || !participantName?.trim()) {
+      // Validation des données reçues - PLUS TOLÉRANTE
+      if (!data) {
+        console.log(`❌ Pas de données reçues`);
         return socket.emit("error", {
-          message: "Code de session et nom requis",
-          code: "MISSING_REQUIRED_FIELDS",
+          message: "Aucune donnée reçue",
+          code: "NO_DATA_RECEIVED",
         });
       }
 
-      // Chercher la session active
+      const { sessionCode, participantName, isAnonymous } = data;
+
+      console.log(`   Extraction:`, {
+        sessionCode: sessionCode,
+        participantName: participantName,
+        isAnonymous: isAnonymous,
+      });
+
+      // Validation plus flexible
+      if (
+        !sessionCode ||
+        typeof sessionCode !== "string" ||
+        sessionCode.trim().length === 0
+      ) {
+        console.log(`❌ sessionCode invalide:`, sessionCode);
+        return socket.emit("error", {
+          message: "Code de session requis",
+          code: "MISSING_SESSION_CODE",
+          received: { sessionCode, participantName, isAnonymous },
+        });
+      }
+
+      if (
+        !participantName ||
+        typeof participantName !== "string" ||
+        participantName.trim().length === 0
+      ) {
+        console.log(`❌ participantName invalide:`, participantName);
+        return socket.emit("error", {
+          message: "Nom de participant requis",
+          code: "MISSING_PARTICIPANT_NAME",
+          received: { sessionCode, participantName, isAnonymous },
+        });
+      }
+
+      const cleanSessionCode = sessionCode.trim().toUpperCase();
+      const cleanParticipantName = participantName.trim();
+
+      console.log(`   Données nettoyées:`, {
+        cleanSessionCode,
+        cleanParticipantName,
+        isAnonymous: Boolean(isAnonymous),
+      });
+
+      // Chercher la session dans la base de données
+      console.log(`🔍 Recherche session avec code: "${cleanSessionCode}"`);
+
       const session = await Session.findOne({
         where: {
-          code: sessionCode.toUpperCase(),
+          code: cleanSessionCode,
           status: ["waiting", "active"],
         },
-        include: [{ model: Quiz, as: "quiz" }],
+        include: [
+          {
+            model: Quiz,
+            as: "quiz",
+            attributes: ["id", "title", "questions"],
+          },
+          {
+            model: User,
+            as: "host",
+            attributes: ["id", "username", "firstName", "lastName"],
+          },
+        ],
       });
 
       if (!session) {
+        console.log(
+          `❌ Session non trouvée pour le code: "${cleanSessionCode}"`
+        );
         return socket.emit("error", {
           message: "Session non trouvée ou terminée",
           code: "SESSION_NOT_FOUND",
+          searchedCode: cleanSessionCode,
         });
       }
 
-      // Vérifier si la session accepte encore des participants
-      if (!session.settings?.allowLateJoin && session.status === "active") {
+      console.log(`✅ Session trouvée:`, {
+        id: session.id,
+        code: session.code,
+        title: session.title,
+        status: session.status,
+        currentParticipants: session.participants?.length || 0,
+      });
+
+      // Vérifications de session
+      if (session.status !== "waiting" && session.status !== "active") {
+        console.log(`❌ Session dans un état invalide: ${session.status}`);
+        return socket.emit("error", {
+          message: "Cette session n'est plus accessible",
+          code: "SESSION_INVALID_STATUS",
+          status: session.status,
+        });
+      }
+
+      if (session.status === "active" && !session.settings?.allowLateJoin) {
+        console.log(`❌ Rejointe tardive interdite`);
         return socket.emit("error", {
           message: "Cette session n'accepte plus de nouveaux participants",
           code: "LATE_JOIN_DISABLED",
         });
       }
 
-      // Créer un ID unique pour le participant
+      // Générer un ID participant unique
       const participantId = `participant_${socket.id}_${Date.now()}`;
+      console.log(`👤 Création participant avec ID: ${participantId}`);
+
+      // Créer l'objet participant
       const participant = {
         id: participantId,
         socketId: socket.id,
-        name: participantName.trim(),
-        isAnonymous,
+        name: cleanParticipantName,
+        isAnonymous: Boolean(isAnonymous),
         userId: socket.user?.id || null,
         joinedAt: new Date(),
         isConnected: true,
@@ -127,20 +207,30 @@ const socketHandlers = (io) => {
         responses: {},
       };
 
+      console.log(`   Participant créé:`, participant);
+
       // Mettre à jour la session avec le nouveau participant
       const currentParticipants = Array.isArray(session.participants)
         ? session.participants
         : [];
 
+      console.log(`   Participants actuels: ${currentParticipants.length}`);
+
       // Éviter les doublons par socket ID
       const filteredParticipants = currentParticipants.filter(
-        (p) => p.socketId !== socket.id
+        (p) => p.socketId !== socket.id && p.id !== participantId
       );
+
       const updatedParticipants = [...filteredParticipants, participant];
 
+      console.log(`   Participants après ajout: ${updatedParticipants.length}`);
+
+      // Sauvegarder en base
       await session.update({
         participants: updatedParticipants,
       });
+
+      console.log(`✅ Session mise à jour en base`);
 
       // Configurer le socket
       socket.sessionId = session.id;
@@ -148,27 +238,35 @@ const socketHandlers = (io) => {
       socket.isParticipant = true;
       socket.join(`session_${session.id}`);
 
-      // Ajouter aux participants connectés
-      if (!connectedParticipants.has(session.id)) {
-        connectedParticipants.set(session.id, new Set());
-      }
-      connectedParticipants.get(session.id).add(socket.id);
+      console.log(`🏠 Socket ajouté à la room: session_${session.id}`);
 
       // Confirmer au participant
-      socket.emit("session_joined", {
+      const responseData = {
         sessionId: session.id,
         participantId: participantId,
         participantName: participant.name,
         sessionStatus: session.status,
-        quiz: {
-          id: session.quiz?.id,
-          title: session.quiz?.title,
-          questionCount: session.quiz?.questions?.length || 0,
+        session: {
+          id: session.id,
+          code: session.code,
+          title: session.title,
+          status: session.status,
+          currentQuestionIndex: session.currentQuestionIndex || 0,
         },
-      });
+        quiz: session.quiz
+          ? {
+              id: session.quiz.id,
+              title: session.quiz.title,
+              questionCount: session.quiz.questions?.length || 0,
+            }
+          : null,
+      };
 
-      // Notifier l'hôte
-      io.to(`host_${session.id}`).emit("participant_joined", {
+      console.log(`📤 Envoi session_joined au participant`);
+      socket.emit("session_joined", responseData);
+
+      // Notifier l'hôte et autres participants
+      const hostNotification = {
         participantId: participantId,
         participantName: participant.name,
         totalParticipants: updatedParticipants.length,
@@ -179,46 +277,54 @@ const socketHandlers = (io) => {
           isConnected: true,
           score: 0,
         },
-      });
+      };
 
+      console.log(`📢 Notification à l'hôte: host_${session.id}`);
+      io.to(`host_${session.id}`).emit("participant_joined", hostNotification);
+
+      // Notifier tous les participants de la session
+      socket
+        .to(`session_${session.id}`)
+        .emit("participant_joined", hostNotification);
+
+      console.log(`✅ === FIN handleJoinSession SUCCESS ===\n`);
       console.log(
-        `✅ ${participant.name} a rejoint la session ${session.code} (${updatedParticipants.length} participants)`
+        `   ${participant.name} a rejoint la session ${session.code}`
       );
+      console.log(`   Total participants: ${updatedParticipants.length}`);
     } catch (error) {
-      console.error("Erreur lors de la jointure:", error);
+      console.error(`💥 === ERREUR handleJoinSession ===`);
+      console.error(`   Socket ID: ${socket.id}`);
+      console.error(`   Error:`, error);
+      console.error(`   Stack:`, error.stack);
+
       socket.emit("error", {
         message: "Erreur lors de la connexion à la session",
         code: "JOIN_SESSION_ERROR",
+        details:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   }
 
-  // Handler: Quitter la session
+  // Handler: Quitter la session (SIMPLIFIÉ)
   async function handleLeaveSession() {
     const socket = this;
+    console.log(`👋 Leave session demandé par ${socket.id}`);
 
     if (!socket.sessionId || !socket.participantId) {
+      console.log(`   Pas de session/participant à quitter`);
       return;
     }
 
     try {
       const session = await Session.findByPk(socket.sessionId);
-      if (session) {
-        // Retirer le participant de la session
-        const currentParticipants = Array.isArray(session.participants)
-          ? session.participants
-          : [];
-        const updatedParticipants = currentParticipants.filter(
+      if (session && Array.isArray(session.participants)) {
+        const updatedParticipants = session.participants.filter(
           (p) => p.id !== socket.participantId
         );
 
         await session.update({ participants: updatedParticipants });
-
-        // Nettoyer les connexions
-        const sessionParticipants = connectedParticipants.get(socket.sessionId);
-        if (sessionParticipants) {
-          sessionParticipants.delete(socket.id);
-        }
 
         // Notifier l'hôte
         io.to(`host_${socket.sessionId}`).emit("participant_left", {
@@ -227,7 +333,7 @@ const socketHandlers = (io) => {
         });
 
         console.log(
-          `👋 Participant ${socket.participantId} a quitté la session`
+          `✅ Participant ${socket.participantId} retiré de la session`
         );
       }
 
@@ -243,14 +349,13 @@ const socketHandlers = (io) => {
     }
   }
 
-  // Handler: Connexion hôte (HÔTE SEULEMENT)
+  // Handler: Connexion hôte (SIMPLIFIÉ)
   async function handleHostSession(data) {
-    try {
-      const { sessionId } = data;
-      const socket = this;
+    const socket = this;
 
+    try {
       console.log(
-        `🎯 Tentative connexion hôte: ${socket.user?.username} → session ${sessionId}`
+        `🎯 Host session demandé par ${socket.user?.username} pour session ${data?.sessionId}`
       );
 
       if (!socket.user) {
@@ -260,8 +365,14 @@ const socketHandlers = (io) => {
         });
       }
 
-      // Vérifier les permissions
-      const session = await Session.findByPk(sessionId, {
+      if (!data?.sessionId) {
+        return socket.emit("error", {
+          message: "ID de session requis",
+          code: "MISSING_SESSION_ID",
+        });
+      }
+
+      const session = await Session.findByPk(data.sessionId, {
         include: [
           { model: Quiz, as: "quiz" },
           { model: User, as: "host" },
@@ -275,26 +386,15 @@ const socketHandlers = (io) => {
         });
       }
 
+      // Vérifier les permissions
       const isHost = session.hostId === socket.user.id;
       const isQuizOwner = session.quiz?.creatorId === socket.user.id;
       const isAdmin = socket.user.role === "admin";
 
       if (!isHost && !isQuizOwner && !isAdmin) {
         return socket.emit("error", {
-          message:
-            "Permission insuffisante - Vous n'êtes pas l'hôte de cette session",
+          message: "Permission insuffisante",
           code: "INSUFFICIENT_PERMISSIONS",
-        });
-      }
-
-      // Vérifier s'il y a déjà un hôte connecté
-      if (
-        connectedHosts.has(session.id) &&
-        connectedHosts.get(session.id) !== socket.id
-      ) {
-        return socket.emit("error", {
-          message: "Un hôte est déjà connecté à cette session",
-          code: "HOST_ALREADY_CONNECTED",
         });
       }
 
@@ -303,9 +403,6 @@ const socketHandlers = (io) => {
       socket.isHost = true;
       socket.join(`host_${session.id}`);
       socket.join(`session_${session.id}`);
-
-      // Enregistrer l'hôte connecté
-      connectedHosts.set(session.id, socket.id);
 
       // Confirmer à l'hôte avec toutes les données
       socket.emit("host_connected", {
@@ -342,17 +439,15 @@ const socketHandlers = (io) => {
     }
   }
 
-  // Handler: Démarrer session (HÔTE SEULEMENT)
+  // Handlers simplifiés pour les actions (inchangés)
   async function handleStartSession() {
     const socket = this;
-
     if (!socket.isHost || !socket.sessionId) {
       return socket.emit("error", { message: "Permission insuffisante" });
     }
 
     try {
       const session = await Session.findByPk(socket.sessionId);
-
       if (!session || session.status !== "waiting") {
         return socket.emit("error", {
           message: "Impossible de démarrer la session",
@@ -366,31 +461,27 @@ const socketHandlers = (io) => {
         currentQuestionStartedAt: new Date(),
       });
 
-      // Notifier tous les participants
       io.to(`session_${session.id}`).emit("session_started", {
         sessionId: session.id,
         currentQuestionIndex: 0,
         startedAt: new Date(),
       });
 
-      console.log(`🚀 Session ${session.code} démarrée par l'hôte`);
+      console.log(`🚀 Session ${session.code} démarrée`);
     } catch (error) {
       console.error("Erreur lors du démarrage:", error);
       socket.emit("error", { message: "Erreur lors du démarrage" });
     }
   }
 
-  // Handler: Pause session (HÔTE SEULEMENT)
   async function handlePauseSession() {
     const socket = this;
-
     if (!socket.isHost || !socket.sessionId) {
       return socket.emit("error", { message: "Permission insuffisante" });
     }
 
     try {
       const session = await Session.findByPk(socket.sessionId);
-
       if (!session || session.status !== "active") {
         return socket.emit("error", {
           message: "Impossible de mettre en pause",
@@ -398,7 +489,6 @@ const socketHandlers = (io) => {
       }
 
       await session.update({ status: "paused" });
-
       io.to(`session_${session.id}`).emit("session_paused", {
         sessionId: session.id,
       });
@@ -408,17 +498,14 @@ const socketHandlers = (io) => {
     }
   }
 
-  // Handler: Reprendre session (HÔTE SEULEMENT)
   async function handleResumeSession() {
     const socket = this;
-
     if (!socket.isHost || !socket.sessionId) {
       return socket.emit("error", { message: "Permission insuffisante" });
     }
 
     try {
       const session = await Session.findByPk(socket.sessionId);
-
       if (!session || session.status !== "paused") {
         return socket.emit("error", { message: "Impossible de reprendre" });
       }
@@ -438,58 +525,39 @@ const socketHandlers = (io) => {
     }
   }
 
-  // Handler: Terminer session (HÔTE SEULEMENT)
   async function handleEndSession() {
     const socket = this;
-
     if (!socket.isHost || !socket.sessionId) {
       return socket.emit("error", { message: "Permission insuffisante" });
     }
 
     try {
       const session = await Session.findByPk(socket.sessionId);
-
       if (!session) {
         return socket.emit("error", { message: "Session non trouvée" });
       }
 
-      // Calculer les statistiques finales
       const participants = session.participants || [];
-      const totalParticipants = participants.length;
-      let totalScore = 0;
-      let completedParticipants = 0;
-
-      participants.forEach((participant) => {
-        if (participant.score !== undefined) {
-          totalScore += participant.score;
-          completedParticipants++;
-        }
-      });
-
-      const averageScore =
-        completedParticipants > 0 ? totalScore / completedParticipants : 0;
-
-      const finalStats = {
-        totalParticipants,
-        completedParticipants,
-        averageScore: Math.round(averageScore * 100) / 100,
-        completionRate:
-          totalParticipants > 0
-            ? Math.round((completedParticipants / totalParticipants) * 100)
+      const stats = {
+        totalParticipants: participants.length,
+        averageScore:
+          participants.length > 0
+            ? participants.reduce((sum, p) => sum + (p.score || 0), 0) /
+              participants.length
             : 0,
+        completionRate: 100,
       };
 
       await session.update({
         status: "finished",
         endedAt: new Date(),
-        stats: finalStats,
+        stats: stats,
       });
 
-      // Notifier tout le monde
       io.to(`session_${session.id}`).emit("session_ended", {
         sessionId: session.id,
         endedAt: new Date(),
-        finalStats: finalStats,
+        finalStats: stats,
       });
 
       console.log(`🏁 Session ${session.code} terminée`);
@@ -499,10 +567,8 @@ const socketHandlers = (io) => {
     }
   }
 
-  // Handler: Question suivante (HÔTE SEULEMENT)
   async function handleNextQuestion() {
     const socket = this;
-
     if (!socket.isHost || !socket.sessionId) {
       return socket.emit("error", { message: "Permission insuffisante" });
     }
@@ -543,10 +609,8 @@ const socketHandlers = (io) => {
     }
   }
 
-  // Handler: Question précédente (HÔTE SEULEMENT)
   async function handlePreviousQuestion() {
     const socket = this;
-
     if (!socket.isHost || !socket.sessionId) {
       return socket.emit("error", { message: "Permission insuffisante" });
     }
@@ -561,7 +625,6 @@ const socketHandlers = (io) => {
       }
 
       const currentIndex = session.currentQuestionIndex || 0;
-
       if (currentIndex <= 0) {
         return socket.emit("error", { message: "Première question atteinte" });
       }
@@ -586,16 +649,16 @@ const socketHandlers = (io) => {
     }
   }
 
-  // Handler: Soumettre réponse (PARTICIPANT SEULEMENT)
+  // Handler: Soumettre réponse (simplifié)
   async function handleSubmitResponse(data) {
     const socket = this;
-    const { questionId, answer, timeSpent } = data;
-
     if (!socket.isParticipant || !socket.sessionId || !socket.participantId) {
       return socket.emit("error", {
         message: "Vous devez être participant à une session",
       });
     }
+
+    const { questionId, answer, timeSpent } = data;
 
     try {
       const session = await Session.findByPk(socket.sessionId, {
@@ -606,7 +669,6 @@ const socketHandlers = (io) => {
         return socket.emit("error", { message: "Session non active" });
       }
 
-      // Trouver la question
       const question = session.quiz?.questions?.find((q) => q.id == questionId);
       if (!question) {
         return socket.emit("error", { message: "Question non trouvée" });
@@ -616,10 +678,7 @@ const socketHandlers = (io) => {
       let isCorrect = false;
       let points = 0;
 
-      if (question.type === "qcm") {
-        isCorrect = question.correctAnswer == answer;
-        points = isCorrect ? question.points || 1 : 0;
-      } else if (question.type === "vrai_faux") {
+      if (question.type === "qcm" || question.type === "vrai_faux") {
         isCorrect = question.correctAnswer == answer;
         points = isCorrect ? question.points || 1 : 0;
       } else if (question.type === "reponse_libre") {
@@ -639,19 +698,17 @@ const socketHandlers = (io) => {
         submittedAt: new Date(),
       };
 
-      // Mettre à jour la session avec la réponse
+      // Mettre à jour en base
       const participants = Array.isArray(session.participants)
         ? session.participants
         : [];
       const responses = session.responses || {};
 
-      // Initialiser les réponses pour cette question
       if (!responses[questionId]) {
         responses[questionId] = {};
       }
       responses[questionId][socket.participantId] = responseData;
 
-      // Mettre à jour le score du participant
       const participantIndex = participants.findIndex(
         (p) => p.id === socket.participantId
       );
@@ -687,7 +744,7 @@ const socketHandlers = (io) => {
       });
 
       console.log(
-        `📝 Réponse soumise: ${socket.participantId} → Q${questionId} (${points} pts)`
+        `📝 Réponse: ${socket.participantId} → Q${questionId} (${points} pts)`
       );
     } catch (error) {
       console.error("Erreur soumission réponse:", error);
@@ -695,67 +752,47 @@ const socketHandlers = (io) => {
     }
   }
 
-  // Handler: Participant prêt
+  // Handlers simples
   async function handleParticipantReady() {
     const socket = this;
-
-    if (!socket.isParticipant || !socket.sessionId || !socket.participantId) {
-      return;
-    }
+    if (!socket.isParticipant || !socket.sessionId) return;
 
     io.to(`host_${socket.sessionId}`).emit("participant_ready", {
       participantId: socket.participantId,
     });
   }
 
-  // Handler: Heartbeat du participant
   async function handleParticipantHeartbeat() {
     const socket = this;
-
-    if (!socket.isParticipant || !socket.sessionId || !socket.participantId) {
-      return;
-    }
+    if (!socket.isParticipant || !socket.sessionId) return;
 
     try {
       const session = await Session.findByPk(socket.sessionId);
-      if (session) {
-        const participants = Array.isArray(session.participants)
-          ? session.participants
-          : [];
-        const participantIndex = participants.findIndex(
-          (p) => p.id === socket.participantId
-        );
+      if (session && Array.isArray(session.participants)) {
+        const participants = session.participants.map((p) => {
+          if (p.id === socket.participantId) {
+            return { ...p, isConnected: true, lastSeen: new Date() };
+          }
+          return p;
+        });
 
-        if (participantIndex !== -1) {
-          participants[participantIndex].isConnected = true;
-          participants[participantIndex].lastSeen = new Date();
-          await session.update({ participants });
-        }
+        await session.update({ participants });
       }
     } catch (error) {
       console.error("Erreur heartbeat:", error);
     }
   }
 
-  // Handler: Message chat
   async function handleSendMessage(data) {
     const socket = this;
-    const { message } = data;
-
-    if (!socket.sessionId || !message?.trim()) {
-      return;
-    }
-
-    if (message.length > 500) {
-      return socket.emit("error", { message: "Message trop long" });
-    }
+    if (!socket.sessionId || !data?.message?.trim()) return;
 
     const chatMessage = {
       id: Date.now(),
       participantId: socket.participantId || null,
       participantName:
         socket.user?.username || socket.participantName || "Anonyme",
-      message: message.trim(),
+      message: data.message.trim(),
       timestamp: new Date(),
       isHost: socket.isHost || false,
     };
@@ -766,66 +803,31 @@ const socketHandlers = (io) => {
   // Handler: Déconnexion avec nettoyage complet
   async function handleDisconnect(reason) {
     const socket = this;
-
     console.log(`🔌 Déconnexion: ${socket.id} - Raison: ${reason}`);
 
-    try {
-      if (socket.sessionId) {
-        // Nettoyage hôte
-        if (socket.isHost) {
-          connectedHosts.delete(socket.sessionId);
-          console.log(`🎯 Hôte déconnecté de la session ${socket.sessionId}`);
-        }
-
-        // Nettoyage participant
-        if (socket.isParticipant && socket.participantId) {
-          const sessionParticipants = connectedParticipants.get(
-            socket.sessionId
-          );
-          if (sessionParticipants) {
-            sessionParticipants.delete(socket.id);
-          }
-
-          // Marquer comme déconnecté dans la DB
-          const session = await Session.findByPk(socket.sessionId);
-          if (session) {
-            const participants = Array.isArray(session.participants)
-              ? session.participants
-              : [];
-            const participantIndex = participants.findIndex(
-              (p) => p.id === socket.participantId
-            );
-
-            if (participantIndex !== -1) {
-              participants[participantIndex].isConnected = false;
-              participants[participantIndex].lastSeen = new Date();
-              await session.update({ participants });
-
-              // Notifier l'hôte
-              io.to(`host_${socket.sessionId}`).emit(
-                "participant_disconnected",
-                {
-                  participantId: socket.participantId,
-                  participantName: participants[participantIndex].name,
-                  totalConnected: participants.filter((p) => p.isConnected)
-                    .length,
-                }
-              );
+    if (socket.sessionId && socket.isParticipant && socket.participantId) {
+      try {
+        const session = await Session.findByPk(socket.sessionId);
+        if (session && Array.isArray(session.participants)) {
+          const updatedParticipants = session.participants.map((p) => {
+            if (p.id === socket.participantId) {
+              return { ...p, isConnected: false, lastSeen: new Date() };
             }
-          }
+            return p;
+          });
 
-          console.log(`👋 Participant ${socket.participantId} déconnecté`);
+          await session.update({ participants: updatedParticipants });
+
+          // Notifier l'hôte
+          io.to(`host_${socket.sessionId}`).emit("participant_disconnected", {
+            participantId: socket.participantId,
+            totalConnected: updatedParticipants.filter((p) => p.isConnected)
+              .length,
+          });
         }
-
-        // Quitter toutes les rooms
-        socket.rooms.forEach((room) => {
-          if (room !== socket.id) {
-            socket.leave(room);
-          }
-        });
+      } catch (error) {
+        console.error("Erreur lors de la déconnexion:", error);
       }
-    } catch (error) {
-      console.error("Erreur lors de la déconnexion:", error);
     }
   }
 };

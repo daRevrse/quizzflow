@@ -37,6 +37,7 @@ import NotFound from "./pages/NotFound";
 // Route guards
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import PublicOnlyRoute from "./components/auth/PublicOnlyRoute";
+import SessionsList from "./pages/session/SessionsList";
 
 function App() {
   const { user, isLoading, initializeAuth } = useAuthStore();
@@ -226,6 +227,14 @@ function MainLayout() {
                 element={
                   <ProtectedRoute roles={["formateur", "admin"]}>
                     <SessionHost />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sessions"
+                element={
+                  <ProtectedRoute>
+                    <SessionsList />
                   </ProtectedRoute>
                 }
               />

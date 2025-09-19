@@ -151,6 +151,27 @@ const SessionJoin = () => {
         throw new Error("Connexion au serveur non établie");
       }
 
+      // Dans onJoinSession, juste avant joinSession()
+      console.log("🧪 DEBUG - Données avant envoi:", {
+        sessionCode: sessionInfo.code,
+        participantName: data.participantName,
+        isAnonymous: data.isAnonymous,
+        sessionInfo: sessionInfo,
+      });
+
+      // Vérifiez que ces valeurs ne sont pas undefined/null
+      if (!sessionInfo?.code) {
+        console.error("❌ sessionInfo.code est manquant!");
+        toast.error("Informations de session manquantes");
+        return;
+      }
+
+      if (!data.participantName?.trim()) {
+        console.error("❌ participantName est manquant!");
+        toast.error("Nom de participant manquant");
+        return;
+      }
+
       joinSession(sessionInfo.code, name, data.isAnonymous);
     } catch (error) {
       console.error("Erreur lors de la connexion:", error);

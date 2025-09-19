@@ -141,8 +141,93 @@ export const quizService = {
 // Service de gestion des sessions
 export const sessionService = {
   // Récupérer la liste des sessions
+  // getSessions: async (params = {}) => {
+  //   const response = await apiClient.get("/session", { params });
+  //   return response.data;
+  // },
+
+  // Récupérer une session spécifique
+  // getSession: async (sessionId) => {
+  //   const response = await apiClient.get(`/session/${sessionId}`);
+  //   return response.data;
+  // },
+
+  // Rejoindre une session par code
+  // getSessionByCode: async (code) => {
+  //   const response = await apiClient.get(`/session/code/${code}`);
+  //   return response.data;
+  // },
+
+  // Créer une session
+  // createSession: async (sessionData) => {
+  //   const response = await apiClient.post("/session", sessionData);
+  //   return response.data;
+  // },
+
+  // Mettre à jour une session
+  // updateSession: async (sessionId, sessionData) => {
+  //   const response = await apiClient.put(`/session/${sessionId}`, sessionData);
+  //   return response.data;
+  // },
+
+  // // Supprimer une session
+  // deleteSession: async (sessionId) => {
+  //   const response = await apiClient.delete(`/session/${sessionId}`);
+  //   return response.data;
+  // },
+
+  // Démarrer une session
+  // startSession: async (sessionId) => {
+  //   const response = await apiClient.post(`/session/${sessionId}/start`);
+  //   return response.data;
+  // },
+
+  // // Mettre en pause une session
+  // pauseSession: async (sessionId) => {
+  //   const response = await apiClient.post(`/session/${sessionId}/pause`);
+  //   return response.data;
+  // },
+
+  // // Reprendre une session
+  // resumeSession: async (sessionId) => {
+  //   const response = await apiClient.post(`/session/${sessionId}/resume`);
+  //   return response.data;
+  // },
+
+  // // Terminer une session
+  // endSession: async (sessionId) => {
+  //   const response = await apiClient.post(`/session/${sessionId}/end`);
+  //   return response.data;
+  // },
+
+  // Récupérer le classement
+  // getLeaderboard: async (sessionId) => {
+  //   const response = await apiClient.get(`/session/${sessionId}/leaderboard`);
+  //   return response.data;
+  // },
+
+  // Récupérer les résultats détaillés
+  getResults: async (sessionId) => {
+    const response = await apiClient.get(`/session/${sessionId}/results`);
+    return response.data;
+  },
+
+  // Récupérer la liste des sessions avec filtres
   getSessions: async (params = {}) => {
-    const response = await apiClient.get("/session", { params });
+    const queryParams = new URLSearchParams();
+
+    // Paramètres de pagination
+    if (params.page) queryParams.set("page", params.page);
+    if (params.limit) queryParams.set("limit", params.limit);
+
+    // Filtres
+    if (params.search) queryParams.set("search", params.search);
+    if (params.status) queryParams.set("status", params.status);
+    if (params.quizId) queryParams.set("quizId", params.quizId);
+    if (params.hostId) queryParams.set("hostId", params.hostId);
+    if (params.my) queryParams.set("my", params.my);
+
+    const response = await apiClient.get(`/session?${queryParams.toString()}`);
     return response.data;
   },
 
@@ -152,7 +237,7 @@ export const sessionService = {
     return response.data;
   },
 
-  // Rejoindre une session par code
+  // Récupérer une session par code
   getSessionByCode: async (code) => {
     const response = await apiClient.get(`/session/code/${code}`);
     return response.data;
@@ -176,25 +261,22 @@ export const sessionService = {
     return response.data;
   },
 
-  // Démarrer une session
+  // Actions de session
   startSession: async (sessionId) => {
     const response = await apiClient.post(`/session/${sessionId}/start`);
     return response.data;
   },
 
-  // Mettre en pause une session
   pauseSession: async (sessionId) => {
     const response = await apiClient.post(`/session/${sessionId}/pause`);
     return response.data;
   },
 
-  // Reprendre une session
   resumeSession: async (sessionId) => {
     const response = await apiClient.post(`/session/${sessionId}/resume`);
     return response.data;
   },
 
-  // Terminer une session
   endSession: async (sessionId) => {
     const response = await apiClient.post(`/session/${sessionId}/end`);
     return response.data;
@@ -206,8 +288,8 @@ export const sessionService = {
     return response.data;
   },
 
-  // Récupérer les résultats détaillés
-  getResults: async (sessionId) => {
+  // Récupérer les résultats détaillés - NOUVELLE MÉTHODE
+  getSessionResults: async (sessionId) => {
     const response = await apiClient.get(`/session/${sessionId}/results`);
     return response.data;
   },

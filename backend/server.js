@@ -28,6 +28,44 @@ config.displayConfig();
 const app = express();
 const server = http.createServer(app);
 
+// Fix CORS temporaire - à ajouter après les imports
+// app.use((req, res, next) => {
+//   res.header("Access-Control-Allow-Origin", "http://localhost:3000");
+//   res.header("Access-Control-Allow-Credentials", "true");
+//   res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
+//   res.header(
+//     "Access-Control-Allow-Headers",
+//     "Origin,X-Requested-With,Content-Type,Accept,Authorization"
+//   );
+
+//   if (req.method === "OPTIONS") {
+//     res.sendStatus(200);
+//   } else {
+//     next();
+//   }
+// });
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (config.cors.origins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
+
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Requested-With"
+  );
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  next();
+});
+
 // Configuration Socket.IO simplifiée et compatible
 const io = socketIo(server, {
   // Configuration CORS compatible
@@ -53,23 +91,6 @@ const io = socketIo(server, {
 
   // Pas de configuration parser custom pour éviter les erreurs
   // parser: config.socket.parser, // RETIRÉ
-});
-
-// Fix CORS temporaire - à ajouter après les imports
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "http://localhost:3000");
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin,X-Requested-With,Content-Type,Accept,Authorization"
-  );
-
-  if (req.method === "OPTIONS") {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
 });
 
 // Middleware de compression HTTP (seulement si compression disponible)
@@ -101,13 +122,33 @@ try {
 app.use(helmet(config.security?.helmet || {}));
 
 // Configuration CORS simple et directe
+// app.use(
+//   cors({
+//     origin: config.cors.origins, // Utilise le tableau d'origins
+//     credentials: config.cors.credentials,
+//     methods: config.cors.methods,
+//     allowedHeaders: config.cors.allowedHeaders,
+//     optionsSuccessStatus: 200, // Pour compatibilité avec certains navigateurs
+//   })
+// );
 app.use(
   cors({
-    origin: config.cors.origins, // Utilise le tableau d'origins
+    origin: config.cors.origins, // Utilise directement le tableau d'origins
     credentials: config.cors.credentials,
     methods: config.cors.methods,
     allowedHeaders: config.cors.allowedHeaders,
-    optionsSuccessStatus: 200, // Pour compatibilité avec certains navigateurs
+    optionsSuccessStatus: 200,
+  })
+);
+
+// Middleware CORS manuel pour les préflight requests
+app.options(
+  "*",
+  cors({
+    origin: config.cors.origins,
+    credentials: config.cors.credentials,
+    methods: config.cors.methods,
+    allowedHeaders: config.cors.allowedHeaders,
   })
 );
 
