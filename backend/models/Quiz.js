@@ -219,18 +219,6 @@ Quiz.prototype.getQuestionCount = function () {
   return Array.isArray(questions) ? questions.length : 0;
 };
 
-// Quiz.prototype.getTotalPoints = function () {
-//   if (!this.questions) return 0;
-//   return this.questions.reduce((total, question) => {
-//     return total + (question.points || 1);
-//   }, 0);
-// };
-// Quiz.prototype.getTotalPoints = function () {
-//   if (!Array.isArray(this.questions)) return 0;
-//   return this.questions.reduce((total, question) => {
-//     return total + (question.points || 1);
-//   }, 0);
-// };
 Quiz.prototype.getTotalPoints = function () {
   const questions =
     typeof this.questions === "string"

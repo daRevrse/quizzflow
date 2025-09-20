@@ -16,6 +16,7 @@ const sessionRoutes = require("./routes/session");
 
 // Import de la configuration de la base de données
 const { connectDB } = require("./config/database");
+// const { connectDB } = require("./config/database-clean");
 
 // Import des gestionnaires Socket.IO optimisés
 const socketHandlers = require("./socket/socketHandlers");
