@@ -1,3 +1,4 @@
+// SessionCreate.js - Composant corrigé
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -38,15 +39,19 @@ const SessionCreate = () => {
     defaultValues: {
       quizId: searchParams.get("quizId") || "",
       title: "",
+      description: "",
       settings: {
-        allowLateJoin: true,
+        allowLateJoin: false,
         showLeaderboard: true,
         autoAdvance: false,
-        questionTimeLimit: null,
+        questionTimeLimit: "",
         maxParticipants: 100,
         showCorrectAnswers: true,
         randomizeQuestions: false,
         enableChat: false,
+        allowAnonymous: true,
+        shuffleQuestions: false,
+        shuffleAnswers: false,
       },
     },
   });
@@ -106,13 +111,48 @@ const SessionCreate = () => {
       if (!data.quizId) {
         toast.error("Veuillez sélectionner un quiz");
         return;
+      } else {
+        console.log("data.quizId", parseInt(data.quizId));
       }
 
+      // CORRECTION: Formater correctement les settings
+      const formattedSettings = {};
+
+      // Convertir les valeurs en types appropriés
+      Object.keys(data.settings).forEach((key) => {
+        const value = data.settings[key];
+
+        if (key === "maxParticipants") {
+          formattedSettings[key] = parseInt(value) || 100;
+        } else if (key === "questionTimeLimit") {
+          formattedSettings[key] =
+            value && value !== "" ? parseInt(value) : null;
+        } else if (typeof value === "boolean") {
+          formattedSettings[key] = value;
+        } else if (typeof value === "string") {
+          // Convertir les chaînes "true"/"false" en booléens
+          if (value === "true") {
+            formattedSettings[key] = true;
+          } else if (value === "false") {
+            formattedSettings[key] = false;
+          } else {
+            formattedSettings[key] = value;
+          }
+        } else {
+          formattedSettings[key] = value;
+        }
+      });
+
       const sessionData = {
+        // quizId: parseInt(data.quizId),
         quizId: data.quizId,
-        title: data.title || `Session - ${selectedQuiz?.title}`,
-        settings: data.settings,
+        // hostId: user.id,
+        title: data.title.trim() || `Session - ${selectedQuiz?.title}`,
+        description: data.description?.trim() || undefined,
+        settings: formattedSettings,
       };
+
+      console.log("📤 Données session à envoyer:", sessionData);
 
       const response = await sessionService.createSession(sessionData);
 
@@ -120,7 +160,7 @@ const SessionCreate = () => {
       navigate(`/session/${response.session.id}/host`);
     } catch (error) {
       console.error("Erreur lors de la création de la session:", error);
-      toast.error("Erreur lors de la création de la session");
+      toast.error(error.message || "Erreur lors de la création de la session");
     } finally {
       setLoading(false);
     }
@@ -134,7 +174,7 @@ const SessionCreate = () => {
   );
 
   const handleQuizSelect = (quiz) => {
-    setValue("quizId", quiz.id);
+    setValue("quizId", quiz.id.toString());
     setValue("title", `Session - ${quiz.title}`);
   };
 
@@ -219,7 +259,7 @@ const SessionCreate = () => {
                         key={quiz.id}
                         onClick={() => handleQuizSelect(quiz)}
                         className={`cursor-pointer p-4 border-2 rounded-lg transition-all ${
-                          watchedQuizId === quiz.id
+                          watchedQuizId === quiz.id.toString()
                             ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
                             : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
                         }`}
@@ -228,7 +268,7 @@ const SessionCreate = () => {
                           <h4 className="font-medium text-gray-900 dark:text-white line-clamp-2">
                             {quiz.title}
                           </h4>
-                          {watchedQuizId === quiz.id && (
+                          {watchedQuizId === quiz.id.toString() && (
                             <CheckCircleIcon className="h-5 w-5 text-primary-600 dark:text-primary-400 ml-2" />
                           )}
                         </div>
@@ -288,6 +328,10 @@ const SessionCreate = () => {
                   <input
                     {...register("title", {
                       required: "Le titre est requis",
+                      minLength: {
+                        value: 3,
+                        message: "Le titre doit faire au moins 3 caractères",
+                      },
                     })}
                     type="text"
                     className={`input ${
@@ -300,6 +344,19 @@ const SessionCreate = () => {
                       {errors.title.message}
                     </p>
                   )}
+                </div>
+
+                {/* Description (optionnelle) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Description (optionnelle)
+                  </label>
+                  <textarea
+                    {...register("description")}
+                    rows={3}
+                    className="input"
+                    placeholder="Description de votre session..."
+                  />
                 </div>
 
                 {/* Paramètres de session */}
@@ -418,12 +475,24 @@ const SessionCreate = () => {
                       Nombre max de participants
                     </label>
                     <input
-                      {...register("settings.maxParticipants")}
+                      {...register("settings.maxParticipants", {
+                        min: { value: 1, message: "Minimum 1 participant" },
+                        max: {
+                          value: 1000,
+                          message: "Maximum 1000 participants",
+                        },
+                        valueAsNumber: true,
+                      })}
                       type="number"
                       min="1"
                       max="1000"
                       className="input"
                     />
+                    {errors.settings?.maxParticipants && (
+                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                        {errors.settings.maxParticipants.message}
+                      </p>
+                    )}
                   </div>
 
                   <div>

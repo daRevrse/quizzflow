@@ -133,7 +133,7 @@ const Session = sequelize.define(
 
     // Clés étrangères
     quizId: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.STRING(36), // UUID format
       allowNull: false,
       references: {
         model: "quizzes",
@@ -143,14 +143,15 @@ const Session = sequelize.define(
         notNull: {
           msg: "Un quiz est requis pour créer une session",
         },
-        isInt: {
+        isUUID: {
+          args: 4,
           msg: "ID de quiz invalide",
         },
       },
     },
 
     hostId: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.STRING(36), // UUID format
       allowNull: false,
       references: {
         model: "users",
@@ -160,7 +161,8 @@ const Session = sequelize.define(
         notNull: {
           msg: "Un hôte est requis pour créer une session",
         },
-        isInt: {
+        isUUID: {
+          args: 4,
           msg: "ID d'hôte invalide",
         },
       },

@@ -594,12 +594,29 @@ router.post("/", authenticateToken, async (req, res) => {
     const { quizId, title, description, settings = {} } = req.body;
     const user = req.user;
 
+    console.log("📝 Création session - données reçues:", {
+      quizId,
+      title,
+      description,
+      settings,
+      userId: user.id,
+      userIdType: typeof user.id
+    });
+
     // Validation des données
-    if (!quizId || !Number.isInteger(Number(quizId))) {
+    if (!quizId) {
       return res.status(400).json({
-        quizId,
-        error: "ID de quiz valide requis",
-        code: "INVALID_QUIZ_ID",
+        error: "ID de quiz requis",
+        code: "MISSING_QUIZ_ID",
+      });
+    }
+
+    // CORRECTION: Valider le format UUID pour quizId
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(quizId)) {
+      return res.status(400).json({
+        error: "Format d'ID de quiz invalide (UUID requis)",
+        code: "INVALID_QUIZ_ID_FORMAT",
       });
     }
 
@@ -627,6 +644,13 @@ router.post("/", authenticateToken, async (req, res) => {
         code: "QUIZ_NOT_FOUND",
       });
     }
+
+    console.log("📚 Quiz trouvé:", {
+      id: quiz.id,
+      title: quiz.title,
+      creatorId: quiz.creatorId,
+      userRole: user.role
+    });
 
     // Vérifier les permissions (propriétaire du quiz ou formateur/admin)
     const canCreateSession =
@@ -663,13 +687,15 @@ router.post("/", authenticateToken, async (req, res) => {
 
     const sessionSettings = { ...defaultSettings, ...settings };
 
-    // Créer la session
-    const session = await Session.create({
+    console.log("⚙️ Paramètres session:", sessionSettings);
+
+    // CORRECTION: Créer la session avec les UUID corrects
+    const sessionData = {
       code,
       title: title.trim(),
       description: description ? description.trim() : null,
-      quizId: parseInt(quizId),
-      hostId: user.id,
+      quizId: quizId, // UUID du quiz
+      hostId: user.id, // UUID de l'utilisateur
       settings: sessionSettings,
       participants: [],
       responses: {},
@@ -680,7 +706,15 @@ router.post("/", authenticateToken, async (req, res) => {
         participationRate: 0,
         activeParticipants: 0,
       },
+    };
+
+    console.log("💾 Données session à créer:", {
+      ...sessionData,
+      quizIdType: typeof sessionData.quizId,
+      hostIdType: typeof sessionData.hostId
     });
+
+    const session = await Session.create(sessionData);
 
     // Recharger avec les relations
     await session.reload({
@@ -723,6 +757,7 @@ router.post("/", authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Erreur lors de la création de la session:", error);
+    console.error("❌ Stack trace:", error.stack);
 
     if (error.name === "SequelizeUniqueConstraintError") {
       return res.status(409).json({
@@ -732,16 +767,30 @@ router.post("/", authenticateToken, async (req, res) => {
     }
 
     if (error.name === "SequelizeValidationError") {
+      console.error("❌ Détails de validation:", error.errors);
       return res.status(400).json({
         error: "Données de session invalides",
         code: "VALIDATION_ERROR",
-        details: error.errors?.map((e) => e.message),
+        details: error.errors?.map((e) => ({
+          field: e.path,
+          message: e.message,
+          value: e.value
+        })),
+      });
+    }
+
+    if (error.name === "SequelizeForeignKeyConstraintError") {
+      return res.status(400).json({
+        error: "Référence invalide (quiz ou utilisateur inexistant)",
+        code: "FOREIGN_KEY_ERROR",
+        details: process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
 
     res.status(500).json({
       error: "Erreur lors de la création de la session",
       code: "CREATE_SESSION_ERROR",
+      details: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });

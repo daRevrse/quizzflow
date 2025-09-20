@@ -88,7 +88,14 @@ const SessionPlay = () => {
       // Vérifier si on peut participer
       if (!permissions?.canParticipate) {
         if (sessionData.status === "finished") {
-          toast.info("Cette session est terminée");
+          // toast.info("Cette session est terminée");
+          toast("Cette session est terminée", {
+            icon: "ℹ️",
+            style: {
+              background: "#3B82F6",
+              color: "white",
+            },
+          });
           navigate(`/session/${sessionId}/results`);
           return;
         } else if (sessionData.status === "cancelled") {
@@ -339,7 +346,7 @@ const SessionPlay = () => {
         timerRef.current = null;
       }
 
-      toast.info("Session mise en pause");
+      toast.success("Session mise en pause");
     };
 
     const handleSessionResumed = (data) => {
@@ -574,12 +581,34 @@ const SessionPlay = () => {
 
   // Soumettre une réponse
   const handleSubmitAnswer = useCallback(() => {
-    if (selectedAnswer === null && selectedAnswer !== 0) {
+    console.log("🔥 handleSubmitAnswer appelé", {
+      selectedAnswer,
+      isAnswered,
+      isSubmitting,
+      currentQuestion: currentQuestion?.id,
+      participantInfo: participantInfo?.id,
+    });
+
+    // CORRECTION: Vérification plus précise pour selectedAnswer
+    if (selectedAnswer === null || selectedAnswer === undefined) {
       toast.error("Veuillez sélectionner une réponse");
       return;
     }
 
     if (isAnswered || isSubmitting || !currentQuestion || !participantInfo) {
+      console.log("❌ Conditions non remplies:", {
+        isAnswered,
+        isSubmitting,
+        hasCurrentQuestion: !!currentQuestion,
+        hasParticipantInfo: !!participantInfo,
+      });
+      return;
+    }
+
+    // CORRECTION: Validation du socket
+    if (!socket || !isConnected) {
+      console.warn("⚠️ Socket non connecté");
+      toast.error("Problème de connexion. Vérifiez votre réseau.");
       return;
     }
 
@@ -598,21 +627,31 @@ const SessionPlay = () => {
     console.log("📤 Envoi réponse:", response);
     setIsSubmitting(true);
 
-    if (socket && isConnected) {
-      socket.emit("submit_answer", response);
+    // CORRECTION: Ajouter un événement de confirmation
+    socket.emit("submit_answer", response, (acknowledgment) => {
+      console.log("📨 Accusé de réception:", acknowledgment);
 
-      // Timeout de sécurité
-      setTimeout(() => {
-        if (isSubmitting && componentMountedRef.current) {
-          setIsSubmitting(false);
-          toast.error("Délai d'attente dépassé. Réessayez.");
-        }
-      }, 10000);
-    } else {
-      console.warn("⚠️  Socket non connecté");
-      setIsSubmitting(false);
-      toast.error("Problème de connexion. Vérifiez votre réseau.");
-    }
+      if (acknowledgment?.success) {
+        setIsAnswered(true);
+        setIsSubmitting(false);
+        toast.success("Réponse enregistrée !", {
+          icon: "✅",
+          duration: 2000,
+        });
+      } else {
+        setIsSubmitting(false);
+        toast.error(acknowledgment?.error || "Erreur lors de l'envoi");
+      }
+    });
+
+    // CORRECTION: Timeout de sécurité amélioré
+    setTimeout(() => {
+      if (isSubmitting && componentMountedRef.current) {
+        console.warn("⏰ Timeout réponse");
+        setIsSubmitting(false);
+        toast.error("Délai d'attente dépassé. Réessayez.");
+      }
+    }, 8000); // Réduit à 8s au lieu de 10s
   }, [
     selectedAnswer,
     isAnswered,
@@ -653,7 +692,7 @@ const SessionPlay = () => {
     } else {
       // Aucune réponse sélectionnée
       setIsAnswered(true);
-      toast.info("Aucune réponse sélectionnée", {
+      toast.error("Aucune réponse sélectionnée", {
         duration: 2000,
       });
     }
@@ -668,7 +707,16 @@ const SessionPlay = () => {
   // Sélectionner une réponse
   const handleSelectAnswer = useCallback(
     (answerIndex) => {
-      if (isAnswered || showResults || isSubmitting) return;
+      console.log("🎯 Sélection réponse:", answerIndex, {
+        isAnswered,
+        showResults,
+        isSubmitting,
+      });
+
+      if (isAnswered || showResults || isSubmitting) {
+        console.log("❌ Sélection bloquée");
+        return;
+      }
 
       setSelectedAnswer(answerIndex);
       console.log("📝 Réponse sélectionnée:", answerIndex);
@@ -677,6 +725,16 @@ const SessionPlay = () => {
       if (navigator.vibrate) {
         navigator.vibrate(50);
       }
+
+      // CORRECTION: Feedback visuel immédiat
+      toast(`Réponse ${String.fromCharCode(65 + answerIndex)} sélectionnée`, {
+        icon: "👆",
+        duration: 1000,
+        style: {
+          background: "#3B82F6",
+          color: "white",
+        },
+      });
     },
     [isAnswered, showResults, isSubmitting]
   );
@@ -979,104 +1037,124 @@ const SessionPlay = () => {
 
               {/* Réponses */}
               <div className="p-6 space-y-3">
-                {currentQuestion.answers?.map((answer, index) => {
-                  const isSelected = selectedAnswer === index;
-                  const isCorrect = showCorrectAnswer && answer.isCorrect;
-                  const isWrong =
-                    showCorrectAnswer && isSelected && !answer.isCorrect;
-                  const responseCount =
-                    questionResults?.responses?.filter(
-                      (r) => r.answer === index
-                    ).length || 0;
-                  const percentage =
-                    questionResults?.totalResponses > 0
-                      ? Math.round(
-                          (responseCount / questionResults.totalResponses) * 100
-                        )
-                      : 0;
+                {(currentQuestion.answers || currentQuestion.options || []).map(
+                  (answer, index) => {
+                    // CORRECTION: Gérer les deux structures possibles
+                    const answerText =
+                      typeof answer === "string"
+                        ? answer
+                        : answer.text || answer;
+                    const isCorrectAnswer =
+                      currentQuestion.correctAnswer === index;
 
-                  return (
-                    <div key={index} className="relative">
-                      <button
-                        onClick={() => handleSelectAnswer(index)}
-                        disabled={isAnswered || showResults || isSubmitting}
-                        className={`w-full p-4 text-left border-2 rounded-xl transition-all duration-200 ${
-                          isSelected && !showResults
-                            ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400 transform scale-105 shadow-md"
-                            : showResults && isCorrect
-                            ? "border-green-500 bg-green-50 dark:bg-green-900/30 dark:border-green-400"
-                            : showResults && isWrong
-                            ? "border-red-500 bg-red-50 dark:bg-red-900/30 dark:border-red-400"
-                            : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
-                        } ${
-                          isAnswered || showResults || isSubmitting
-                            ? "cursor-not-allowed opacity-75"
-                            : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:shadow-sm"
-                        }`}
-                      >
-                        <div className="flex items-center">
-                          <div
-                            className={`flex-shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-colors ${
-                              isSelected && !showResults
-                                ? "border-blue-500 bg-blue-500 text-white"
-                                : showResults && isCorrect
-                                ? "border-green-500 bg-green-500 text-white"
-                                : showResults && isWrong
-                                ? "border-red-500 bg-red-500 text-white"
-                                : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400"
-                            }`}
-                          >
-                            {getAnswerLetter(index)}
-                          </div>
+                    console.log(`Debug réponse ${index}:`, {
+                      answer,
+                      answerText,
+                      isCorrectAnswer,
+                      selectedAnswer,
+                      type: typeof answer,
+                    });
 
-                          <span className="ml-4 text-gray-900 dark:text-white font-medium flex-1">
-                            {answer.text}
-                          </span>
+                    const isSelected = selectedAnswer === index;
+                    const isCorrect = showCorrectAnswer && isCorrectAnswer;
+                    const isWrong =
+                      showCorrectAnswer && isSelected && !isCorrectAnswer;
 
-                          {/* Icônes de statut */}
-                          <div className="ml-auto flex items-center space-x-2">
-                            {showResults && (
-                              <div className="text-sm text-gray-600 dark:text-gray-400">
-                                {responseCount} ({percentage}%)
-                              </div>
-                            )}
+                    const responseCount =
+                      questionResults?.responses?.filter(
+                        (r) => r.answer === index
+                      ).length || 0;
+                    const percentage =
+                      questionResults?.totalResponses > 0
+                        ? Math.round(
+                            (responseCount / questionResults.totalResponses) *
+                              100
+                          )
+                        : 0;
 
-                            {isSelected && !showResults && (
-                              <CheckCircleIcon className="h-5 w-5 text-blue-500" />
-                            )}
-                            {showResults && isCorrect && (
-                              <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                            )}
-                            {showResults && isWrong && (
-                              <XCircleIcon className="h-5 w-5 text-red-500" />
-                            )}
-                          </div>
-                        </div>
+                    return (
+                      <div key={index} className="relative">
+                        <button
+                          onClick={() => handleSelectAnswer(index)}
+                          disabled={isAnswered || showResults || isSubmitting}
+                          className={`w-full p-4 text-left border-2 rounded-xl transition-all duration-200 ${
+                            isSelected && !showResults
+                              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400 transform scale-105 shadow-md"
+                              : showResults && isCorrect
+                              ? "border-green-500 bg-green-50 dark:bg-green-900/30 dark:border-green-400"
+                              : showResults && isWrong
+                              ? "border-red-500 bg-red-50 dark:bg-red-900/30 dark:border-red-400"
+                              : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                          } ${
+                            isAnswered || showResults || isSubmitting
+                              ? "cursor-not-allowed opacity-75"
+                              : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:shadow-sm"
+                          }`}
+                        >
+                          <div className="flex items-center">
+                            <div
+                              className={`flex-shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-colors ${
+                                isSelected && !showResults
+                                  ? "border-blue-500 bg-blue-500 text-white"
+                                  : showResults && isCorrect
+                                  ? "border-green-500 bg-green-500 text-white"
+                                  : showResults && isWrong
+                                  ? "border-red-500 bg-red-500 text-white"
+                                  : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400"
+                              }`}
+                            >
+                              {getAnswerLetter(index)}
+                            </div>
 
-                        {/* Barre de progression des résultats */}
-                        {showResults && questionResults && (
-                          <div className="mt-3">
-                            <div className="bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                              <div
-                                className={`h-2 rounded-full transition-all duration-700 ${
-                                  isCorrect
-                                    ? "bg-green-500"
-                                    : isSelected
-                                    ? "bg-red-500"
-                                    : "bg-gray-400 dark:bg-gray-500"
-                                }`}
-                                style={{
-                                  width: `${percentage}%`,
-                                  transitionDelay: `${index * 100}ms`,
-                                }}
-                              />
+                            <span className="ml-4 text-gray-900 dark:text-white font-medium flex-1">
+                              {answerText}
+                            </span>
+
+                            {/* Icônes de statut */}
+                            <div className="ml-auto flex items-center space-x-2">
+                              {showResults && (
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  {responseCount} ({percentage}%)
+                                </div>
+                              )}
+
+                              {isSelected && !showResults && (
+                                <CheckCircleIcon className="h-5 w-5 text-blue-500" />
+                              )}
+                              {showResults && isCorrect && (
+                                <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                              )}
+                              {showResults && isWrong && (
+                                <XCircleIcon className="h-5 w-5 text-red-500" />
+                              )}
                             </div>
                           </div>
-                        )}
-                      </button>
-                    </div>
-                  );
-                })}
+
+                          {/* Barre de progression des résultats */}
+                          {showResults && questionResults && (
+                            <div className="mt-3">
+                              <div className="bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full transition-all duration-700 ${
+                                    isCorrect
+                                      ? "bg-green-500"
+                                      : isSelected
+                                      ? "bg-red-500"
+                                      : "bg-gray-400 dark:bg-gray-500"
+                                  }`}
+                                  style={{
+                                    width: `${percentage}%`,
+                                    transitionDelay: `${index * 100}ms`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  }
+                )}
               </div>
 
               {/* Actions */}
@@ -1086,7 +1164,8 @@ const SessionPlay = () => {
                     <button
                       onClick={handleSubmitAnswer}
                       disabled={
-                        (selectedAnswer === null && selectedAnswer !== 0) ||
+                        selectedAnswer === null ||
+                        selectedAnswer === undefined ||
                         isSubmitting
                       }
                       className="inline-flex items-center px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:hover:transform-none"
@@ -1103,6 +1182,17 @@ const SessionPlay = () => {
                         </>
                       )}
                     </button>
+
+                    {/* DEBUG: Affichage de l'état pour le développement */}
+                    {process.env.NODE_ENV === "development" && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        Debug: selectedAnswer={selectedAnswer}, isSubmitting=
+                        {isSubmitting}, disabled=
+                        {selectedAnswer === null ||
+                          selectedAnswer === undefined ||
+                          isSubmitting}
+                      </div>
+                    )}
                   </div>
                 )}
 

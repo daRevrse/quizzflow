@@ -294,24 +294,54 @@ export const sessionService = {
     }
 
     try {
-      console.log("📡 sessionService.createSession:", sessionData);
+      console.log(
+        "📡 sessionService.createSession - données reçues:",
+        sessionData
+      );
 
-      const cleanData = {
-        quizId: parseInt(sessionData.quizId),
-        title: sessionData.title.trim(),
-        description: sessionData.description
-          ? sessionData.description.trim()
-          : undefined,
-        settings: {
-          allowAnonymous: sessionData.settings?.allowAnonymous !== false,
-          allowLateJoin: sessionData.settings?.allowLateJoin || false,
-          showLeaderboard: sessionData.settings?.showLeaderboard !== false,
-          maxParticipants: sessionData.settings?.maxParticipants || 100,
-          autoAdvance: sessionData.settings?.autoAdvance || false,
-          shuffleQuestions: sessionData.settings?.shuffleQuestions || false,
-          shuffleAnswers: sessionData.settings?.shuffleAnswers || false,
-        },
+      // CORRECTION: Assurer le format correct des settings
+      const defaultSettings = {
+        allowAnonymous: true,
+        allowLateJoin: false,
+        showLeaderboard: true,
+        maxParticipants: 100,
+        autoAdvance: false,
+        shuffleQuestions: false,
+        shuffleAnswers: false,
+        questionTimeLimit: null,
+        showCorrectAnswers: true,
+        randomizeQuestions: false,
+        enableChat: false,
       };
+
+      // Merger les settings avec les valeurs par défaut
+      const mergedSettings = { ...defaultSettings };
+
+      if (sessionData.settings && typeof sessionData.settings === "object") {
+        // Copier seulement les propriétés définies
+        Object.keys(sessionData.settings).forEach((key) => {
+          if (sessionData.settings[key] !== undefined) {
+            mergedSettings[key] = sessionData.settings[key];
+          }
+        });
+      }
+
+      // Formater les données pour l'API
+      const cleanData = {
+        // quizId: parseInt(sessionData.quizId),
+        quizId: sessionData.quizId,
+        title: sessionData.title.trim(),
+        description:
+          sessionData.description && sessionData.description.trim()
+            ? sessionData.description.trim()
+            : undefined,
+        settings: mergedSettings,
+      };
+
+      console.log(
+        "📦 sessionService.createSession - données nettoyées:",
+        cleanData
+      );
 
       const response = await apiClient.post("/session", cleanData);
 
@@ -319,9 +349,16 @@ export const sessionService = {
       return response.data;
     } catch (error) {
       console.error("❌ createSession error:", error);
+      console.error("❌ Error response data:", error.response?.data);
+
+      // Détailler l'erreur pour le debug
+      if (error.response?.data?.details) {
+        console.error("❌ Validation details:", error.response.data.details);
+      }
 
       throw new Error(
         error.response?.data?.error ||
+          error.response?.data?.message ||
           "Erreur lors de la création de la session"
       );
     }
