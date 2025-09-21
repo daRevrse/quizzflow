@@ -375,20 +375,20 @@ export const SocketProvider = ({ children }) => {
     }
   }, [socket, isConnected]);
 
-  const submitResponse = useCallback(
-    (questionId, answer, timeSpent) => {
-      if (socket && isConnected) {
-        socket.emit("submit_response", {
-          questionId,
-          answer,
-          timeSpent,
-        });
-      } else {
-        toast.error("Impossible d'envoyer la réponse - Connexion perdue");
-      }
-    },
-    [socket, isConnected]
-  );
+  // const submitResponse = useCallback(
+  //   (questionId, answer, timeSpent) => {
+  //     if (socket && isConnected) {
+  //       socket.emit("submit_response", {
+  //         questionId,
+  //         answer,
+  //         timeSpent,
+  //       });
+  //     } else {
+  //       toast.error("Impossible d'envoyer la réponse - Connexion perdue");
+  //     }
+  //   },
+  //   [socket, isConnected]
+  // );
 
   const sendMessage = useCallback(
     (message) => {
@@ -524,7 +524,7 @@ export const SocketProvider = ({ children }) => {
     previousQuestion,
 
     // Actions de participant
-    submitResponse,
+    // submitResponse,
     participantHeartbeat,
 
     // Communication

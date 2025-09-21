@@ -39,6 +39,8 @@ const SessionHost = () => {
   const [leaderboard, setLeaderboard] = useState([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true); // Configurable
+  const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
 
   // États pour la gestion des questions
   const [questionTimer, setQuestionTimer] = useState(null);
@@ -50,6 +52,8 @@ const SessionHost = () => {
   const isLoadingRef = useRef(false);
   const lastActionRef = useRef(null);
   const componentMountedRef = useRef(true);
+
+  const { nextQuestion, endSession } = useSocket();
 
   // Fonction pour charger la session de manière robuste
   const loadSession = useCallback(async () => {
@@ -310,6 +314,35 @@ const SessionHost = () => {
   }, [socket, isConnected, session]);
 
   // Timer pour la question courante
+  // useEffect(() => {
+  //   if (questionTimer === null || questionTimer <= 0) return;
+
+  //   const interval = setInterval(() => {
+  //     setQuestionTimer((prev) => {
+  //       if (prev === null || prev <= 1) {
+  //         // Temps écoulé
+  //         clearInterval(interval);
+  //         if (componentMountedRef.current) {
+  //           // toast.warning("Temps écoulé pour cette question !");
+  //           toast("⏰ Temps écoulé pour cette question !", {
+  //             icon: "⚠️",
+  //             style: {
+  //               background: "#F59E0B",
+  //               color: "white",
+  //             },
+  //             duration: 3000,
+  //           });
+  //           // Passer automatiquement aux résultats
+  //           setShowResults(true);
+  //         }
+  //         return 0;
+  //       }
+  //       return prev - 1;
+  //     });
+  //   }, 1000);
+
+  //   return () => clearInterval(interval);
+  // }, [questionTimer]);
   useEffect(() => {
     if (questionTimer === null || questionTimer <= 0) return;
 
@@ -318,8 +351,9 @@ const SessionHost = () => {
         if (prev === null || prev <= 1) {
           // Temps écoulé
           clearInterval(interval);
-          if (componentMountedRef.current) {
-            // toast.warning("Temps écoulé pour cette question !");
+          if (componentMountedRef.current && autoAdvanceEnabled) {
+            console.log("⏰ Temps écoulé côté hôte, avancement automatique...");
+
             toast("⏰ Temps écoulé pour cette question !", {
               icon: "⚠️",
               style: {
@@ -328,8 +362,9 @@ const SessionHost = () => {
               },
               duration: 3000,
             });
-            // Passer automatiquement aux résultats
-            setShowResults(true);
+
+            // CORRECTION: Déclencher l'avancement automatique
+            handleAutoAdvance();
           }
           return 0;
         }
@@ -338,7 +373,7 @@ const SessionHost = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [questionTimer]);
+  }, [questionTimer, autoAdvanceEnabled]); // Ajouter autoAdvanceEnabled aux dépendances
 
   // Fonction utilitaire pour exécuter des actions avec protection
   const executeAction = useCallback(
@@ -393,6 +428,55 @@ const SessionHost = () => {
     },
     [sessionId, loadSession]
   );
+
+  const handleAutoAdvance = useCallback(async () => {
+    if (isAutoAdvancing || !componentMountedRef.current) return;
+
+    try {
+      setIsAutoAdvancing(true);
+
+      // Vérifier s'il y a une question suivante
+      const currentIndex = session?.currentQuestionIndex || 0;
+      const totalQuestions = session?.quiz?.questions?.length || 0;
+
+      console.log(`🔍 Avancement auto: ${currentIndex + 1}/${totalQuestions}`);
+
+      if (currentIndex >= totalQuestions - 1) {
+        // Dernière question : terminer la session
+        console.log("🏁 Dernière question, fin automatique de session");
+
+        toast.success("Dernière question terminée ! Fin de session...", {
+          duration: 3000,
+        });
+
+        // Attendre un peu avant de terminer
+        setTimeout(() => {
+          if (componentMountedRef.current) {
+            executeAction("fin automatique", async () => {
+              endSession();
+            });
+          }
+        }, 2000);
+      } else {
+        // Passer à la question suivante
+        console.log(`➡️ Passage automatique à la question ${currentIndex + 2}`);
+
+        await executeAction("passage automatique", async () => {
+          nextQuestion();
+        });
+
+        toast.success(`Question ${currentIndex + 2}`, {
+          icon: "➡️",
+          duration: 2000,
+        });
+      }
+    } catch (error) {
+      console.error("❌ Erreur avancement automatique:", error);
+      toast.error("Erreur lors de l'avancement automatique");
+    } finally {
+      setIsAutoAdvancing(false);
+    }
+  }, [session, nextQuestion, endSession, executeAction, isAutoAdvancing]);
 
   // Actions de session
   const handleStartSession = useCallback(() => {
@@ -487,6 +571,154 @@ const SessionHost = () => {
       default:
         return <ExclamationTriangleIcon className="h-4 w-4" />;
     }
+  };
+
+  const handleNextQuestion = useCallback(() => {
+    if (isAutoAdvancing) return;
+
+    executeAction("passage manuel", async () => {
+      nextQuestion();
+      toast.success("Question suivante !");
+    });
+  }, [nextQuestion, executeAction, isAutoAdvancing]);
+
+  const handlePreviousQuestion = useCallback(() => {
+    if (isAutoAdvancing) return;
+
+    executeAction("retour", async () => {
+      // Implémenter previousQuestion si disponible
+      toast.info("Question précédente");
+    });
+  }, [executeAction, isAutoAdvancing]);
+
+  // AJOUT: Fonction pour formater le temps restant
+  const formatTimeWithProgress = (seconds) => {
+    if (seconds === null || seconds === undefined) return "--";
+
+    const totalTime = currentQuestion?.timeLimit || 30;
+    const percentage = Math.max(0, (seconds / totalTime) * 100);
+
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+
+    const timeString =
+      mins > 0
+        ? `${mins}:${secs.toString().padStart(2, "0")}`
+        : secs.toString();
+
+    return { timeString, percentage };
+  };
+
+  // MODIFICATION: Affichage du timer avec indicateur d'avancement automatique
+  const renderQuestionTimer = () => {
+    if (questionTimer === null || questionTimer <= 0) return null;
+
+    const { timeString, percentage } = formatTimeWithProgress(questionTimer);
+    const isLowTime = questionTimer <= 10;
+
+    return (
+      <div className="bg-red-50 dark:bg-red-900 rounded-lg p-4 relative overflow-hidden">
+        {/* Barre de progression */}
+        <div
+          className="absolute inset-0 bg-red-200 dark:bg-red-800 transition-all duration-1000 ease-linear"
+          style={{ width: `${percentage}%` }}
+        />
+
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center">
+            <ClockIcon
+              className={`h-8 w-8 ${
+                isLowTime ? "animate-pulse text-red-700" : "text-red-600"
+              } dark:text-red-400`}
+            />
+            <div className="ml-3">
+              <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                Temps restant
+                {autoAdvanceEnabled && (
+                  <span className="ml-2 text-xs">
+                    (Avancement auto {isAutoAdvancing ? "⏳" : "🤖"})
+                  </span>
+                )}
+              </p>
+              <p
+                className={`text-2xl font-semibold ${
+                  isLowTime ? "animate-pulse" : ""
+                } text-red-900 dark:text-red-100`}
+              >
+                {timeString}
+              </p>
+            </div>
+          </div>
+
+          {/* Toggle pour activer/désactiver l'auto-advance */}
+          <div className="flex items-center space-x-2">
+            <label className="text-xs text-red-600 dark:text-red-400">
+              Auto
+            </label>
+            <button
+              onClick={() => setAutoAdvanceEnabled(!autoAdvanceEnabled)}
+              className={`w-8 h-4 rounded-full transition-colors ${
+                autoAdvanceEnabled ? "bg-red-600" : "bg-gray-400"
+              }`}
+            >
+              <div
+                className={`w-3 h-3 bg-white rounded-full shadow transform transition-transform ${
+                  autoAdvanceEnabled ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {isLowTime && (
+          <div className="mt-2 text-xs text-red-700 dark:text-red-300">
+            ⚠️ Temps bientôt écoulé !
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // MODIFICATION: Contrôles de navigation avec état
+  const renderNavigationControls = () => {
+    const currentIndex = session?.currentQuestionIndex || 0;
+    const totalQuestions = session?.quiz?.questions?.length || 0;
+    const isFirstQuestion = currentIndex === 0;
+    const isLastQuestion = currentIndex >= totalQuestions - 1;
+
+    return (
+      <div className="flex items-center justify-between mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+        <button
+          onClick={handlePreviousQuestion}
+          disabled={isFirstQuestion || actionLoading || isAutoAdvancing}
+          className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <ArrowLeftIcon className="w-4 h-4 mr-2" />
+          Précédente
+        </button>
+
+        <div className="flex items-center space-x-4">
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            Question {currentIndex + 1} sur {totalQuestions}
+          </span>
+
+          {questionTimer > 0 && autoAdvanceEnabled && (
+            <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 px-2 py-1 rounded">
+              Auto: {questionTimer}s
+            </span>
+          )}
+        </div>
+
+        <button
+          onClick={handleNextQuestion}
+          disabled={isLastQuestion || actionLoading || isAutoAdvancing}
+          className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Suivante
+          <ArrowRightIcon className="w-4 h-4 ml-2" />
+        </button>
+      </div>
+    );
   };
 
   // Rendu des erreurs
@@ -699,7 +931,8 @@ const SessionHost = () => {
                 </div>
               </div>
 
-              {questionTimer !== null && questionTimer > 0 && (
+              {renderQuestionTimer()}
+              {/* {questionTimer !== null && questionTimer > 0 && (
                 <div className="bg-red-50 dark:bg-red-900 rounded-lg p-4">
                   <div className="flex items-center">
                     <ClockIcon className="h-8 w-8 text-red-600 dark:text-red-400" />
@@ -713,7 +946,7 @@ const SessionHost = () => {
                     </div>
                   </div>
                 </div>
-              )}
+              )} */}
             </div>
           </div>
         </div>
@@ -784,6 +1017,9 @@ const SessionHost = () => {
               </div>
             </div>
           )}
+          {session?.status === "active" &&
+            currentQuestion &&
+            renderNavigationControls()}
 
           {/* Liste des participants */}
           <div className={currentQuestion ? "lg:col-span-1" : "lg:col-span-3"}>

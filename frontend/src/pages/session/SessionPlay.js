@@ -152,6 +152,7 @@ const SessionPlay = () => {
       ) {
         const question =
           sessionData.quiz.questions[sessionData.currentQuestionIndex];
+        console.log("🎃🎃question", question);
         setCurrentQuestion(question);
         setShowResults(false);
         setShowCorrectAnswer(false);
@@ -388,7 +389,7 @@ const SessionPlay = () => {
     };
 
     // === Gestionnaires d'événements Questions ===
-    const handleNewQuestion = (data) => {
+    const handleNextQuestion = (data) => {
       if (!isSocketMounted || !componentMountedRef.current) return;
 
       console.log("❓ Nouvelle question:", data);
@@ -410,10 +411,62 @@ const SessionPlay = () => {
         setTimeRemaining(null);
       }
 
-      toast.success(`Question ${(data.questionIndex || 0) + 1} !`, {
-        icon: "❓",
-        duration: 2000,
-      });
+      // Message différent selon si c'est automatique ou manuel
+      if (data.autoAdvanced) {
+        toast.success(
+          `⏰ Temps écoulé ! Question ${(data.questionIndex || 0) + 1}`,
+          {
+            icon: "➡️",
+            duration: 3000,
+            style: {
+              background: "#F59E0B",
+              color: "white",
+            },
+          }
+        );
+      } else {
+        toast.success(`Question ${(data.questionIndex || 0) + 1} !`, {
+          icon: "❓",
+          duration: 2000,
+        });
+      }
+    };
+
+    // AJOUT: Gestionnaire pour afficher un message d'attente approprié
+    const getWaitingMessage = () => {
+      if (!session) return "Chargement...";
+
+      switch (session.status) {
+        case "waiting":
+          return "En attente du démarrage de la session...";
+        case "paused":
+          return "Session mise en pause par l'animateur...";
+        case "active":
+          if (isAnswered && !showResults) {
+            // Le participant a répondu mais la question n'est pas encore terminée
+            return currentQuestion?.timeLimit
+              ? "En attente de la fin du chrono..."
+              : "En attente de l'animateur...";
+          }
+          return "Question en cours...";
+        case "finished":
+          return "Session terminée !";
+        default:
+          return "En attente...";
+      }
+    };
+
+    // MODIFICATION: Améliorer l'affichage du timer
+    const formatTime = (seconds) => {
+      if (seconds === null || seconds === undefined) return "--";
+
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+
+      if (mins > 0) {
+        return `${mins}:${secs.toString().padStart(2, "0")}`;
+      }
+      return secs.toString();
     };
 
     const handleQuestionResults = (data) => {
@@ -542,7 +595,7 @@ const SessionPlay = () => {
     socket.on("session_paused", handleSessionPaused);
     socket.on("session_resumed", handleSessionResumed);
     socket.on("session_ended", handleSessionEnded);
-    socket.on("new_question", handleNewQuestion);
+    socket.on("next_question", handleNextQuestion);
     socket.on("question_results", handleQuestionResults);
     socket.on("leaderboard_updated", handleLeaderboardUpdate);
     socket.on("response_received", handleResponseReceived);
@@ -558,7 +611,7 @@ const SessionPlay = () => {
       socket.off("session_paused", handleSessionPaused);
       socket.off("session_resumed", handleSessionResumed);
       socket.off("session_ended", handleSessionEnded);
-      socket.off("new_question", handleNewQuestion);
+      socket.off("next_question", handleNextQuestion);
       socket.off("question_results", handleQuestionResults);
       socket.off("leaderboard_updated", handleLeaderboardUpdate);
       socket.off("response_received", handleResponseReceived);
@@ -585,11 +638,12 @@ const SessionPlay = () => {
       selectedAnswer,
       isAnswered,
       isSubmitting,
-      currentQuestion: currentQuestion?.id,
+      currentQuestion: currentQuestion?.question,
       participantInfo: participantInfo?.id,
+      session: session?.currentQuestionIndex,
     });
 
-    // CORRECTION: Vérification plus précise pour selectedAnswer
+    // Vérifications de base
     if (selectedAnswer === null || selectedAnswer === undefined) {
       toast.error("Veuillez sélectionner une réponse");
       return;
@@ -605,16 +659,37 @@ const SessionPlay = () => {
       return;
     }
 
-    // CORRECTION: Validation du socket
     if (!socket || !isConnected) {
       console.warn("⚠️ Socket non connecté");
       toast.error("Problème de connexion. Vérifiez votre réseau.");
       return;
     }
 
+    // CORRECTION PRINCIPALE: Générer questionId basé sur l'index de la session
+    let questionId;
+
+    if (session?.currentQuestionIndex !== undefined) {
+      // Utiliser l'index de la question courante de la session
+      questionId = `q_${session.currentQuestionIndex}`;
+      console.log(
+        `📋 Question ID généré depuis session.currentQuestionIndex: ${questionId}`
+      );
+    } else if (currentQuestion?.id) {
+      // Fallback: utiliser l'ID si il existe sur la question
+      questionId = currentQuestion.id;
+      console.log(`📋 Question ID depuis currentQuestion.id: ${questionId}`);
+    } else {
+      // Dernier recours: générer un ID temporaire
+      const questionNumber = currentQuestionNumber - 1; // currentQuestionNumber est 1-based
+      questionId = `q_${questionNumber}`;
+      console.log(
+        `📋 Question ID généré depuis currentQuestionNumber: ${questionId}`
+      );
+    }
+
     const response = {
+      questionId, // ← CORRECTION: ID généré correctement
       sessionId,
-      questionId: currentQuestion.id,
       participantId: participantInfo.id,
       answer: selectedAnswer,
       submittedAt: new Date().toISOString(),
@@ -624,34 +699,101 @@ const SessionPlay = () => {
           : null,
     };
 
-    console.log("📤 Envoi réponse:", response);
+    console.log("📤 Envoi réponse avec questionId corrigé:", response);
+
+    // Vérifier que questionId est bien défini
+    if (!questionId) {
+      console.error("❌ ERREUR CRITIQUE: questionId non généré!", {
+        session: session?.currentQuestionIndex,
+        currentQuestion: currentQuestion?.id,
+        currentQuestionNumber,
+      });
+      toast.error("Erreur: Question non identifiée");
+      return;
+    }
+
     setIsSubmitting(true);
 
-    // CORRECTION: Ajouter un événement de confirmation
-    socket.emit("submit_answer", response, (acknowledgment) => {
-      console.log("📨 Accusé de réception:", acknowledgment);
+    // Utiliser submit_response pour correspondre au backend
+    socket.emit("submit_response", response);
 
-      if (acknowledgment?.success) {
+    // Gérer la confirmation
+    const handleResponseConfirmation = (data) => {
+      console.log("📨 Confirmation reçue:", data);
+
+      if (data.questionId === questionId) {
         setIsAnswered(true);
         setIsSubmitting(false);
-        toast.success("Réponse enregistrée !", {
-          icon: "✅",
-          duration: 2000,
-        });
-      } else {
-        setIsSubmitting(false);
-        toast.error(acknowledgment?.error || "Erreur lors de l'envoi");
-      }
-    });
 
-    // CORRECTION: Timeout de sécurité amélioré
-    setTimeout(() => {
-      if (isSubmitting && componentMountedRef.current) {
-        console.warn("⏰ Timeout réponse");
-        setIsSubmitting(false);
-        toast.error("Délai d'attente dépassé. Réessayez.");
+        if (data.success !== false) {
+          const message = `Réponse enregistrée ! ${
+            data.isCorrect ? "✅ Correct" : "❌ Incorrect"
+          } (${data.points || 0} pts)`;
+          toast.success(message, { duration: 3000 });
+        }
+
+        // Nettoyer le listener
+        socket.off("response_submitted", handleResponseConfirmation);
       }
-    }, 8000); // Réduit à 8s au lieu de 10s
+    };
+
+    // Gérer les erreurs avec plus de détails
+    const handleResponseError = (error) => {
+      console.error("❌ Erreur soumission:", error);
+      setIsSubmitting(false);
+
+      let errorMessage = "Erreur lors de l'envoi";
+
+      switch (error.code) {
+        case "INVALID_DATA":
+          errorMessage = `Données invalides: ${
+            error.field || "données manquantes"
+          }`;
+          console.error("INVALID_DATA détails:", { response, error });
+          break;
+        case "ALREADY_ANSWERED":
+          errorMessage = "Vous avez déjà répondu à cette question.";
+          setIsAnswered(true);
+          break;
+        case "SESSION_NOT_ACTIVE":
+          errorMessage = "La session n'est plus active.";
+          break;
+        case "QUESTION_NOT_FOUND":
+        case "NO_ACTIVE_QUESTION":
+        case "INVALID_QUESTION_INDEX":
+          errorMessage = "Question introuvable ou invalide.";
+          break;
+        case "QUESTION_MISMATCH":
+          errorMessage = "Question incorrecte. Actualisez la page.";
+          break;
+        default:
+          errorMessage = error.message || "Erreur inconnue";
+      }
+
+      toast.error(errorMessage);
+      socket.off("error", handleResponseError);
+    };
+
+    // Listeners
+    socket.on("response_submitted", handleResponseConfirmation);
+    socket.on("error", handleResponseError);
+
+    // Timeout de sécurité
+    const timeoutId = setTimeout(() => {
+      if (isSubmitting && componentMountedRef.current) {
+        console.warn("⏰ Timeout - aucune réponse du serveur");
+        setIsSubmitting(false);
+        toast.error("Délai d'attente dépassé. Veuillez réessayer.");
+
+        // Nettoyer les listeners
+        socket.off("response_submitted", handleResponseConfirmation);
+        socket.off("error", handleResponseError);
+      }
+    }, 8000);
+
+    // Nettoyer le timeout
+    socket.once("response_submitted", () => clearTimeout(timeoutId));
+    socket.once("error", () => clearTimeout(timeoutId));
   }, [
     selectedAnswer,
     isAnswered,
@@ -662,6 +804,8 @@ const SessionPlay = () => {
     socket,
     isConnected,
     timeRemaining,
+    session?.currentQuestionIndex, // AJOUT: inclure l'index de la session
+    currentQuestionNumber,
   ]);
 
   // Temps écoulé
@@ -764,14 +908,6 @@ const SessionPlay = () => {
     return "text-red-600 dark:text-red-400";
   };
 
-  const formatTime = (seconds) => {
-    if (typeof seconds !== "number" || isNaN(seconds)) return "0:00";
-
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
   const getAnswerLetter = (index) => {
     return String.fromCharCode(65 + index); // A, B, C, D...
   };
@@ -788,7 +924,114 @@ const SessionPlay = () => {
     return suffixes[position - 1] || "ème";
   };
 
+  const getWaitingMessage = () => {
+    if (!session) return "Chargement...";
+
+    switch (session.status) {
+      case "waiting":
+        return "En attente du démarrage de la session...";
+      case "paused":
+        return "Session mise en pause par l'animateur...";
+      case "active":
+        if (isAnswered && !showResults) {
+          // Le participant a répondu mais la question n'est pas encore terminée
+          return currentQuestion?.timeLimit
+            ? "En attente de la fin du chrono..."
+            : "En attente de l'animateur...";
+        }
+        return "Question en cours...";
+      case "finished":
+        return "Session terminée !";
+      default:
+        return "En attente...";
+    }
+  };
+
+  // MODIFICATION: Améliorer l'affichage du timer
+  const formatTime = (seconds) => {
+    if (seconds === null || seconds === undefined) return "--";
+
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+
+    if (mins > 0) {
+      return `${mins}:${secs.toString().padStart(2, "0")}`;
+    }
+    return secs.toString();
+  };
+
   // === Rendus conditionnels ===
+
+  const renderWaitingMessage = () => {
+    const message = getWaitingMessage();
+
+    return (
+      <div className="max-w-2xl mx-auto text-center py-12">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
+          {/* Icône dynamique selon le statut */}
+          <div className="mb-6">
+            {session?.status === "waiting" && (
+              <PlayIcon className="w-16 h-16 mx-auto text-blue-500" />
+            )}
+            {session?.status === "paused" && (
+              <PauseIcon className="w-16 h-16 mx-auto text-yellow-500" />
+            )}
+            {session?.status === "active" && isAnswered && (
+              <ClockIcon className="w-16 h-16 mx-auto text-green-500" />
+            )}
+            {session?.status === "finished" && (
+              <CheckCircleIcon className="w-16 h-16 mx-auto text-green-500" />
+            )}
+          </div>
+
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+            {message}
+          </h2>
+
+          {/* Informations additionnelles */}
+          {session?.status === "active" &&
+            isAnswered &&
+            currentQuestion?.timeLimit && (
+              <div className="mb-4">
+                <p className="text-gray-600 dark:text-gray-400 mb-2">
+                  Temps restant pour cette question :
+                </p>
+                <div className="text-3xl font-mono font-bold text-blue-600 dark:text-blue-400">
+                  {formatTime(timeRemaining)}
+                </div>
+              </div>
+            )}
+
+          {/* Progression de la session */}
+          {totalQuestions > 0 && (
+            <div className="mt-6">
+              <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                Question {currentQuestionNumber} sur {totalQuestions}
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${(currentQuestionNumber / totalQuestions) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Score actuel */}
+          {playerScore > 0 && (
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 dark:bg-green-900 rounded-full">
+              <TrophyIcon className="w-5 h-5 text-green-600 dark:text-green-400 mr-2" />
+              <span className="text-green-800 dark:text-green-200 font-semibold">
+                {playerScore} points
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // Rendu des erreurs
   if (error) {

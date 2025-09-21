@@ -231,7 +231,7 @@ function MainLayout() {
               <Route
                 path="/sessions"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute roles={["formateur", "admin"]}>
                     <SessionsList />
                   </ProtectedRoute>
                 }
@@ -239,7 +239,7 @@ function MainLayout() {
               <Route
                 path="/session/:sessionId/results"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute roles={["formateur", "admin"]}>
                     <SessionResults />
                   </ProtectedRoute>
                 }
