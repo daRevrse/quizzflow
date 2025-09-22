@@ -383,7 +383,7 @@ const SessionPlay = () => {
       // Redirection vers les résultats
       setTimeout(() => {
         if (componentMountedRef.current) {
-          navigate(`/session/${sessionId}/results`);
+          navigate(`/`);
         }
       }, 3000);
     };
@@ -392,7 +392,7 @@ const SessionPlay = () => {
     const handleNextQuestion = (data) => {
       if (!isSocketMounted || !componentMountedRef.current) return;
 
-      console.log("❓ Nouvelle question:", data);
+      console.log("➡️ Nouvelle question reçue:", data);
 
       // Réinitialiser l'état pour la nouvelle question
       setCurrentQuestion(data.question);
@@ -404,9 +404,17 @@ const SessionPlay = () => {
       setIsSubmitting(false);
       setCurrentQuestionNumber((data.questionIndex || 0) + 1);
 
+      // CORRECTION : Mettre à jour session.currentQuestionIndex
+      setSession((prevSession) => ({
+        ...prevSession,
+        currentQuestionIndex: data.questionIndex,
+        currentQuestionStartedAt: data.startedAt || new Date().toISOString(),
+      }));
+
       // Gérer le timer
       if (data.question.timeLimit) {
         setTimeRemaining(data.question.timeLimit);
+        console.log(`⏰ Timer démarré: ${data.question.timeLimit}s`);
       } else {
         setTimeRemaining(null);
       }
