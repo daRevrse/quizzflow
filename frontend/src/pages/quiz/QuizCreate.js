@@ -105,6 +105,39 @@ const QuizCreate = () => {
     { value: "difficile", label: "Difficile", color: "text-danger-600" },
   ];
 
+  // CORRECTION: Gestionnaire du changement de type de question
+  const handleQuestionTypeChange = (questionIndex, newType) => {
+    console.log(
+      `🔄 Changement de type pour question ${questionIndex}: ${newType}`
+    );
+
+    if (newType === "vrai_faux") {
+      // Pour les questions vrai/faux, NE PAS créer d'options vides
+      setValue(`questions.${questionIndex}.type`, newType);
+      setValue(`questions.${questionIndex}.options`, []); // Supprimer les options
+      setValue(`questions.${questionIndex}.correctAnswer`, "true"); // Valeur par défaut
+      console.log(
+        `✅ Question ${questionIndex} configurée en vrai/faux sans options`
+      );
+    } else if (newType === "qcm") {
+      // Pour QCM, créer des options avec texte vide (à remplir)
+      setValue(`questions.${questionIndex}.type`, newType);
+      setValue(`questions.${questionIndex}.options`, [
+        { text: "", isCorrect: false },
+        { text: "", isCorrect: false },
+      ]);
+      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Vider correctAnswer
+    } else if (newType === "reponse_libre") {
+      setValue(`questions.${questionIndex}.type`, newType);
+      setValue(`questions.${questionIndex}.options`, []); // Pas d'options
+      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Réponse libre
+    } else if (newType === "nuage_mots") {
+      setValue(`questions.${questionIndex}.type`, newType);
+      setValue(`questions.${questionIndex}.options`, []); // Pas d'options
+      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Pas de réponse unique
+    }
+  };
+
   // Gestionnaires
   const handleAddOption = (questionIndex) => {
     const currentOptions =
@@ -168,6 +201,7 @@ const QuizCreate = () => {
     );
   };
 
+  // CORRECTION: Fonction onSubmit améliorée
   const onSubmit = async (data) => {
     try {
       setLoading(true);
@@ -180,7 +214,7 @@ const QuizCreate = () => {
           validationErrors.push(`Question ${index + 1}: Le texte est requis`);
         }
 
-        if (question.type === "qcm" || question.type === "vrai_faux") {
+        if (question.type === "qcm") {
           const validOptions =
             question.options?.filter((opt) => opt.text?.trim()) || [];
           const correctOptions = validOptions.filter((opt) => opt.isCorrect);
@@ -195,15 +229,18 @@ const QuizCreate = () => {
               `Question ${index + 1}: Au moins une réponse correcte requise`
             );
           }
-        }
-
-        if (
-          question.type === "reponse_libre" &&
-          !question.correctAnswer?.trim()
-        ) {
-          validationErrors.push(
-            `Question ${index + 1}: Réponse correcte requise`
-          );
+        } else if (question.type === "vrai_faux") {
+          if (!question.correctAnswer || question.correctAnswer === "") {
+            validationErrors.push(
+              `Question ${index + 1}: Réponse correcte requise pour Vrai/Faux`
+            );
+          }
+        } else if (question.type === "reponse_libre") {
+          if (!question.correctAnswer?.trim()) {
+            validationErrors.push(
+              `Question ${index + 1}: Réponse correcte requise`
+            );
+          }
         }
       });
 
@@ -213,15 +250,48 @@ const QuizCreate = () => {
         return;
       }
 
-      // Nettoyer les données
+      // CORRECTION: Nettoyer les données selon le type de question
       const cleanData = {
         ...data,
-        questions: data.questions.map((q) => ({
-          ...q,
-          options: q.options?.filter((opt) => opt.text?.trim()) || [],
-          order: data.questions.indexOf(q) + 1,
-        })),
+        questions: data.questions.map((q, index) => {
+          const baseQuestion = {
+            ...q,
+            order: index + 1,
+          };
+
+          if (q.type === "qcm") {
+            // Pour QCM, garder les options et vider correctAnswer
+            return {
+              ...baseQuestion,
+              options: q.options?.filter((opt) => opt.text?.trim()) || [],
+              correctAnswer: undefined, // Supprimer correctAnswer pour QCM
+            };
+          } else if (q.type === "vrai_faux") {
+            // Pour Vrai/Faux, garder correctAnswer et supprimer options
+            return {
+              ...baseQuestion,
+              options: [], // Pas d'options pour vrai/faux
+              correctAnswer: q.correctAnswer, // Garder "true" ou "false"
+            };
+          } else if (q.type === "reponse_libre") {
+            // Pour réponse libre, garder correctAnswer et supprimer options
+            return {
+              ...baseQuestion,
+              options: [], // Pas d'options
+              correctAnswer: q.correctAnswer,
+            };
+          } else {
+            // Autres types
+            return {
+              ...baseQuestion,
+              options: [],
+              correctAnswer: q.correctAnswer || "",
+            };
+          }
+        }),
       };
+
+      console.log("📤 Données nettoyées à envoyer:", cleanData);
 
       const response = await quizService.createQuiz(cleanData);
       toast.success("Quiz créé avec succès !");
@@ -378,8 +448,12 @@ const QuizCreate = () => {
               <span className="flex items-center justify-center w-8 h-8 bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 rounded-full text-sm font-medium">
                 {questionIndex + 1}
               </span>
+              {/* CORRECTION: Select avec gestionnaire de changement */}
               <select
                 {...register(`questions.${questionIndex}.type`)}
+                onChange={(e) =>
+                  handleQuestionTypeChange(questionIndex, e.target.value)
+                }
                 className="input py-1"
               >
                 {questionTypes.map((type) => (
@@ -437,15 +511,14 @@ const QuizCreate = () => {
             />
           </div>
 
-          {/* Options selon le type */}
-          {(watch(`questions.${questionIndex}.type`) === "qcm" ||
-            watch(`questions.${questionIndex}.type`) === "vrai_faux") && (
+          {/* CORRECTION: Options pour QCM seulement */}
+          {watch(`questions.${questionIndex}.type`) === "qcm" && (
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Options de réponse
+                Options de réponse *
               </label>
               <div className="space-y-2">
-                {watch(`questions.${questionIndex}.options`)?.map(
+                {(watch(`questions.${questionIndex}.options`) || []).map(
                   (option, optionIndex) => (
                     <div
                       key={optionIndex}
@@ -465,7 +538,8 @@ const QuizCreate = () => {
                       />
                       <input
                         {...register(
-                          `questions.${questionIndex}.options.${optionIndex}.text`
+                          `questions.${questionIndex}.options.${optionIndex}.text`,
+                          { required: "Le texte de l'option est requis" }
                         )}
                         type="text"
                         className="flex-1 input"
@@ -498,6 +572,29 @@ const QuizCreate = () => {
             </div>
           )}
 
+          {/* CORRECTION: Réponse correcte pour Vrai/Faux - PAS D'OPTIONS */}
+          {watch(`questions.${questionIndex}.type`) === "vrai_faux" && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Réponse correcte *
+              </label>
+              <select
+                {...register(`questions.${questionIndex}.correctAnswer`, {
+                  required: "La réponse correcte est requise",
+                })}
+                className="input w-auto"
+              >
+                <option value="">-- Choisir --</option>
+                <option value="true">Vrai</option>
+                <option value="false">Faux</option>
+              </select>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Les options "Vrai" et "Faux" seront générées automatiquement
+                lors de la session.
+              </p>
+            </div>
+          )}
+
           {/* Réponse libre */}
           {watch(`questions.${questionIndex}.type`) === "reponse_libre" && (
             <div className="mb-4">
@@ -505,7 +602,9 @@ const QuizCreate = () => {
                 Réponse correcte *
               </label>
               <input
-                {...register(`questions.${questionIndex}.correctAnswer`)}
+                {...register(`questions.${questionIndex}.correctAnswer`, {
+                  required: "La réponse correcte est requise",
+                })}
                 type="text"
                 className="input"
                 placeholder="Réponse attendue"
@@ -820,8 +919,7 @@ const QuizCreate = () => {
                     </div>
                   </div>
 
-                  {(question.type === "qcm" ||
-                    question.type === "vrai_faux") && (
+                  {question.type === "qcm" && (
                     <div className="space-y-2">
                       {question.options?.map((option, optIndex) => (
                         <div
@@ -846,6 +944,21 @@ const QuizCreate = () => {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {question.type === "vrai_faux" && (
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Réponse correcte :{" "}
+                        <span className="font-medium text-success-600 dark:text-success-400">
+                          {question.correctAnswer === "true" ? "Vrai" : "Faux"}
+                        </span>
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Les options "Vrai" et "Faux" seront générées
+                        automatiquement.
+                      </p>
                     </div>
                   )}
 

@@ -38,6 +38,7 @@ const QuizEdit = () => {
     handleSubmit,
     watch,
     setValue,
+    getValues,
     reset,
     formState: { errors, isDirty },
   } = useForm({
@@ -153,6 +154,58 @@ const QuizEdit = () => {
     "Autre",
   ];
 
+  // CORRECTION: Gestionnaire du changement de type de question
+  const handleQuestionTypeChange = (questionIndex, newType) => {
+    console.log(
+      `🔄 Changement de type pour question ${questionIndex}: ${newType}`
+    );
+
+    if (newType === "vrai_faux") {
+      // Pour les questions vrai/faux, NE PAS créer d'options vides
+      setValue(`questions.${questionIndex}.type`, newType);
+      setValue(`questions.${questionIndex}.options`, []); // Supprimer les options
+      setValue(`questions.${questionIndex}.correctAnswer`, "true"); // Valeur par défaut
+      console.log(
+        `✅ Question ${questionIndex} configurée en vrai/faux sans options`
+      );
+    } else if (newType === "qcm") {
+      // Pour QCM, créer des options avec texte vide (à remplir)
+      setValue(`questions.${questionIndex}.type`, newType);
+      setValue(`questions.${questionIndex}.options`, [
+        { text: "", isCorrect: false },
+        { text: "", isCorrect: false },
+      ]);
+      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Vider correctAnswer
+    } else if (newType === "reponse_libre") {
+      setValue(`questions.${questionIndex}.type`, newType);
+      setValue(`questions.${questionIndex}.options`, []); // Pas d'options
+      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Réponse libre
+    } else if (newType === "nuage_mots") {
+      setValue(`questions.${questionIndex}.type`, newType);
+      setValue(`questions.${questionIndex}.options`, []); // Pas d'options
+      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Pas de réponse unique
+    }
+  };
+
+  // CORRECTION: Gestionnaires pour les options QCM
+  const handleAddOption = (questionIndex) => {
+    const currentOptions =
+      getValues(`questions.${questionIndex}.options`) || [];
+    setValue(`questions.${questionIndex}.options`, [
+      ...currentOptions,
+      { text: "", isCorrect: false },
+    ]);
+  };
+
+  const handleRemoveOption = (questionIndex, optionIndex) => {
+    const currentOptions =
+      getValues(`questions.${questionIndex}.options`) || [];
+    if (currentOptions.length > 2) {
+      const newOptions = currentOptions.filter((_, i) => i !== optionIndex);
+      setValue(`questions.${questionIndex}.options`, newOptions);
+    }
+  };
+
   // Gestionnaires
   const onSubmit = async (data) => {
     try {
@@ -164,16 +217,94 @@ const QuizEdit = () => {
         return;
       }
 
-      // Préparation des données
+      // CORRECTION: Validation selon le type de question
+      const validationErrors = [];
+
+      data.questions.forEach((question, index) => {
+        if (!question.question?.trim()) {
+          validationErrors.push(`Question ${index + 1}: Le texte est requis`);
+        }
+
+        if (question.type === "qcm") {
+          const validOptions =
+            question.options?.filter((opt) => opt.text?.trim()) || [];
+          const correctOptions = validOptions.filter((opt) => opt.isCorrect);
+
+          if (validOptions.length < 2) {
+            validationErrors.push(
+              `Question ${index + 1}: Au moins 2 options requises`
+            );
+          }
+          if (correctOptions.length === 0) {
+            validationErrors.push(
+              `Question ${index + 1}: Au moins une réponse correcte requise`
+            );
+          }
+        } else if (question.type === "vrai_faux") {
+          if (!question.correctAnswer || question.correctAnswer === "") {
+            validationErrors.push(
+              `Question ${index + 1}: Réponse correcte requise pour Vrai/Faux`
+            );
+          }
+        } else if (question.type === "reponse_libre") {
+          if (!question.correctAnswer?.trim()) {
+            validationErrors.push(
+              `Question ${index + 1}: Réponse correcte requise`
+            );
+          }
+        }
+      });
+
+      if (validationErrors.length > 0) {
+        toast.error("Erreurs de validation détectées");
+        console.error("Erreurs:", validationErrors);
+        return;
+      }
+
+      // CORRECTION: Préparation des données selon le type de question
       const quizData = {
         ...data,
         estimatedDuration: Math.ceil(quizStats.estimatedDuration / 60),
-        questions: data.questions.map((q, index) => ({
-          ...q,
-          order: index + 1,
-          id: q.id || `temp_${Date.now()}_${index}`,
-        })),
+        questions: data.questions.map((q, index) => {
+          const baseQuestion = {
+            ...q,
+            order: index + 1,
+            id: q.id || `temp_${Date.now()}_${index}`,
+          };
+
+          if (q.type === "qcm") {
+            // Pour QCM, garder les options et vider correctAnswer
+            return {
+              ...baseQuestion,
+              options: q.options?.filter((opt) => opt.text?.trim()) || [],
+              correctAnswer: undefined, // Supprimer correctAnswer pour QCM
+            };
+          } else if (q.type === "vrai_faux") {
+            // Pour Vrai/Faux, garder correctAnswer et supprimer options
+            return {
+              ...baseQuestion,
+              options: [], // Pas d'options pour vrai/faux
+              correctAnswer: q.correctAnswer, // Garder "true" ou "false"
+            };
+          } else if (q.type === "reponse_libre") {
+            // Pour réponse libre, garder correctAnswer et supprimer options
+            return {
+              ...baseQuestion,
+              options: [], // Pas d'options
+              correctAnswer: q.correctAnswer,
+            };
+          } else {
+            // Autres types
+            return {
+              ...baseQuestion,
+              options: [],
+              correctAnswer: q.correctAnswer || "",
+            };
+          }
+        }),
       };
+
+      console.log("📤 Données nettoyées à envoyer:", quizData);
 
       const response = await quizService.updateQuiz(id, quizData);
       toast.success("Quiz mis à jour avec succès !");
@@ -444,8 +575,12 @@ const QuizEdit = () => {
                         <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 rounded-full text-sm font-medium">
                           {index + 1}
                         </span>
+                        {/* CORRECTION: Select avec gestionnaire de changement */}
                         <select
                           {...register(`questions.${index}.type`)}
+                          onChange={(e) =>
+                            handleQuestionTypeChange(index, e.target.value)
+                          }
                           className="input w-auto"
                         >
                           {questionTypes.map((type) => (
@@ -504,52 +639,94 @@ const QuizEdit = () => {
                         />
                       </div>
 
-                      {/* Options pour QCM */}
+                      {/* CORRECTION: Options pour QCM seulement */}
                       {watch(`questions.${index}.type`) === "qcm" && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Options de réponse
+                            Options de réponse *
                           </label>
                           <div className="space-y-2">
-                            {question.options?.map((option, optIndex) => (
-                              <div
-                                key={optIndex}
-                                className="flex items-center space-x-3"
-                              >
-                                <input
-                                  type="checkbox"
-                                  {...register(
-                                    `questions.${index}.options.${optIndex}.isCorrect`
+                            {(question.options || []).map(
+                              (option, optIndex) => (
+                                <div
+                                  key={optIndex}
+                                  className="flex items-center space-x-3"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    {...register(
+                                      `questions.${index}.options.${optIndex}.isCorrect`
+                                    )}
+                                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                  />
+                                  <input
+                                    {...register(
+                                      `questions.${index}.options.${optIndex}.text`
+                                    )}
+                                    type="text"
+                                    className="flex-1 input"
+                                    placeholder={`Option ${optIndex + 1}`}
+                                    required
+                                  />
+                                  {question.options?.length > 2 && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleRemoveOption(index, optIndex)
+                                      }
+                                      className="p-1 text-red-400 hover:text-red-600"
+                                    >
+                                      <XMarkIcon className="h-4 w-4" />
+                                    </button>
                                   )}
-                                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                                />
-                                <input
-                                  {...register(
-                                    `questions.${index}.options.${optIndex}.text`
-                                  )}
-                                  type="text"
-                                  className="flex-1 input"
-                                  placeholder={`Option ${optIndex + 1}`}
-                                />
-                              </div>
-                            )) || []}
+                                </div>
+                              )
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleAddOption(index)}
+                              className="text-sm text-primary-600 hover:text-primary-500 flex items-center"
+                            >
+                              <PlusIcon className="h-4 w-4 mr-1" />
+                              Ajouter une option
+                            </button>
                           </div>
                         </div>
                       )}
 
-                      {/* Réponse correcte pour Vrai/Faux */}
+                      {/* CORRECTION: Réponse correcte pour Vrai/Faux - PAS D'OPTIONS */}
                       {watch(`questions.${index}.type`) === "vrai_faux" && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Réponse correcte
+                            Réponse correcte *
                           </label>
                           <select
                             {...register(`questions.${index}.correctAnswer`)}
                             className="input w-auto"
                           >
+                            <option value="">-- Choisir --</option>
                             <option value="true">Vrai</option>
                             <option value="false">Faux</option>
                           </select>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            Les options "Vrai" et "Faux" seront générées
+                            automatiquement lors de la session.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Réponse libre */}
+                      {watch(`questions.${index}.type`) === "reponse_libre" && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Réponse correcte *
+                          </label>
+                          <input
+                            {...register(`questions.${index}.correctAnswer`)}
+                            type="text"
+                            className="input"
+                            placeholder="Réponse attendue"
+                          />
                         </div>
                       )}
 

@@ -12,45 +12,179 @@ const generateSessionCode = () => {
 };
 
 // Fonction pour calculer les statistiques de session
+// const calculateSessionStats = (session) => {
+//   const participants = Array.isArray(session.participants)
+//     ? session.participants
+//     : [];
+//   const responses = session.responses || {};
+
+//   const totalParticipants = participants.length;
+//   const totalResponses = Object.keys(responses).reduce((total, questionId) => {
+//     return total + (responses[questionId]?.length || 0);
+//   }, 0);
+
+//   let totalScore = 0;
+//   let activeParticipants = 0;
+
+//   participants.forEach((participant) => {
+//     if (participant && typeof participant === "object") {
+//       if (typeof participant.score === "number" && !isNaN(participant.score)) {
+//         totalScore += participant.score;
+//         activeParticipants++;
+//       }
+//     }
+//   });
+
+//   const averageScore =
+//     activeParticipants > 0
+//       ? Math.round((totalScore / activeParticipants) * 100) / 100
+//       : 0;
+//   const participationRate =
+//     totalParticipants > 0
+//       ? Math.round((activeParticipants / totalParticipants) * 100)
+//       : 0;
+
+//   return {
+//     totalParticipants,
+//     totalResponses,
+//     averageScore,
+//     participationRate,
+//     activeParticipants,
+//   };
+// };
+
 const calculateSessionStats = (session) => {
-  const participants = Array.isArray(session.participants)
-    ? session.participants
-    : [];
+  const participants = Array.isArray(session.participants) ? session.participants : [];
   const responses = session.responses || {};
-
+  
+  console.log(`📊 Calcul stats session - ${participants.length} participants`);
+  
   const totalParticipants = participants.length;
+  
+  // Calculer le nombre total de réponses
   const totalResponses = Object.keys(responses).reduce((total, questionId) => {
-    return total + (responses[questionId]?.length || 0);
+    const questionResponses = responses[questionId];
+    return total + (Array.isArray(questionResponses) ? questionResponses.length : 0);
   }, 0);
-
+  
+  // Calculer les statistiques des participants
   let totalScore = 0;
   let activeParticipants = 0;
-
+  let totalCorrectAnswers = 0;
+  let totalQuestionsAnswered = 0;
+  let totalTimeSpent = 0;
+  let bestScore = 0;
+  let worstScore = Number.MAX_SAFE_INTEGER;
+  
   participants.forEach((participant) => {
     if (participant && typeof participant === "object") {
-      if (typeof participant.score === "number" && !isNaN(participant.score)) {
-        totalScore += participant.score;
+      const score = participant.score || 0;
+      const correctAnswers = participant.correctAnswers || 0;
+      const totalQuestions = participant.totalQuestions || 0;
+      
+      if (typeof score === "number" && !isNaN(score)) {
+        totalScore += score;
         activeParticipants++;
+        
+        bestScore = Math.max(bestScore, score);
+        worstScore = Math.min(worstScore, score);
+      }
+      
+      totalCorrectAnswers += correctAnswers;
+      totalQuestionsAnswered += totalQuestions;
+      
+      // Calculer le temps total passé par le participant
+      if (participant.responses) {
+        Object.values(participant.responses).forEach(response => {
+          if (response && typeof response.timeSpent === 'number') {
+            totalTimeSpent += response.timeSpent;
+          }
+        });
       }
     }
   });
-
-  const averageScore =
-    activeParticipants > 0
-      ? Math.round((totalScore / activeParticipants) * 100) / 100
-      : 0;
-  const participationRate =
-    totalParticipants > 0
-      ? Math.round((activeParticipants / totalParticipants) * 100)
-      : 0;
-
-  return {
+  
+  // Calculer les moyennes
+  const averageScore = activeParticipants > 0 
+    ? Math.round((totalScore / activeParticipants) * 100) / 100 
+    : 0;
+    
+  const participationRate = totalParticipants > 0 
+    ? Math.round((activeParticipants / totalParticipants) * 100) 
+    : 0;
+    
+  const accuracyRate = totalQuestionsAnswered > 0 
+    ? Math.round((totalCorrectAnswers / totalQuestionsAnswered) * 100) 
+    : 0;
+    
+  const averageTimePerQuestion = totalQuestionsAnswered > 0 
+    ? Math.round(totalTimeSpent / totalQuestionsAnswered) 
+    : 0;
+  
+  // Réinitialiser les scores min/max si pas de participants actifs
+  if (activeParticipants === 0) {
+    bestScore = 0;
+    worstScore = 0;
+  }
+  
+  // Calculer les stats par question
+  const questionStats = {};
+  Object.keys(responses).forEach(questionId => {
+    const questionResponses = responses[questionId];
+    if (Array.isArray(questionResponses)) {
+      const correctCount = questionResponses.filter(r => r.isCorrect).length;
+      const avgTime = questionResponses.length > 0 
+        ? questionResponses.reduce((sum, r) => sum + (r.timeSpent || 0), 0) / questionResponses.length 
+        : 0;
+      
+      questionStats[questionId] = {
+        totalResponses: questionResponses.length,
+        correctResponses: correctCount,
+        accuracyRate: questionResponses.length > 0 
+          ? Math.round((correctCount / questionResponses.length) * 100) 
+          : 0,
+        averageTimeSpent: Math.round(avgTime),
+        responseRate: totalParticipants > 0 
+          ? Math.round((questionResponses.length / totalParticipants) * 100) 
+          : 0
+      };
+    }
+  });
+  
+  const stats = {
+    // Stats générales
     totalParticipants,
-    totalResponses,
-    averageScore,
-    participationRate,
     activeParticipants,
+    totalResponses,
+    
+    // Stats de performance
+    averageScore,
+    bestScore,
+    worstScore,
+    totalCorrectAnswers,
+    totalQuestionsAnswered,
+    accuracyRate,
+    
+    // Stats d'engagement
+    participationRate,
+    averageTimePerQuestion,
+    totalTimeSpent,
+    
+    // Stats détaillées par question
+    questionStats,
+    
+    // Timestamps
+    calculatedAt: new Date(),
   };
+  
+  console.log(`📊 Stats calculées:`, {
+    totalParticipants: stats.totalParticipants,
+    averageScore: stats.averageScore,
+    accuracyRate: stats.accuracyRate,
+    participationRate: stats.participationRate
+  });
+  
+  return stats;
 };
 
 // Définition du modèle Session
@@ -399,6 +533,150 @@ const Session = sequelize.define(
     ],
   }
 );
+
+// Nouvelle méthode pour obtenir les résultats complets d'une session
+// Session.prototype.getComprehensiveResults = function() {
+//   const participants = Array.isArray(this.participants) ? this.participants : [];
+//   const responses = this.responses || {};
+//   const stats = this.stats || {};
+  
+//   // Créer le classement des participants
+//   const leaderboard = participants
+//     .filter(p => p && typeof p.score === 'number')
+//     .sort((a, b) => (b.score || 0) - (a.score || 0))
+//     .map((participant, index) => ({
+//       rank: index + 1,
+//       id: participant.id,
+//       name: participant.name,
+//       score: participant.score || 0,
+//       correctAnswers: participant.correctAnswers || 0,
+//       totalQuestions: participant.totalQuestions || 0,
+//       accuracyRate: participant.totalQuestions > 0 
+//         ? Math.round((participant.correctAnswers / participant.totalQuestions) * 100) 
+//         : 0,
+//       isAnonymous: participant.isAnonymous || false,
+//       joinedAt: participant.joinedAt,
+//     }));
+  
+//   // Construire les résultats par question
+//   const questionResults = {};
+//   Object.keys(responses).forEach(questionId => {
+//     const questionResponses = responses[questionId] || [];
+    
+//     questionResults[questionId] = {
+//       questionId,
+//       totalResponses: questionResponses.length,
+//       totalParticipants: participants.length,
+//       responses: questionResponses.map(response => ({
+//         participantId: response.participantId,
+//         participantName: participants.find(p => p.id === response.participantId)?.name || 'Participant inconnu',
+//         answer: response.answer,
+//         isCorrect: response.isCorrect || false,
+//         points: response.points || 0,
+//         timeSpent: response.timeSpent || 0,
+//         submittedAt: response.submittedAt,
+//       })),
+//       stats: stats.questionStats?.[questionId] || {
+//         correctResponses: questionResponses.filter(r => r.isCorrect).length,
+//         accuracyRate: questionResponses.length > 0 
+//           ? Math.round((questionResponses.filter(r => r.isCorrect).length / questionResponses.length) * 100) 
+//           : 0,
+//         averageTimeSpent: questionResponses.length > 0 
+//           ? Math.round(questionResponses.reduce((sum, r) => sum + (r.timeSpent || 0), 0) / questionResponses.length) 
+//           : 0,
+//         responseRate: participants.length > 0 
+//           ? Math.round((questionResponses.length / participants.length) * 100) 
+//           : 0,
+//       }
+//     };
+//   });
+  
+//   return {
+//     session: {
+//       id: this.id,
+//       code: this.code,
+//       title: this.title,
+//       status: this.status,
+//       startedAt: this.startedAt,
+//       endedAt: this.endedAt,
+//       stats,
+//     },
+//     participants,
+//     leaderboard,
+//     questionResults,
+//     summary: {
+//       duration: this.startedAt && this.endedAt 
+//         ? Math.round((new Date(this.endedAt) - new Date(this.startedAt)) / 1000) 
+//         : null,
+//       totalQuestions: Object.keys(responses).length,
+//       completionRate: participants.length > 0 && Object.keys(responses).length > 0
+//         ? Math.round((stats.totalResponses / (participants.length * Object.keys(responses).length)) * 100)
+//         : 0,
+//     }
+//   };
+// };
+
+// Méthode pour obtenir les résultats d'un participant spécifique
+// Session.prototype.getParticipantResults = function(participantId) {
+//   const participants = Array.isArray(this.participants) ? this.participants : [];
+//   const participant = participants.find(p => p.id === participantId);
+  
+//   if (!participant) {
+//     return null;
+//   }
+  
+//   const responses = this.responses || {};
+//   const participantResponses = [];
+  
+//   // Collecter toutes les réponses de ce participant
+//   Object.keys(responses).forEach(questionId => {
+//     const questionResponses = responses[questionId] || [];
+//     const participantResponse = questionResponses.find(r => r.participantId === participantId);
+    
+//     if (participantResponse) {
+//       participantResponses.push({
+//         questionId,
+//         ...participantResponse,
+//       });
+//     }
+//   });
+  
+//   // Calculer les stats du participant
+//   const correctCount = participantResponses.filter(r => r.isCorrect).length;
+//   const totalTime = participantResponses.reduce((sum, r) => sum + (r.timeSpent || 0), 0);
+  
+//   return {
+//     participant: {
+//       id: participant.id,
+//       name: participant.name,
+//       score: participant.score || 0,
+//       correctAnswers: correctCount,
+//       totalQuestions: participantResponses.length,
+//       accuracyRate: participantResponses.length > 0 
+//         ? Math.round((correctCount / participantResponses.length) * 100) 
+//         : 0,
+//       totalTimeSpent: totalTime,
+//       averageTimePerQuestion: participantResponses.length > 0 
+//         ? Math.round(totalTime / participantResponses.length) 
+//         : 0,
+//       joinedAt: participant.joinedAt,
+//       isAnonymous: participant.isAnonymous || false,
+//     },
+//     responses: participantResponses,
+//     rank: this.getParticipantRank(participantId),
+//   };
+// };
+
+// Méthode pour obtenir le rang d'un participant
+// Session.prototype.getParticipantRank = function(participantId) {
+//   const participants = Array.isArray(this.participants) ? this.participants : [];
+//   const sortedParticipants = participants
+//     .filter(p => p && typeof p.score === 'number')
+//     .sort((a, b) => (b.score || 0) - (a.score || 0));
+    
+//   const rank = sortedParticipants.findIndex(p => p.id === participantId) + 1;
+//   return rank > 0 ? rank : null;
+// };
 
 Session.prototype.addParticipant = async function (participantData) {
   console.log(`\n🔄 === addParticipant SQL BRUT ===`);
@@ -877,64 +1155,6 @@ Session.prototype.debugParticipants = function () {
   return this.participants;
 };
 
-// Méthodes d'instance
-
-// Ajouter un participant
-// Session.prototype.addParticipant = function (participantData) {
-//   const { id, name, isAnonymous = false, userId = null } = participantData;
-
-//   // Validation
-//   if (!id || typeof id !== "string") {
-//     throw new Error("ID de participant requis");
-//   }
-
-//   if (!name || typeof name !== "string" || name.trim().length < 2) {
-//     throw new Error("Nom de participant requis (minimum 2 caractères)");
-//   }
-
-//   const participants = Array.isArray(this.participants)
-//     ? [...this.participants]
-//     : [];
-
-//   // Vérifier si le participant existe déjà
-//   const existingParticipant = participants.find((p) => p.id === id);
-//   if (existingParticipant) {
-//     throw new Error(`Participant avec l'ID ${id} existe déjà`);
-//   }
-
-//   // Vérifier si le nom est déjà utilisé
-//   const duplicateName = participants.find(
-//     (p) => p.name.toLowerCase() === name.toLowerCase()
-//   );
-//   if (duplicateName) {
-//     throw new Error(`Le nom "${name}" est déjà utilisé`);
-//   }
-
-//   // Vérifier la limite de participants
-//   const maxParticipants = this.settings?.maxParticipants || 100;
-//   if (participants.length >= maxParticipants) {
-//     throw new Error(`Limite de participants atteinte (${maxParticipants})`);
-//   }
-
-//   // Créer le nouveau participant
-//   const newParticipant = {
-//     id,
-//     name: name.trim(),
-//     isAnonymous,
-//     userId,
-//     joinedAt: new Date().toISOString(),
-//     score: 0,
-//     answeredQuestions: 0,
-//   };
-
-//   participants.push(newParticipant);
-
-//   return this.update({
-//     participants,
-//     stats: calculateSessionStats({ ...this.toJSON(), participants }),
-//   });
-// };
-
 Session.prototype.repairParticipants = async function () {
   console.log(`🔧 Réparation participants pour session ${this.id}`);
 
@@ -1005,12 +1225,15 @@ Session.prototype.removeParticipant = function (participantId) {
 
 // Ajouter une réponse
 Session.prototype.addResponse = function (responseData) {
-  const { questionId, participantId, answer, submittedAt, timeSpent } =
-    responseData;
+  const { questionId, participantId, answer, submittedAt, timeSpent, points, isCorrect } = responseData;
 
   // Validation
   if (!questionId || !participantId) {
     throw new Error("questionId et participantId sont requis");
+  }
+
+  if (answer === undefined || answer === null) {
+    throw new Error("answer est requis");
   }
 
   const responses = { ...this.responses };
@@ -1030,21 +1253,63 @@ Session.prototype.addResponse = function (responseData) {
     );
   }
 
-  // Ajouter la réponse
+  // Créer la réponse avec les vraies valeurs (calculées par le socket)
   const newResponse = {
     participantId,
     answer,
     submittedAt: submittedAt || new Date().toISOString(),
-    timeSpent: timeSpent || null,
-    points: 0, // À calculer selon la logique métier
-    isCorrect: false, // À calculer selon la logique métier
+    timeSpent: timeSpent || 0,
+    points: points || 0, // Utiliser les points calculés par le socket
+    isCorrect: isCorrect || false, // Utiliser la correction calculée par le socket
   };
+
+  console.log(`📝 Ajout réponse dans Session.addResponse:`, {
+    questionId,
+    participantId,
+    answer,
+    points: newResponse.points,
+    isCorrect: newResponse.isCorrect,
+  });
 
   responses[questionId].push(newResponse);
 
+  // Mettre à jour le participant avec ses nouvelles stats
+  const participants = Array.isArray(this.participants) ? [...this.participants] : [];
+  const participantIndex = participants.findIndex(p => p.id === participantId);
+  
+  if (participantIndex !== -1) {
+    // Initialiser les champs s'ils n'existent pas
+    if (!participants[participantIndex].responses) {
+      participants[participantIndex].responses = {};
+    }
+    
+    // Ajouter la réponse au participant
+    participants[participantIndex].responses[questionId] = newResponse;
+    
+    // Mettre à jour les stats du participant
+    participants[participantIndex].score = (participants[participantIndex].score || 0) + newResponse.points;
+    participants[participantIndex].totalQuestions = (participants[participantIndex].totalQuestions || 0) + 1;
+    participants[participantIndex].correctAnswers = (participants[participantIndex].correctAnswers || 0) + (newResponse.isCorrect ? 1 : 0);
+    participants[participantIndex].totalTimeSpent = (participants[participantIndex].totalTimeSpent || 0) + newResponse.timeSpent;
+
+    console.log(`📊 Stats participant mises à jour:`, {
+      participantId,
+      score: participants[participantIndex].score,
+      correctAnswers: participants[participantIndex].correctAnswers,
+      totalQuestions: participants[participantIndex].totalQuestions,
+    });
+  }
+
+  // Recalculer les stats de session
+  const updatedStats = calculateSessionStats({ 
+    participants, 
+    responses 
+  });
+
   return this.update({
+    participants,
     responses,
-    stats: calculateSessionStats({ ...this.toJSON(), responses }),
+    stats: updatedStats,
   });
 };
 
@@ -1261,6 +1526,149 @@ Session.addScope("withHost", {
     },
   ],
 });
+
+Session.prototype.getComprehensiveResults = function() {
+  const participants = Array.isArray(this.participants) ? this.participants : [];
+  const responses = this.responses || {};
+  const stats = this.stats || {};
+  
+  // Créer le classement des participants
+  const leaderboard = participants
+    .filter(p => p && typeof p.score === 'number')
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .map((participant, index) => ({
+      rank: index + 1,
+      id: participant.id,
+      name: participant.name,
+      score: participant.score || 0,
+      correctAnswers: participant.correctAnswers || 0,
+      totalQuestions: participant.totalQuestions || 0,
+      accuracyRate: participant.totalQuestions > 0 
+        ? Math.round((participant.correctAnswers / participant.totalQuestions) * 100) 
+        : 0,
+      isAnonymous: participant.isAnonymous || false,
+      joinedAt: participant.joinedAt,
+    }));
+  
+  // Construire les résultats par question
+  const questionResults = {};
+  Object.keys(responses).forEach(questionId => {
+    const questionResponses = responses[questionId] || [];
+    
+    questionResults[questionId] = {
+      questionId,
+      totalResponses: questionResponses.length,
+      totalParticipants: participants.length,
+      responses: questionResponses.map(response => ({
+        participantId: response.participantId,
+        participantName: participants.find(p => p.id === response.participantId)?.name || 'Participant inconnu',
+        answer: response.answer,
+        isCorrect: response.isCorrect || false,
+        points: response.points || 0,
+        timeSpent: response.timeSpent || 0,
+        submittedAt: response.submittedAt,
+      })),
+      stats: stats.questionStats?.[questionId] || {
+        correctResponses: questionResponses.filter(r => r.isCorrect).length,
+        accuracyRate: questionResponses.length > 0 
+          ? Math.round((questionResponses.filter(r => r.isCorrect).length / questionResponses.length) * 100) 
+          : 0,
+        averageTimeSpent: questionResponses.length > 0 
+          ? Math.round(questionResponses.reduce((sum, r) => sum + (r.timeSpent || 0), 0) / questionResponses.length) 
+          : 0,
+        responseRate: participants.length > 0 
+          ? Math.round((questionResponses.length / participants.length) * 100) 
+          : 0,
+      }
+    };
+  });
+  
+  return {
+    session: {
+      id: this.id,
+      code: this.code,
+      title: this.title,
+      status: this.status,
+      startedAt: this.startedAt,
+      endedAt: this.endedAt,
+      stats,
+    },
+    participants,
+    leaderboard,
+    questionResults,
+    summary: {
+      duration: this.startedAt && this.endedAt 
+        ? Math.round((new Date(this.endedAt) - new Date(this.startedAt)) / 1000) 
+        : null,
+      totalQuestions: Object.keys(responses).length,
+      completionRate: participants.length > 0 && Object.keys(responses).length > 0
+        ? Math.round((stats.totalResponses / (participants.length * Object.keys(responses).length)) * 100)
+        : 0,
+    }
+  };
+};
+
+// Méthode pour obtenir les résultats d'un participant spécifique
+Session.prototype.getParticipantResults = function(participantId) {
+  const participants = Array.isArray(this.participants) ? this.participants : [];
+  const participant = participants.find(p => p.id === participantId);
+  
+  if (!participant) {
+    return null;
+  }
+  
+  const responses = this.responses || {};
+  const participantResponses = [];
+  
+  // Collecter toutes les réponses de ce participant
+  Object.keys(responses).forEach(questionId => {
+    const questionResponses = responses[questionId] || [];
+    const participantResponse = questionResponses.find(r => r.participantId === participantId);
+    
+    if (participantResponse) {
+      participantResponses.push({
+        questionId,
+        ...participantResponse,
+      });
+    }
+  });
+  
+  // Calculer les stats du participant
+  const correctCount = participantResponses.filter(r => r.isCorrect).length;
+  const totalTime = participantResponses.reduce((sum, r) => sum + (r.timeSpent || 0), 0);
+  
+  return {
+    participant: {
+      id: participant.id,
+      name: participant.name,
+      score: participant.score || 0,
+      correctAnswers: correctCount,
+      totalQuestions: participantResponses.length,
+      accuracyRate: participantResponses.length > 0 
+        ? Math.round((correctCount / participantResponses.length) * 100) 
+        : 0,
+      totalTimeSpent: totalTime,
+      averageTimePerQuestion: participantResponses.length > 0 
+        ? Math.round(totalTime / participantResponses.length) 
+        : 0,
+      joinedAt: participant.joinedAt,
+      isAnonymous: participant.isAnonymous || false,
+    },
+    responses: participantResponses,
+    rank: this.getParticipantRank(participantId),
+  };
+};
+
+// Méthode pour obtenir le rang d'un participant
+Session.prototype.getParticipantRank = function(participantId) {
+  const participants = Array.isArray(this.participants) ? this.participants : [];
+  const sortedParticipants = participants
+    .filter(p => p && typeof p.score === 'number')
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
+    
+  const rank = sortedParticipants.findIndex(p => p.id === participantId) + 1;
+  return rank > 0 ? rank : null;
+};
 
 // Exporter les fonctions utilitaires
 Session.calculateSessionStats = calculateSessionStats;

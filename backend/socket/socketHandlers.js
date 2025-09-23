@@ -32,6 +32,144 @@ const socketHandlers = (io) => {
   const timerDebugInfo = new Map();
 const activeQuestionTimers = new Map(); 
 
+function calculateSessionStats(sessionData) {
+  const participants = Array.isArray(sessionData.participants) ? sessionData.participants : [];
+  const responses = sessionData.responses || {};
+  
+  console.log(`📊 Calcul stats session - ${participants.length} participants`);
+  
+  const totalParticipants = participants.length;
+  
+  // Calculer le nombre total de réponses
+  const totalResponses = Object.keys(responses).reduce((total, questionId) => {
+    const questionResponses = responses[questionId];
+    return total + (Array.isArray(questionResponses) ? questionResponses.length : 0);
+  }, 0);
+  
+  // Calculer les statistiques des participants
+  let totalScore = 0;
+  let activeParticipants = 0;
+  let totalCorrectAnswers = 0;
+  let totalQuestionsAnswered = 0;
+  let totalTimeSpent = 0;
+  let bestScore = 0;
+  let worstScore = Number.MAX_SAFE_INTEGER;
+  
+  participants.forEach((participant) => {
+    if (participant && typeof participant === "object") {
+      const score = participant.score || 0;
+      const correctAnswers = participant.correctAnswers || 0;
+      const totalQuestions = participant.totalQuestions || 0;
+      
+      if (typeof score === "number" && !isNaN(score)) {
+        totalScore += score;
+        activeParticipants++;
+        
+        bestScore = Math.max(bestScore, score);
+        if (worstScore === Number.MAX_SAFE_INTEGER) {
+          worstScore = score;
+        } else {
+          worstScore = Math.min(worstScore, score);
+        }
+      }
+      
+      totalCorrectAnswers += correctAnswers;
+      totalQuestionsAnswered += totalQuestions;
+      
+      // Calculer le temps total passé par le participant
+      if (participant.responses) {
+        Object.values(participant.responses).forEach(response => {
+          if (response && typeof response.timeSpent === 'number') {
+            totalTimeSpent += response.timeSpent;
+          }
+        });
+      }
+    }
+  });
+  
+  // Calculer les moyennes
+  const averageScore = activeParticipants > 0 
+    ? Math.round((totalScore / activeParticipants) * 100) / 100 
+    : 0;
+    
+  const participationRate = totalParticipants > 0 
+    ? Math.round((activeParticipants / totalParticipants) * 100) 
+    : 0;
+    
+  const accuracyRate = totalQuestionsAnswered > 0 
+    ? Math.round((totalCorrectAnswers / totalQuestionsAnswered) * 100) 
+    : 0;
+    
+  const averageTimePerQuestion = totalQuestionsAnswered > 0 
+    ? Math.round(totalTimeSpent / totalQuestionsAnswered) 
+    : 0;
+  
+  // Réinitialiser les scores min/max si pas de participants actifs
+  if (activeParticipants === 0) {
+    bestScore = 0;
+    worstScore = 0;
+  }
+  
+  // Calculer les stats par question
+  const questionStats = {};
+  Object.keys(responses).forEach(questionId => {
+    const questionResponses = responses[questionId];
+    if (Array.isArray(questionResponses)) {
+      const correctCount = questionResponses.filter(r => r.isCorrect).length;
+      const avgTime = questionResponses.length > 0 
+        ? questionResponses.reduce((sum, r) => sum + (r.timeSpent || 0), 0) / questionResponses.length 
+        : 0;
+      
+      questionStats[questionId] = {
+        totalResponses: questionResponses.length,
+        correctResponses: correctCount,
+        accuracyRate: questionResponses.length > 0 
+          ? Math.round((correctCount / questionResponses.length) * 100) 
+          : 0,
+        averageTimeSpent: Math.round(avgTime),
+        responseRate: totalParticipants > 0 
+          ? Math.round((questionResponses.length / totalParticipants) * 100) 
+          : 0
+      };
+    }
+  });
+  
+  const stats = {
+    // Stats générales
+    totalParticipants,
+    activeParticipants,
+    totalResponses,
+    
+    // Stats de performance
+    averageScore,
+    bestScore,
+    worstScore,
+    totalCorrectAnswers,
+    totalQuestionsAnswered,
+    accuracyRate,
+    
+    // Stats d'engagement
+    participationRate,
+    averageTimePerQuestion,
+    totalTimeSpent,
+    
+    // Stats détaillées par question
+    questionStats,
+    
+    // Timestamps
+    calculatedAt: new Date(),
+  };
+  
+  console.log(`📊 Stats calculées:`, {
+    totalParticipants: stats.totalParticipants,
+    averageScore: stats.averageScore,
+    accuracyRate: stats.accuracyRate,
+    participationRate: stats.participationRate
+  });
+  
+  return stats;
+}
+
   function debugTimer(sessionId, action, details = {}) {
     const timestamp = new Date().toISOString();
     console.log(`⏰ [${timestamp}] TIMER DEBUG - Session ${sessionId}:`);
@@ -1057,71 +1195,37 @@ const activeQuestionTimers = new Map();
   async function handleSubmitResponse(data) {
     const socket = this;
     
-    console.log(`\n📝 === DEBUT handleSubmitResponse ===`);
+    console.log(`🚀 === DÉBUT handleSubmitResponse ===`);
     console.log(`   Socket ID: ${socket.id}`);
-    console.log(`   Socket isParticipant: ${socket.isParticipant}`);
-    console.log(`   Socket sessionId: ${socket.sessionId}`);
-    console.log(`   Socket participantId: ${socket.participantId}`);
-    console.log(`   Data reçue RAW:`, JSON.stringify(data, null, 2));
-  
-    // Validation des permissions
-    if (!socket.isParticipant || !socket.sessionId || !socket.participantId) {
+    console.log(`   Participant ID: ${socket.participantId}`);
+    console.log(`   Data reçue:`, data);
+    
+    if (!socket.participantId || !socket.sessionId) {
       const error = {
-        message: "Vous devez être participant à une session",
-        code: "PERMISSION_DENIED",
-        details: {
-          isParticipant: socket.isParticipant,
-          sessionId: socket.sessionId,
-          participantId: socket.participantId
-        }
+        message: "Participant ou session non identifié",
+        code: "UNAUTHORIZED"
       };
-      console.log(`❌ Permission refusée:`, error);
+      console.log(`❌ Non autorisé:`, error);
       return socket.emit("error", error);
     }
-  
-    // EXTRACTION DES DONNÉES
-    let questionId, answer, timeSpent, sessionId;
-  
-    questionId = data.questionId;
-    answer = data.answer;
-    timeSpent = data.timeSpent;
-    sessionId = data.sessionId;
-  
-    console.log(`🔍 Extraction données:`);
-    console.log(`   questionId: ${questionId} (type: ${typeof questionId})`);
-    console.log(`   answer: ${answer} (type: ${typeof answer})`);
-    console.log(`   timeSpent: ${timeSpent} (type: ${typeof timeSpent})`);
-  
-    // VALIDATION
-    if (questionId === undefined || questionId === null) {
+    
+    const { questionId, answer, timeSpent } = data;
+    
+    if (!questionId || answer === undefined || answer === null) {
       const error = {
-        message: "questionId est requis",
-        code: "INVALID_DATA",
-        field: "questionId",
-        received: data
+        message: "Données manquantes (questionId, answer requis)",
+        code: "MISSING_DATA"
       };
-      console.log(`❌ questionId manquant:`, error);
+      console.log(`❌ Données manquantes:`, error);
       return socket.emit("error", error);
     }
-  
-    if (answer === undefined || answer === null) {
-      const error = {
-        message: "answer est requis",
-        code: "INVALID_DATA", 
-        field: "answer",
-        received: data
-      };
-      console.log(`❌ answer manquant:`, error);
-      return socket.emit("error", error);
-    }
-  
+    
     try {
-      console.log(`🔍 Recherche de la session ${socket.sessionId}...`);
-      
+      // Récupérer la session avec le quiz
       const session = await Session.findByPk(socket.sessionId, {
         include: [{ model: Quiz, as: "quiz" }],
       });
-  
+      
       if (!session) {
         const error = {
           message: "Session non trouvée",
@@ -1130,39 +1234,22 @@ const activeQuestionTimers = new Map();
         console.log(`❌ Session non trouvée:`, error);
         return socket.emit("error", error);
       }
-  
-      console.log(`✅ Session trouvée: ${session.code} (status: ${session.status})`);
-  
+      
+      // Vérifier que la session est active
       if (session.status !== "active") {
         const error = {
-          message: "Session non active",
+          message: "La session n'est pas active",
           code: "SESSION_NOT_ACTIVE",
           currentStatus: session.status
         };
         console.log(`❌ Session non active:`, error);
         return socket.emit("error", error);
       }
-  
-      // Récupération de la question courante
-      console.log(`🔍 Récupération de la question courante...`);
-      console.log(`   Quiz ID: ${session.quiz?.id}`);
-      console.log(`   Nombre de questions: ${session.quiz?.questions?.length || 0}`);
-      console.log(`   Index question courante: ${session.currentQuestionIndex}`);
-  
-      const questionIndex = session.currentQuestionIndex;
       
-      if (questionIndex === undefined || questionIndex === null) {
-        const error = {
-          message: "Aucune question active dans la session",
-          code: "NO_ACTIVE_QUESTION"
-        };
-        console.log(`❌ Pas de question active:`, error);
-        return socket.emit("error", error);
-      }
-  
       const questions = session.quiz?.questions || [];
+      const questionIndex = session.currentQuestionIndex || 0;
       
-      if (questionIndex < 0 || questionIndex >= questions.length) {
+      if (questionIndex >= questions.length) {
         const error = {
           message: "Index de question invalide",
           code: "INVALID_QUESTION_INDEX",
@@ -1172,7 +1259,7 @@ const activeQuestionTimers = new Map();
         console.log(`❌ Index question invalide:`, error);
         return socket.emit("error", error);
       }
-  
+      
       const question = questions[questionIndex];
       const actualQuestionId = `q_${questionIndex}`;
       
@@ -1180,7 +1267,9 @@ const activeQuestionTimers = new Map();
       console.log(`   Question: "${question.question}"`);
       console.log(`   Type: ${question.type}`);
       console.log(`   ID généré: ${actualQuestionId}`);
-  
+      console.log(`   Options:`, question.options);
+      console.log(`   Réponse correcte:`, question.correctAnswer);
+      
       // Vérifier correspondance questionId
       if (questionId !== actualQuestionId && questionId !== questionIndex.toString() && questionId !== questionIndex) {
         const error = {
@@ -1193,8 +1282,8 @@ const activeQuestionTimers = new Map();
         console.log(`❌ Question ID mismatch:`, error);
         return socket.emit("error", error);
       }
-  
-      // CORRECTION PRINCIPALE: Vérifier si le participant a déjà répondu (STRUCTURE TABLEAU)
+      
+      // Vérifier si le participant a déjà répondu (STRUCTURE TABLEAU)
       const responses = session.responses || {};
       console.log(`🔍 Vérification des réponses existantes pour question ${actualQuestionId}...`);
       console.log(`   Structure responses:`, typeof responses, Object.keys(responses));
@@ -1218,116 +1307,235 @@ const activeQuestionTimers = new Map();
         console.log(`❌ Déjà répondu:`, error);
         return socket.emit("error", error);
       }
-  
-      // Calculer le score
-      console.log(`🧮 Calcul du score...`);
-      let isCorrect = false;
-      let points = 0;
-  
-      if (question.type === "qcm") {
-        console.log(`   Type QCM - Options:`, question.options);
-        const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
+      
+      // CORRECTION PRINCIPALE: Calculer le score avec logique améliorée
+      console.log(`🧮 Calcul du score amélioré...`);
+    let isCorrect = false;
+    let points = 0;
+    
+    console.log(`   Réponse reçue: "${answer}" (type: ${typeof answer})`);
+    
+    // if (question.type === "qcm") {
+    //   console.log(`   Type QCM - Options:`, question.options);
+      
+    //   // Cas 1: Réponse correcte définie directement
+    //   if (question.correctAnswer !== undefined && question.correctAnswer !== null) {
+    //     // Comparaison directe avec la réponse correcte
+    //     isCorrect = String(question.correctAnswer) === String(answer);
+    //     console.log(`   Comparaison directe: ${question.correctAnswer} === ${answer} => ${isCorrect}`);
+    //   }
+    //   // Cas 2: Options avec flag isCorrect (CAS PRINCIPAL)
+    //   else if (Array.isArray(question.options)) {
+    //     const correctOptions = question.options.filter(opt => opt.isCorrect === true);
+    //     console.log(`   Options correctes trouvées:`, correctOptions.length);
         
-        if (correctOptions.length === 0 && question.correctAnswer !== undefined) {
-          isCorrect = question.correctAnswer == answer;
-          console.log(`   Comparaison avec correctAnswer: ${question.correctAnswer} == ${answer} => ${isCorrect}`);
+    //     if (correctOptions.length > 0) {
+    //       // CORRECTION PRINCIPALE: Gérer les différents formats de réponse
+    //       const answerIndex = parseInt(answer); // Si answer est un index
+    //       const answerText = String(answer); // Si answer est du texte
+          
+    //       console.log(`   Answer index: ${answerIndex}, Answer text: "${answerText}"`);
+          
+    //       // Vérifier si la réponse correspond à une option correcte
+    //       isCorrect = correctOptions.some((opt, correctIndex) => {
+    //         const optionIndex = question.options.indexOf(opt);
+    //         console.log(`   Checking option "${opt.text}" at index ${optionIndex}`);
+            
+    //         const matches = (
+    //           // Comparaison par index (answer = 0, 1, 2, 3...)
+    //           optionIndex === answerIndex ||
+    //           // Comparaison par texte
+    //           opt.text === answerText ||
+    //           opt.text.toLowerCase().trim() === answerText.toLowerCase().trim() ||
+    //           // Comparaison par ID si présent
+    //           opt.id === answer ||
+    //           String(opt.id) === answerText
+    //         );
+            
+    //         if (matches) {
+    //           console.log(`   ✅ Match trouvé avec option: "${opt.text}" à l'index ${optionIndex}`);
+    //         }
+    //         return matches;
+    //       });
+          
+    //       console.log(`   Résultat final QCM: ${isCorrect}`);
+    //     }
+    //   }
+      
+    //   // FALLBACK: Si pas de correctAnswer et pas d'options avec isCorrect
+    //   if (!isCorrect && question.options && !question.correctAnswer) {
+    //     console.log(`   ⚠️ FALLBACK: Tentative de détection automatique de la bonne réponse`);
+    //     // Dans ce cas, on ne peut pas déterminer la bonne réponse
+    //     // Il faudrait que le quiz soit configuré correctement
+    //   }
+    // } 
+    if (question.type === "qcm") {
+      console.log(`   Type QCM - Options:`, question.options);
+      const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
+      
+      if (correctOptions.length === 0 && question.correctAnswer !== undefined) {
+        isCorrect = String(question.correctAnswer) === String(answer);
+      } else if (Array.isArray(question.options)) {
+        const answerIndex = parseInt(answer);
+        
+        // CORRECTION: Vérifier si answer est un index valide
+        if (!isNaN(answerIndex) && answerIndex >= 0 && answerIndex < question.options.length) {
+          // Réponse par index
+          isCorrect = question.options[answerIndex].isCorrect === true;
+          console.log(`   Réponse par index ${answerIndex}: ${question.options[answerIndex].text} → ${isCorrect}`);
         } else {
+          // Réponse par texte ou ID
           isCorrect = correctOptions.some(opt => 
             opt.text === answer || 
-            opt.id === answer || 
-            correctOptions.indexOf(opt) === parseInt(answer)
+            opt.id === answer ||
+            opt.text.toLowerCase().trim() === String(answer).toLowerCase().trim()
           );
-          console.log(`   Comparaison avec options correctes: ${isCorrect}`);
+          console.log(`   Réponse par texte/ID: ${answer} → ${isCorrect}`);
         }
-      } else if (question.type === "vrai_faux") {
-        console.log(`   Type Vrai/Faux - Réponse correcte: ${question.correctAnswer}`);
-        isCorrect = question.correctAnswer == answer;
-      } else if (question.type === "reponse_libre") {
-        console.log(`   Type Réponse libre - Réponse correcte: ${question.correctAnswer}`);
-        isCorrect =
-          question.correctAnswer &&
-          answer.toLowerCase().trim() ===
-            question.correctAnswer.toLowerCase().trim();
       }
-  
-      points = isCorrect ? (question.points || 1) : 0;
+    }
+    else if (question.type === "vrai_faux" || question.type === "vraifaux") {
+      console.log(`   Type Vrai/Faux - Réponse correcte: ${question.correctAnswer}`);
+      // Normaliser les réponses booléennes
+      const normalizedAnswer = String(answer).toLowerCase();
+      const normalizedCorrect = String(question.correctAnswer).toLowerCase();
+      isCorrect = normalizedAnswer === normalizedCorrect || 
+                 (normalizedAnswer === "true" && normalizedCorrect === "vrai") ||
+                 (normalizedAnswer === "false" && normalizedCorrect === "faux") ||
+                 (normalizedAnswer === "vrai" && normalizedCorrect === "true") ||
+                 (normalizedAnswer === "faux" && normalizedCorrect === "false");
+      console.log(`   Comparaison normalisée: "${normalizedAnswer}" vs "${normalizedCorrect}" => ${isCorrect}`);
+    } 
+    else if (question.type === "reponse_libre" || question.type === "text") {
+      console.log(`   Type Réponse libre - Réponse correcte: "${question.correctAnswer}"`);
+      if (question.correctAnswer) {
+        // Comparaison flexible pour les réponses libres
+        const userAnswer = String(answer).toLowerCase().trim();
+        const correctAnswer = String(question.correctAnswer).toLowerCase().trim();
+        
+        // Comparaison exacte ou partielle selon les paramètres de la question
+        if (question.exactMatch === false || question.partialMatch === true) {
+          isCorrect = correctAnswer.includes(userAnswer) || userAnswer.includes(correctAnswer);
+        } else {
+          isCorrect = userAnswer === correctAnswer;
+        }
+        
+        console.log(`   Comparaison flexible: "${userAnswer}" vs "${correctAnswer}" => ${isCorrect}`);
+      }
+    }
+    
+    points = isCorrect ? (question.points || 1) : 0;
+    
+    console.log(`   🎯 Résultat final: ${isCorrect ? 'CORRECT' : 'INCORRECT'} (${points} points)`);
+
+    console.log(`💾 Utilisation de session.addResponse()...`);
       
-      console.log(`   Résultat: ${isCorrect ? 'Correct' : 'Incorrect'} (${points} points)`);
-  
-      // CORRECTION: Créer la réponse et l'ajouter au TABLEAU
-      const responseData = {
+    const responseDataForModel = {
+      questionId: actualQuestionId,
+      participantId: socket.participantId,
+      answer,
+      timeSpent: timeSpent || 0,
+      points,
+      isCorrect,
+      submittedAt: new Date(),
+    };
+    
+    console.log(`📝 Données pour addResponse:`, responseDataForModel);
+    
+    try {
+      // Cette méthode va :
+      // 1. Ajouter la réponse au tableau responses
+      // 2. Mettre à jour les stats du participant 
+      // 3. Recalculer les stats de session
+      // 4. Sauvegarder en base de données
+      await session.addResponse(responseDataForModel);
+      
+      console.log(`✅ session.addResponse() terminé avec succès`);
+      
+      // Recharger la session pour avoir les données à jour
+      await session.reload();
+      
+    } catch (addResponseError) {
+      console.error(`❌ Erreur dans session.addResponse():`, addResponseError.message);
+      
+      // Fallback : sauvegarde manuelle comme avant
+      console.log(`🔄 Fallback - sauvegarde manuelle...`);
+      
+      const responses = session.responses || {};
+      if (!Array.isArray(responses[actualQuestionId])) {
+        responses[actualQuestionId] = [];
+      }
+      responses[actualQuestionId].push({
         participantId: socket.participantId,
         answer,
         timeSpent: timeSpent || 0,
         points,
         isCorrect,
         submittedAt: new Date(),
-      };
-  
-      console.log(`💾 Ajout de la réponse au tableau...`);
-      console.log(`   Réponse à ajouter:`, responseData);
+      });
       
-      // CORRECTION: Ajouter au tableau au lieu d'un objet
-      responses[actualQuestionId].push(responseData);
-      
-      console.log(`   Nouveau tableau réponses pour ${actualQuestionId}:`, responses[actualQuestionId].length, "réponses");
-  
-      // Mettre à jour le score du participant
-      const participants = Array.isArray(session.participants)
-        ? session.participants
-        : [];
-  
-      const participantIndex = participants.findIndex(
-        (p) => p.id === socket.participantId
-      );
+      const participants = Array.isArray(session.participants) ? session.participants : [];
+      const participantIndex = participants.findIndex(p => p.id === socket.participantId);
       
       if (participantIndex !== -1) {
-        if (!participants[participantIndex].responses) {
-          participants[participantIndex].responses = {};
-        }
-        participants[participantIndex].responses[actualQuestionId] = responseData;
-        participants[participantIndex].score =
-          (participants[participantIndex].score || 0) + points;
-          
-        console.log(`   Score participant mis à jour: ${participants[participantIndex].score}`);
+        participants[participantIndex].score = (participants[participantIndex].score || 0) + points;
+        participants[participantIndex].totalQuestions = (participants[participantIndex].totalQuestions || 0) + 1;
+        participants[participantIndex].correctAnswers = (participants[participantIndex].correctAnswers || 0) + (isCorrect ? 1 : 0);
       }
-  
-      // CORRECTION: Sauvegarder avec la structure tableau
-      console.log(`💾 Sauvegarde en base de données...`);
-      await session.update({ participants, responses });
-  
+      
+      const updatedStats = calculateSessionStats({ participants, responses });
+      await session.update({ participants, responses, stats: updatedStats });
+    }
+    
+    // Récupérer les participants mis à jour
+    const participants = Array.isArray(session.participants) ? session.participants : [];
+    const participantIndex = participants.findIndex(p => p.id === socket.participantId);
+    const updatedParticipant = participantIndex !== -1 ? participants[participantIndex] : null;
+      
       console.log(`✅ Session mise à jour avec succès`);
-  
-      // Confirmer au participant
+      
+      // ✅ CONFIRMATION AVEC DONNÉES MISES À JOUR
       const confirmationData = {
         success: true,
         questionId: actualQuestionId,
         answer,
         points,
         isCorrect,
-        message: "Réponse enregistrée avec succès"
+        totalScore: updatedParticipant?.score || 0,
+        correctAnswers: updatedParticipant?.correctAnswers || 0,
+        totalQuestions: updatedParticipant?.totalQuestions || 0,
+        message: isCorrect ? "Bonne réponse !" : "Réponse incorrecte"
       };
       
-      console.log(`📤 Envoi de confirmation:`, confirmationData);
+      console.log(`📤 Envoi de confirmation avec stats mises à jour:`, confirmationData);
       socket.emit("response_submitted", confirmationData);
-  
-      // Notifier l'hôte
+      
+      // Notifier l'hôte avec les stats mises à jour
+      const currentResponses = session.responses || {};
+      const currentQuestionResponses = currentResponses[actualQuestionId] || [];
+      
       const hostNotification = {
         participantId: socket.participantId,
-        participantName: participants[participantIndex]?.name || "Participant",
+        participantName: updatedParticipant?.name || "Participant",
         questionId: actualQuestionId,
         answer,
         points,
         isCorrect,
         timeSpent,
-        totalResponses: responses[actualQuestionId].length, // CORRECTION: longueur du tableau
+        totalResponses: currentQuestionResponses.length,
+        sessionStats: session.stats || {},
+        participantStats: {
+          score: updatedParticipant?.score || 0,
+          correctAnswers: updatedParticipant?.correctAnswers || 0,
+          totalQuestions: updatedParticipant?.totalQuestions || 0,
+        }
       };
       
-      console.log(`📤 Notification à l'hôte:`, hostNotification);
+      console.log(`📤 Notification à l'hôte avec stats complètes:`, hostNotification);
       io.to(`host_${session.id}`).emit("new_response", hostNotification);
-  
+      
       console.log(`✅ === FIN handleSubmitResponse SUCCESS ===\n`);
-  
+      
     } catch (error) {
       console.error(`💥 === ERREUR handleSubmitResponse ===`);
       console.error(`   Socket ID: ${socket.id}`);
@@ -1335,15 +1543,17 @@ const activeQuestionTimers = new Map();
       console.error(`   Error name: ${error.name}`);
       console.error(`   Error message: ${error.message}`);
       console.error(`   Stack:`, error.stack);
-  
+      
       const errorResponse = {
         message: "Erreur lors de la soumission",
         code: "SUBMISSION_ERROR",
-        details: process.env.NODE_ENV === "development" ? error.message : undefined
+        details: process.env.NODE_ENV === "development" ? error.message : "Erreur serveur"
       };
-  
+      
+      console.log(`📤 Envoi erreur:`, errorResponse);
       socket.emit("error", errorResponse);
-      console.log(`📝 === FIN handleSubmitResponse ERROR ===\n`);
+      
+      console.log(`❌ === FIN handleSubmitResponse ERROR ===\n`);
     }
   }
 

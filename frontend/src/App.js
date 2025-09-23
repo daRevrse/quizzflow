@@ -38,6 +38,8 @@ import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import PublicOnlyRoute from "./components/auth/PublicOnlyRoute";
 import SessionsList from "./pages/session/SessionsList";
+import ParticipantResults from "./pages/session/ParticipantResults";
+import ParticipantHistory from "./pages/participant/ParticipantHistory";
 
 function App() {
   const { user, isLoading, initializeAuth } = useAuthStore();
@@ -257,6 +259,24 @@ function MainLayout() {
                 element={
                   <ProtectedRoute>
                     <SessionPlay />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/session/:sessionId/participant/:participantId/results"
+                element={
+                  <ProtectedRoute>
+                    <ParticipantResults />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/results"
+                element={
+                  <ProtectedRoute>
+                    <ParticipantHistory />
                   </ProtectedRoute>
                 }
               />

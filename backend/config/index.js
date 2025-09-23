@@ -19,7 +19,8 @@ const config = {
     pool: {
       max: parseInt(process.env.DB_POOL_MAX) || 10, // Augmenté de 5 à 10
       min: parseInt(process.env.DB_POOL_MIN) || 2, // Augmenté de 0 à 2
-      acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 60000, // Doublé
+      // acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 60000, // Doublé
+      connectTimeout: parseInt(process.env.DB_POOL_ACQUIRE) || 60000, // Doublé
       idle: parseInt(process.env.DB_POOL_IDLE) || 30000, // Triplé
       evict: parseInt(process.env.DB_POOL_EVICT) || 10000, // Nouveau: nettoyage automatique
     },
@@ -39,8 +40,8 @@ const config = {
       charset: "utf8mb4",
       collate: "utf8mb4_unicode_ci",
       // Optimisations MySQL
-      acquireTimeout: 60000,
-      timeout: 60000,
+      // acquireTimeout: 60000,
+      // timeout: 60000,
       // Pool de connexions plus agressif
       reconnect: true,
       maxReconnects: 3,

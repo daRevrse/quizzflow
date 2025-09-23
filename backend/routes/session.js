@@ -222,6 +222,62 @@ const generateParticipantId = (session, participantName, userId = null) => {
   return `anon_${nameHash}_${timestamp}`;
 };
 
+function calculateSessionStats(sessionData) {
+  const participants = Array.isArray(sessionData.participants) ? sessionData.participants : [];
+  const responses = sessionData.responses || {};
+  
+  const totalParticipants = participants.length;
+  const totalResponses = Object.keys(responses).reduce((total, questionId) => {
+    const questionResponses = responses[questionId];
+    return total + (Array.isArray(questionResponses) ? questionResponses.length : 0);
+  }, 0);
+  
+  let totalScore = 0;
+  let activeParticipants = 0;
+  let totalCorrectAnswers = 0;
+  let totalQuestionsAnswered = 0;
+  
+  participants.forEach((participant) => {
+    if (participant && typeof participant === "object") {
+      const score = participant.score || 0;
+      const correctAnswers = participant.correctAnswers || 0;
+      const totalQuestions = participant.totalQuestions || 0;
+      
+      if (typeof score === "number" && !isNaN(score)) {
+        totalScore += score;
+        activeParticipants++;
+      }
+      
+      totalCorrectAnswers += correctAnswers;
+      totalQuestionsAnswered += totalQuestions;
+    }
+  });
+  
+  const averageScore = activeParticipants > 0 
+    ? Math.round((totalScore / activeParticipants) * 100) / 100 
+    : 0;
+    
+  const participationRate = totalParticipants > 0 
+    ? Math.round((activeParticipants / totalParticipants) * 100) 
+    : 0;
+    
+  const accuracyRate = totalQuestionsAnswered > 0 
+    ? Math.round((totalCorrectAnswers / totalQuestionsAnswered) * 100) 
+    : 0;
+  
+  return {
+    totalParticipants,
+    activeParticipants,
+    totalResponses,
+    averageScore,
+    accuracyRate,
+    participationRate,
+    totalCorrectAnswers,
+    totalQuestionsAnswered,
+    calculatedAt: new Date(),
+  };
+}
+
 // Routes
 
 // GET /api/session - Récupérer la liste des sessions
@@ -795,186 +851,6 @@ router.post("/", authenticateToken, async (req, res) => {
   }
 });
 
-// POST /api/session/:id/join - Rejoindre une session
-// router.post("/:id/join", optionalAuth, loadSession, async (req, res) => {
-//   try {
-//     const session = req.session;
-//     const user = req.user;
-//     const { participantName, isAnonymous = false } = req.body;
-
-//     console.log("🔄 Join session appelé:", {
-//       sessionId: session.id,
-//       participantName,
-//       isAnonymous,
-//       userId: user?.id,
-//     });
-
-//     // Validation du statut de la session
-//     if (!["waiting", "active"].includes(session.status)) {
-//       console.log(`❌ Statut session invalide: ${session.status}`);
-//       return res.status(400).json({
-//         error: "Cette session n'accepte pas de nouveaux participants",
-//         code: "SESSION_NOT_JOINABLE",
-//         currentStatus: session.status,
-//       });
-//     }
-
-//     // Validation Late join
-//     if (session.status === "active" && !session.settings?.allowLateJoin) {
-//       console.log("❌ Late join désactivé");
-//       return res.status(400).json({
-//         error: "Rejoindre en cours de session n'est pas autorisé",
-//         code: "LATE_JOIN_DISABLED",
-//       });
-//     }
-
-//     // Validation des données de participant
-//     let validatedData;
-//     try {
-//       validatedData = validateParticipantData({ participantName, isAnonymous });
-//     } catch (validationError) {
-//       console.log("❌ Données participant invalides:", validationError.message);
-//       return res.status(400).json({
-//         error: validationError.message,
-//         code: "INVALID_PARTICIPANT_DATA",
-//       });
-//     }
-
-//     // Vérifier les permissions pour participants anonymes
-//     if (validatedData.isAnonymous && !session.settings?.allowAnonymous) {
-//       return res.status(400).json({
-//         error: "Les participants anonymes ne sont pas autorisés",
-//         code: "ANONYMOUS_NOT_ALLOWED",
-//       });
-//     }
-
-//     // Vérifier l'unicité du nom
-//     const currentParticipants = Array.isArray(session.participants)
-//       ? session.participants
-//       : [];
-//     const duplicateName = currentParticipants.find(
-//       (p) => p.name && p.name.toLowerCase() === validatedData.name.toLowerCase()
-//     );
-
-//     if (duplicateName) {
-//       return res.status(400).json({
-//         error: `Le nom "${validatedData.name}" est déjà utilisé`,
-//         code: "DUPLICATE_PARTICIPANT_NAME",
-//       });
-//     }
-
-//     // Vérifier si l'utilisateur connecté est déjà participant
-//     if (user && !validatedData.isAnonymous) {
-//       const existingUserParticipant = currentParticipants.find(
-//         (p) => p.userId === user.id
-//       );
-
-//       if (existingUserParticipant) {
-//         return res.status(400).json({
-//           error: "Vous participez déjà à cette session",
-//           code: "ALREADY_PARTICIPATING",
-//         });
-//       }
-//     }
-
-//     // Vérifier la limite de participants
-//     const maxParticipants = session.settings?.maxParticipants || 100;
-//     if (currentParticipants.length >= maxParticipants) {
-//       return res.status(400).json({
-//         error: `Limite de participants atteinte (${maxParticipants})`,
-//         code: "PARTICIPANT_LIMIT_REACHED",
-//       });
-//     }
-
-//     // Générer l'ID de participant
-//     const participantId = generateParticipantId(
-//       session,
-//       validatedData.name,
-//       validatedData.isAnonymous ? null : user?.id
-//     );
-
-//     // Créer le participant
-//     const participantData = {
-//       id: participantId,
-//       name: validatedData.name,
-//       isAnonymous: validatedData.isAnonymous,
-//       userId: validatedData.isAnonymous ? null : user?.id,
-//     };
-
-//     // Ajouter le participant à la session
-//     await session.addParticipant(participantData);
-
-//     // Recharger pour obtenir les données mises à jour
-//     await session.reload();
-
-//     const updatedSession = await Session.findByPk(session.id);
-
-//     console.log(
-//       `✅ Participant ajouté: ${participantId} (${validatedData.name})`
-//     );
-
-//     console.log("UPDATED SESSION", session);
-
-//     // Notifier via Socket.IO si disponible
-//     if (req.io) {
-//       req.io.to(`session_${session.id}`).emit("participant_joined", {
-//         sessionId: session.id,
-//         participant: participantData,
-//         participantCount: getParticipantCount(updatedSession),
-//       });
-//     }
-
-//     // Réponse de succès
-//     res.status(201).json({
-//       message: "Session rejointe avec succès",
-//       participant: {
-//         id: participantId,
-//         name: validatedData.name,
-//         isAnonymous: validatedData.isAnonymous,
-//       },
-//       session: {
-//         id: session.id,
-//         code: session.code,
-//         title: session.title,
-//         status: session.status,
-//         participantCount: getParticipantCount(updatedSession),
-//         settings: session.settings,
-//         quiz: session.quiz,
-//         host: session.host,
-//         createdAt: session.createdAt,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("❌ Join session error:", error);
-
-//     if (
-//       error.message.includes("existe déjà") ||
-//       error.message.includes("dupliqué")
-//     ) {
-//       return res.status(400).json({
-//         error: error.message,
-//         code: "DUPLICATE_PARTICIPANT",
-//       });
-//     }
-
-//     if (
-//       error.message.includes("limite") ||
-//       error.message.includes("atteinte")
-//     ) {
-//       return res.status(400).json({
-//         error: error.message,
-//         code: "PARTICIPANT_LIMIT_REACHED",
-//       });
-//     }
-
-//     res.status(500).json({
-//       error: "Erreur lors de la jointure à la session",
-//       code: "JOIN_SESSION_ERROR",
-//       details:
-//         process.env.NODE_ENV === "development" ? error.message : undefined,
-//     });
-//   }
-// });
 router.post("/:id/join", optionalAuth, loadSession, async (req, res) => {
   try {
     const session = req.session;
@@ -1485,5 +1361,306 @@ router.delete(
     }
   }
 );
+
+// Route pour obtenir les résultats d'un participant spécifique
+router.get("/:sessionId/participant/:participantId/results", async (req, res) => {
+  try {
+    const { sessionId, participantId } = req.params;
+    
+    console.log(`📊 Récupération résultats participant ${participantId} session ${sessionId}`);
+    
+    const session = await Session.findByPk(sessionId, {
+      include: [{ model: Quiz, as: "quiz" }],
+    });
+    
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Session non trouvée",
+      });
+    }
+    
+    // Vérifier que la session est terminée ou que le participant a le droit de voir ses résultats
+    if (session.status !== "completed" && session.status !== "finished") {
+      return res.status(403).json({
+        success: false,
+        message: "Les résultats ne sont pas encore disponibles",
+      });
+    }
+    
+    // Obtenir les résultats du participant
+    const participantResults = session.getParticipantResults(participantId);
+    
+    if (!participantResults) {
+      return res.status(404).json({
+        success: false,
+        message: "Participant non trouvé dans cette session",
+      });
+    }
+    
+    // Ajouter les informations sur les questions pour le contexte
+    const questionsWithResults = [];
+    if (session.quiz && session.quiz.questions) {
+      participantResults.responses.forEach(response => {
+        const questionIndex = parseInt(response.questionId.replace('q_', ''));
+        const question = session.quiz.questions[questionIndex];
+        
+        if (question) {
+          questionsWithResults.push({
+            ...response,
+            questionText: question.question,
+            questionType: question.type,
+            correctAnswer: question.correctAnswer,
+            options: question.options,
+          });
+        }
+      });
+    }
+    
+    res.json({
+      success: true,
+      participant: participantResults.participant,
+      responses: questionsWithResults,
+      rank: participantResults.rank,
+      sessionInfo: {
+        id: session.id,
+        code: session.code,
+        title: session.title,
+        status: session.status,
+        endedAt: session.endedAt,
+        stats: session.stats,
+      },
+    });
+    
+  } catch (error) {
+    console.error("Erreur récupération résultats participant:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erreur serveur lors de la récupération des résultats",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// Route pour obtenir les résultats complets d'une session (pour l'hôte)
+router.get("/:sessionId/results/complete", authenticateToken, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user.id;
+    
+    console.log(`📊 Récupération résultats complets session ${sessionId} par ${userId}`);
+    
+    const session = await Session.findByPk(sessionId, {
+      include: [{ model: Quiz, as: "quiz" }],
+    });
+    
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Session non trouvée",
+      });
+    }
+    
+    // Vérifier les permissions (hôte, créateur du quiz, ou admin)
+    const isHost = session.hostId === userId;
+    const isQuizOwner = session.quiz?.creatorId === userId;
+    const isAdmin = req.user.role === "admin";
+    
+    if (!isHost && !isQuizOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Permission insuffisante pour accéder aux résultats",
+      });
+    }
+    
+    // Obtenir les résultats complets
+    const comprehensiveResults = session.getComprehensiveResults();
+    
+    // Ajouter les informations des questions
+    if (session.quiz && session.quiz.questions) {
+      Object.keys(comprehensiveResults.questionResults).forEach(questionId => {
+        const questionIndex = parseInt(questionId.replace('q_', ''));
+        const question = session.quiz.questions[questionIndex];
+        
+        if (question) {
+          comprehensiveResults.questionResults[questionId].question = {
+            text: question.question,
+            type: question.type,
+            correctAnswer: question.correctAnswer,
+            options: question.options,
+            points: question.points || 1,
+          };
+        }
+      });
+    }
+    
+    res.json({
+      success: true,
+      ...comprehensiveResults,
+    });
+    
+  } catch (error) {
+    console.error("Erreur récupération résultats complets:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erreur serveur lors de la récupération des résultats",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// Route pour obtenir l'historique des sessions d'un participant (basé sur nom ou userId)
+router.get("/participant/:participantId/history", authenticateToken, async (req, res) => {
+  try {
+    const { participantId } = req.params;
+    const userId = req.user.id;
+    
+    console.log(`📊 Récupération historique participant ${participantId}`);
+    
+    // Rechercher les sessions où ce participant a participé
+    const sessions = await Session.findAll({
+      include: [{ model: Quiz, as: "quiz" }],
+      where: {
+        status: ["completed", "finished"]
+      },
+      order: [["endedAt", "DESC"]],
+      limit: 50, // Limiter à 50 sessions récentes
+    });
+    
+    const participantHistory = [];
+    
+    sessions.forEach(session => {
+      if (Array.isArray(session.participants)) {
+        const participant = session.participants.find(p => 
+          p.id === participantId || 
+          p.userId === userId || 
+          (p.name && p.name.toLowerCase().includes(req.user.firstName?.toLowerCase() || ''))
+        );
+        
+        if (participant) {
+          const participantResults = session.getParticipantResults(participant.id);
+          
+          participantHistory.push({
+            sessionId: session.id,
+            sessionCode: session.code,
+            sessionTitle: session.title,
+            quizTitle: session.quiz?.title,
+            endedAt: session.endedAt,
+            rank: participantResults?.rank,
+            score: participant.score || 0,
+            correctAnswers: participant.correctAnswers || 0,
+            totalQuestions: participant.totalQuestions || 0,
+            accuracyRate: participant.totalQuestions > 0 
+              ? Math.round((participant.correctAnswers / participant.totalQuestions) * 100) 
+              : 0,
+            totalTimeSpent: participant.totalTimeSpent || 0,
+          });
+        }
+      }
+    });
+    
+    // Calculer les statistiques globales
+    const globalStats = {
+      totalSessions: participantHistory.length,
+      totalScore: participantHistory.reduce((sum, s) => sum + s.score, 0),
+      totalCorrectAnswers: participantHistory.reduce((sum, s) => sum + s.correctAnswers, 0),
+      totalQuestions: participantHistory.reduce((sum, s) => sum + s.totalQuestions, 0),
+      averageScore: participantHistory.length > 0 
+        ? Math.round(participantHistory.reduce((sum, s) => sum + s.score, 0) / participantHistory.length) 
+        : 0,
+      averageAccuracy: participantHistory.length > 0 
+        ? Math.round(participantHistory.reduce((sum, s) => sum + s.accuracyRate, 0) / participantHistory.length) 
+        : 0,
+      bestScore: participantHistory.length > 0 
+        ? Math.max(...participantHistory.map(s => s.score)) 
+        : 0,
+      bestAccuracy: participantHistory.length > 0 
+        ? Math.max(...participantHistory.map(s => s.accuracyRate)) 
+        : 0,
+    };
+    
+    res.json({
+      success: true,
+      history: participantHistory,
+      stats: globalStats,
+      participant: {
+        id: participantId,
+        name: req.user.firstName || req.user.username,
+      },
+    });
+    
+  } catch (error) {
+    console.error("Erreur récupération historique participant:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erreur serveur lors de la récupération de l'historique",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// Route pour marquer une session comme terminée et calculer les résultats finaux
+router.post("/:sessionId/finalize", async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    console.log(`🏁 Finalisation session ${sessionId}`);
+    
+    const session = await Session.findByPk(sessionId, {
+      include: [{ model: Quiz, as: "quiz" }],
+    });
+    
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Session non trouvée",
+      });
+    }
+    
+    // Finaliser la session
+    await session.update({
+      status: "completed",
+      endedAt: new Date(),
+    });
+    
+    // Recalculer les stats finales
+    const finalStats = calculateSessionStats({
+      participants: session.participants,
+      responses: session.responses,
+    });
+    
+    await session.update({ stats: finalStats });
+    
+    // Mettre à jour les stats du quiz si disponible
+    if (session.quiz) {
+      const participants = Array.isArray(session.participants) ? session.participants : [];
+      const averageScore = finalStats.averageScore || 0;
+      
+      // Vérifier si la méthode existe avant de l'appeler
+      if (typeof session.quiz.incrementStats === 'function') {
+        await session.quiz.incrementStats(participants.length, averageScore);
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: "Session finalisée avec succès",
+      session: {
+        id: session.id,
+        status: "completed",
+        stats: finalStats,
+        endedAt: session.endedAt,
+      },
+    });
+    
+  } catch (error) {
+    console.error("Erreur finalisation session:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erreur serveur lors de la finalisation",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
 
 module.exports = router;

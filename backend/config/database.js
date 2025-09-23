@@ -17,7 +17,8 @@ const sequelize = new Sequelize({
   pool: {
     max: 5,
     min: 0,
-    acquire: 30000,
+    // acquire: 30000,
+    connectTimeout: 30000,
     idle: 10000,
     evict: 10000,
     handleDisconnects: true,
@@ -54,8 +55,8 @@ const sequelize = new Sequelize({
     
     // Options de connexion valides pour mysql2
     connectTimeout: 60000,
-    acquireTimeout: 60000,
-    timeout: 60000,
+    // acquireTimeout: 60000,
+    // timeout: 60000,
   },
 
   timezone: "+01:00", // Fuseau horaire
