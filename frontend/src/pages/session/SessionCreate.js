@@ -1,10 +1,12 @@
-// SessionCreate.js - Composant corrigé
+// SessionCreate.js - Version corrigée avec statistiques cohérentes
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { useAuthStore } from "../../stores/authStore";
 import { quizService, sessionService } from "../../services/api";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
+// CORRECTION: Import de la fonction utilitaire pour les statistiques
+import { calculateQuizStats } from "../../utils/quizUtils";
 import toast from "react-hot-toast";
 import {
   PlayIcon,
@@ -28,6 +30,11 @@ const SessionCreate = () => {
   const [loadingQuizzes, setLoadingQuizzes] = useState(true);
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // CORRECTION: Calculer les statistiques du quiz sélectionné
+  const selectedQuizStats = selectedQuiz
+    ? calculateQuizStats(selectedQuiz.questions)
+    : null;
 
   const {
     register,
@@ -111,8 +118,6 @@ const SessionCreate = () => {
       if (!data.quizId) {
         toast.error("Veuillez sélectionner un quiz");
         return;
-      } else {
-        console.log("data.quizId", parseInt(data.quizId));
       }
 
       // CORRECTION: Formater correctement les settings
@@ -144,9 +149,7 @@ const SessionCreate = () => {
       });
 
       const sessionData = {
-        // quizId: parseInt(data.quizId),
         quizId: data.quizId,
-        // hostId: user.id,
         title: data.title.trim() || `Session - ${selectedQuiz?.title}`,
         description: data.description?.trim() || undefined,
         settings: formattedSettings,
@@ -167,11 +170,14 @@ const SessionCreate = () => {
   };
 
   // Filtrer les quiz selon la recherche
-  const filteredQuizzes = quizzes.filter(
-    (quiz) =>
-      quiz.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      quiz.category?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredQuizzes = quizzes.filter((quiz) => {
+    const searchTerm = searchQuery.toLowerCase();
+    return (
+      quiz.title.toLowerCase().includes(searchTerm) ||
+      quiz.category?.toLowerCase().includes(searchTerm) ||
+      quiz.tags?.some((tag) => tag.toLowerCase().includes(searchTerm))
+    );
+  });
 
   const handleQuizSelect = (quiz) => {
     setValue("quizId", quiz.id.toString());
@@ -189,6 +195,11 @@ const SessionCreate = () => {
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
     }
+  };
+
+  // CORRECTION: Fonction pour calculer les statistiques d'un quiz dans la liste
+  const getQuizStats = (quiz) => {
+    return calculateQuizStats(quiz.questions);
   };
 
   return (
@@ -254,56 +265,62 @@ const SessionCreate = () => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {filteredQuizzes.map((quiz) => (
-                      <div
-                        key={quiz.id}
-                        onClick={() => handleQuizSelect(quiz)}
-                        className={`cursor-pointer p-4 border-2 rounded-lg transition-all ${
-                          watchedQuizId === quiz.id.toString()
-                            ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
-                            : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <h4 className="font-medium text-gray-900 dark:text-white line-clamp-2">
-                            {quiz.title}
-                          </h4>
-                          {watchedQuizId === quiz.id.toString() && (
-                            <CheckCircleIcon className="h-5 w-5 text-primary-600 dark:text-primary-400 ml-2" />
-                          )}
-                        </div>
+                    {filteredQuizzes.map((quiz) => {
+                      // CORRECTION: Calculer les statistiques pour chaque quiz
+                      const quizStats = getQuizStats(quiz);
 
-                        <div className="flex items-center space-x-2 mb-3">
-                          <span
-                            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(
-                              quiz.difficulty
-                            )}`}
-                          >
-                            {quiz.difficulty}
-                          </span>
-                          {quiz.category && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {quiz.category}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-                          <span>{quiz.questions?.length || 0} questions</span>
-                          <span>
-                            ~{Math.ceil((quiz.estimatedDuration || 0) / 60)} min
-                          </span>
-                        </div>
-
-                        {quiz.stats?.totalSessions > 0 && (
-                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            {quiz.stats.totalSessions} session
-                            {quiz.stats.totalSessions > 1 ? "s" : ""} précédente
-                            {quiz.stats.totalSessions > 1 ? "s" : ""}
+                      return (
+                        <div
+                          key={quiz.id}
+                          onClick={() => handleQuizSelect(quiz)}
+                          className={`cursor-pointer p-4 border-2 rounded-lg transition-all ${
+                            watchedQuizId === quiz.id.toString()
+                              ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
+                              : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <h4 className="font-medium text-gray-900 dark:text-white line-clamp-2">
+                              {quiz.title}
+                            </h4>
+                            {watchedQuizId === quiz.id.toString() && (
+                              <CheckCircleIcon className="h-5 w-5 text-primary-600 dark:text-primary-400 ml-2" />
+                            )}
                           </div>
-                        )}
-                      </div>
-                    ))}
+
+                          <div className="flex items-center space-x-2 mb-3">
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(
+                                quiz.difficulty
+                              )}`}
+                            >
+                              {quiz.difficulty}
+                            </span>
+                            {quiz.category && (
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {quiz.category}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* CORRECTION: Utiliser les statistiques calculées */}
+                          <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+                            <span>{quizStats.questionCount} questions</span>
+                            <span>{quizStats.totalPoints} points</span>
+                            <span>~{quizStats.estimatedMinutes} min</span>
+                          </div>
+
+                          {quiz.stats?.totalSessions > 0 && (
+                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              {quiz.stats.totalSessions} session
+                              {quiz.stats.totalSessions > 1 ? "s" : ""}{" "}
+                              précédente
+                              {quiz.stats.totalSessions > 1 ? "s" : ""}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -515,8 +532,8 @@ const SessionCreate = () => {
               </div>
             </div>
 
-            {/* Aperçu du quiz sélectionné */}
-            {selectedQuiz && (
+            {/* CORRECTION: Aperçu du quiz sélectionné avec statistiques correctes */}
+            {selectedQuiz && selectedQuizStats && (
               <div className="bg-white dark:bg-gray-800 shadow rounded-lg mt-6">
                 <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white">
@@ -537,13 +554,14 @@ const SessionCreate = () => {
                       )}
                     </div>
 
+                    {/* CORRECTION: Utiliser les statistiques calculées */}
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <span className="text-gray-500 dark:text-gray-400">
                           Questions:
                         </span>
                         <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                          {selectedQuiz.questions?.length || 0}
+                          {selectedQuizStats.questionCount}
                         </span>
                       </div>
                       <div>
@@ -551,10 +569,7 @@ const SessionCreate = () => {
                           Points:
                         </span>
                         <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                          {selectedQuiz.questions?.reduce(
-                            (sum, q) => sum + (q.points || 1),
-                            0
-                          ) || 0}
+                          {selectedQuizStats.totalPoints}
                         </span>
                       </div>
                       <div>
@@ -562,11 +577,7 @@ const SessionCreate = () => {
                           Durée:
                         </span>
                         <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                          ~
-                          {Math.ceil(
-                            (selectedQuiz.estimatedDuration || 0) / 60
-                          )}{" "}
-                          min
+                          ~{selectedQuizStats.estimatedMinutes} min
                         </span>
                       </div>
                       <div>
@@ -583,6 +594,26 @@ const SessionCreate = () => {
                       </div>
                     </div>
 
+                    {/* Statistiques supplémentaires */}
+                    {selectedQuizStats.averagePointsPerQuestion > 0 && (
+                      <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <div className="grid grid-cols-2 gap-4 text-xs text-gray-500 dark:text-gray-400">
+                          <div>
+                            <span>Points/Question:</span>
+                            <span className="ml-1 font-medium">
+                              {selectedQuizStats.averagePointsPerQuestion}
+                            </span>
+                          </div>
+                          <div>
+                            <span>Temps/Question:</span>
+                            <span className="ml-1 font-medium">
+                              {selectedQuizStats.averageTimePerQuestion}s
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {selectedQuiz.tags && selectedQuiz.tags.length > 0 && (
                       <div>
                         <span className="text-sm text-gray-500 dark:text-gray-400">
@@ -597,6 +628,11 @@ const SessionCreate = () => {
                               #{tag}
                             </span>
                           ))}
+                          {selectedQuiz.tags.length > 3 && (
+                            <span className="text-xs text-gray-400">
+                              +{selectedQuiz.tags.length - 3} autres
+                            </span>
+                          )}
                         </div>
                       </div>
                     )}
@@ -612,7 +648,7 @@ const SessionCreate = () => {
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-500 dark:text-gray-400">
               {selectedQuiz
-                ? `Quiz sélectionné: ${selectedQuiz.title}`
+                ? `Quiz sélectionné: ${selectedQuiz.title} (${selectedQuizStats?.questionCount} questions, ${selectedQuizStats?.estimatedMinutes}min)`
                 : "Sélectionnez un quiz pour continuer"}
             </div>
 

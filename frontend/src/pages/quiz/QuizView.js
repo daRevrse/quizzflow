@@ -26,6 +26,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { calculateQuizStats } from "../../utils/quizUtils";
 
 const QuizView = () => {
   const { id } = useParams();
@@ -73,6 +74,8 @@ const QuizView = () => {
     loadQuiz();
     loadSessions();
   }, [loadQuiz, loadSessions]);
+
+  const quizStats = calculateQuizStats(quiz?.questions);
 
   // Actions
   const handleStartSession = async () => {
@@ -243,19 +246,15 @@ const QuizView = () => {
               <div className="flex flex-wrap gap-4 text-sm text-gray-500 dark:text-gray-400">
                 <span className="flex items-center">
                   <QuestionMarkCircleIcon className="h-4 w-4 mr-1" />
-                  {quiz.questions?.length || 0} questions
+                  {quizStats.questionCount} questions
                 </span>
                 <span className="flex items-center">
                   <StarIcon className="h-4 w-4 mr-1" />
-                  {quiz.questions?.reduce(
-                    (sum, q) => sum + (q.points || 1),
-                    0
-                  ) || 0}{" "}
-                  points
+                  {quizStats.totalPoints} points
                 </span>
                 <span className="flex items-center">
                   <ClockIcon className="h-4 w-4 mr-1" />~
-                  {Math.ceil((quiz.estimatedDuration || 0) / 60)} min
+                  {quizStats.estimatedMinutes} min
                 </span>
                 {quiz.stats?.totalSessions > 0 && (
                   <span className="flex items-center">

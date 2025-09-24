@@ -22,6 +22,7 @@ import {
   BoltIcon,
   AcademicCapIcon,
   ChartBarIcon,
+  UserIcon,
 } from "@heroicons/react/24/outline";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -1289,7 +1290,6 @@ const SessionPlay = () => {
                   </h2>
                 </div>
               </div>
-
               {/* Image de la question si disponible */}
               {currentQuestion.image && (
                 <div className="px-6 pt-4">
@@ -1300,8 +1300,7 @@ const SessionPlay = () => {
                   />
                 </div>
               )}
-
-              {/* CORRECTION: Réponses avec gestion spécifique du vrai/faux */}
+              {/* CORRECTION: Gestion complète des différents types de questions */}
               <div className="p-6 space-y-3">
                 {(() => {
                   console.log("🔍 Debug question courante:", {
@@ -1311,7 +1310,84 @@ const SessionPlay = () => {
                     correctAnswer: currentQuestion.correctAnswer,
                   });
 
-                  // CORRECTION 1: Gérer les questions vrai/faux avec correctAnswer
+                  // NOUVEAU: Questions à réponse libre
+                  if (currentQuestion.type === "reponse_libre") {
+                    return (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                            Votre réponse :
+                          </label>
+                          <textarea
+                            value={selectedAnswer || ""}
+                            onChange={(e) => {
+                              if (
+                                !isAnswered &&
+                                !showResults &&
+                                !isSubmitting
+                              ) {
+                                setSelectedAnswer(e.target.value);
+                              }
+                            }}
+                            placeholder="Saisissez votre réponse ici..."
+                            disabled={isAnswered || showResults || isSubmitting}
+                            className={`w-full p-4 border-2 rounded-xl transition-all duration-200 resize-none ${
+                              isAnswered || showResults || isSubmitting
+                                ? "bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 cursor-not-allowed"
+                                : "border-gray-300 dark:border-gray-600 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800"
+                            } text-gray-900 dark:text-white dark:bg-gray-800`}
+                            rows={4}
+                            maxLength={500}
+                          />
+                          <div className="flex justify-between items-center mt-2">
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {selectedAnswer ? selectedAnswer.length : 0}/500
+                              caractères
+                            </div>
+                            {selectedAnswer &&
+                              selectedAnswer.length > 0 &&
+                              !isAnswered &&
+                              !showResults && (
+                                <div className="text-xs text-green-600 dark:text-green-400 flex items-center">
+                                  <CheckCircleIcon className="h-3 w-3 mr-1" />
+                                  Prêt à envoyer
+                                </div>
+                              )}
+                          </div>
+                        </div>
+
+                        {/* Affichage de la réponse correcte après soumission */}
+                        {showResults &&
+                          showCorrectAnswer &&
+                          currentQuestion.correctAnswer && (
+                            <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg">
+                              <h4 className="font-medium text-green-800 dark:text-green-200 mb-2 flex items-center">
+                                <CheckCircleIcon className="h-4 w-4 mr-2" />
+                                Réponse correcte :
+                              </h4>
+                              <p className="text-green-700 dark:text-green-300 font-medium">
+                                {currentQuestion.correctAnswer}
+                              </p>
+                            </div>
+                          )}
+
+                        {/* Affichage de la réponse de l'utilisateur après soumission */}
+                        {showResults && isAnswered && selectedAnswer && (
+                          <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                            <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2 flex items-center">
+                              <UserIcon className="h-4 w-4 mr-2" />
+                              Votre réponse :
+                            </h4>
+                            <p className="text-blue-700 dark:text-blue-300">
+                              {selectedAnswer}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  // Questions vrai/faux (existant, mais amélioré)
                   if (currentQuestion.type === "vrai_faux") {
                     // Si la question vrai/faux utilise correctAnswer au lieu d'options
                     if (
@@ -1329,14 +1405,14 @@ const SessionPlay = () => {
                           isCorrect:
                             currentQuestion.correctAnswer === "true" ||
                             currentQuestion.correctAnswer === true ||
-                            currentQuestion.correctAnswer === 0, // Au cas où c'est l'index
+                            currentQuestion.correctAnswer === 0,
                         },
                         {
                           text: "Faux",
                           isCorrect:
                             currentQuestion.correctAnswer === "false" ||
                             currentQuestion.correctAnswer === false ||
-                            currentQuestion.correctAnswer === 1, // Au cas où c'est l'index
+                            currentQuestion.correctAnswer === 1,
                         },
                       ];
 
@@ -1455,14 +1531,78 @@ const SessionPlay = () => {
                     }
                   }
 
-                  // CORRECTION 2: Traitement normal des options avec extraction robuste du texte
+                  // NOUVEAU: Questions nuage de mots
+                  if (currentQuestion.type === "nuage_mots") {
+                    return (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                            Votre réponse (mots-clés séparés par des virgules) :
+                          </label>
+                          <input
+                            type="text"
+                            value={selectedAnswer || ""}
+                            onChange={(e) => {
+                              if (
+                                !isAnswered &&
+                                !showResults &&
+                                !isSubmitting
+                              ) {
+                                setSelectedAnswer(e.target.value);
+                              }
+                            }}
+                            placeholder="mot1, mot2, mot3..."
+                            disabled={isAnswered || showResults || isSubmitting}
+                            className={`w-full p-4 border-2 rounded-xl transition-all duration-200 ${
+                              isAnswered || showResults || isSubmitting
+                                ? "bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 cursor-not-allowed"
+                                : "border-gray-300 dark:border-gray-600 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800"
+                            } text-gray-900 dark:text-white dark:bg-gray-800`}
+                          />
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                            Séparez vos mots-clés par des virgules
+                          </div>
+                        </div>
+
+                        {/* Affichage des mots-clés collectés après soumission */}
+                        {showResults && questionResults?.wordCloud && (
+                          <div className="mt-4 p-4 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 rounded-lg">
+                            <h4 className="font-medium text-purple-800 dark:text-purple-200 mb-3">
+                              Nuage de mots des participants :
+                            </h4>
+                            <div className="flex flex-wrap gap-2">
+                              {Object.entries(questionResults.wordCloud).map(
+                                ([word, count]) => (
+                                  <span
+                                    key={word}
+                                    className="px-3 py-1 bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200 rounded-full text-sm font-medium"
+                                    style={{
+                                      fontSize:
+                                        Math.max(
+                                          12,
+                                          Math.min(20, 12 + count * 2)
+                                        ) + "px",
+                                    }}
+                                  >
+                                    {word} ({count})
+                                  </span>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  // Questions QCM (traitement existant amélioré)
                   const answers =
                     currentQuestion.answers || currentQuestion.options || [];
 
                   console.log("🔍 Traitement des réponses:", answers);
 
                   return answers.map((answer, index) => {
-                    // CORRECTION PRINCIPALE: Utiliser la fonction d'extraction robuste
+                    // Utiliser la fonction d'extraction robuste du texte
                     const answerText = extractAnswerText(answer);
 
                     console.log(`Option ${index}:`, {
@@ -1604,7 +1744,8 @@ const SessionPlay = () => {
                   });
                 })()}
               </div>
-
+              // CORRECTION: Mise à jour du bouton de soumission pour gérer les
+              réponses libres
               {/* Actions */}
               <div className="px-6 pb-6">
                 {!isAnswered && !showResults && (
@@ -1612,9 +1753,14 @@ const SessionPlay = () => {
                     <button
                       onClick={handleSubmitAnswer}
                       disabled={
-                        selectedAnswer === null ||
-                        selectedAnswer === undefined ||
-                        isSubmitting
+                        currentQuestion.type === "reponse_libre" ||
+                        currentQuestion.type === "nuage_mots"
+                          ? !selectedAnswer ||
+                            selectedAnswer.trim() === "" ||
+                            isSubmitting
+                          : selectedAnswer === null ||
+                            selectedAnswer === undefined ||
+                            isSubmitting
                       }
                       className="inline-flex items-center px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:hover:transform-none"
                     >
@@ -1631,16 +1777,27 @@ const SessionPlay = () => {
                       )}
                     </button>
 
-                    {/* DEBUG: Affichage de l'état pour le développement */}
-                    {process.env.NODE_ENV === "development" && (
-                      <div className="mt-2 text-xs text-gray-500">
-                        Debug: selectedAnswer={selectedAnswer}, isSubmitting=
-                        {isSubmitting}, disabled=
-                        {selectedAnswer === null ||
-                          selectedAnswer === undefined ||
-                          isSubmitting}
-                      </div>
-                    )}
+                    {/* Message d'aide selon le type de question */}
+                    {currentQuestion.type === "reponse_libre" &&
+                      !selectedAnswer?.trim() && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                          Saisissez votre réponse dans le champ ci-dessus
+                        </p>
+                      )}
+                    {currentQuestion.type === "nuage_mots" &&
+                      !selectedAnswer?.trim() && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                          Entrez vos mots-clés séparés par des virgules
+                        </p>
+                      )}
+                    {(currentQuestion.type === "qcm" ||
+                      currentQuestion.type === "vrai_faux") &&
+                      (selectedAnswer === null ||
+                        selectedAnswer === undefined) && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                          Sélectionnez une option ci-dessus
+                        </p>
+                      )}
                   </div>
                 )}
 

@@ -3,6 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useForm, useFieldArray } from "react-hook-form";
 import { quizService } from "../../services/api";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
+import {
+  calculateQuizStats,
+  validateQuestion,
+  cleanQuestionData,
+} from "../../utils/quizUtils";
 import toast from "react-hot-toast";
 import {
   PlusIcon,
@@ -10,7 +15,6 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   PhotoIcon,
-  PlayIcon,
   EyeIcon,
   CheckIcon,
   XMarkIcon,
@@ -19,13 +23,17 @@ import {
   StarIcon,
   TagIcon,
   Cog6ToothIcon,
+  DocumentArrowUpIcon,
+  InformationCircleIcon,
 } from "@heroicons/react/24/outline";
+import BulkQuestionsImport from "./BulkQuestionsImport";
 
 const QuizCreate = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
   const [previewMode, setPreviewMode] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
 
   const {
     register,
@@ -75,6 +83,7 @@ const QuizCreate = () => {
     append: addQuestion,
     remove: removeQuestion,
     move: moveQuestion,
+    replace: replaceQuestions,
   } = useFieldArray({
     control,
     name: "questions",
@@ -83,14 +92,8 @@ const QuizCreate = () => {
   const watchedQuestions = watch("questions");
   const watchedSettings = watch("settings");
 
-  // Calculer les statistiques du quiz
-  const quizStats = {
-    questionCount: questions.length,
-    totalPoints:
-      watchedQuestions?.reduce((sum, q) => sum + (q?.points || 1), 0) || 0,
-    estimatedDuration:
-      watchedQuestions?.reduce((sum, q) => sum + (q?.timeLimit || 30), 0) || 0,
-  };
+  // CORRECTION: Utiliser la fonction utilitaire pour les statistiques
+  const quizStats = calculateQuizStats(watchedQuestions);
 
   const questionTypes = [
     { value: "qcm", label: "QCM (Choix multiples)", icon: "☑️" },
@@ -105,40 +108,48 @@ const QuizCreate = () => {
     { value: "difficile", label: "Difficile", color: "text-danger-600" },
   ];
 
-  // CORRECTION: Gestionnaire du changement de type de question
+  const categories = [
+    "Mathématiques",
+    "Sciences",
+    "Histoire",
+    "Géographie",
+    "Langues",
+    "Informatique",
+    "Arts",
+    "Sport",
+    "Culture générale",
+    "Autre",
+  ];
+
+  // Gestionnaire du changement de type de question
   const handleQuestionTypeChange = (questionIndex, newType) => {
     console.log(
       `🔄 Changement de type pour question ${questionIndex}: ${newType}`
     );
 
     if (newType === "vrai_faux") {
-      // Pour les questions vrai/faux, NE PAS créer d'options vides
       setValue(`questions.${questionIndex}.type`, newType);
-      setValue(`questions.${questionIndex}.options`, []); // Supprimer les options
-      setValue(`questions.${questionIndex}.correctAnswer`, "true"); // Valeur par défaut
-      console.log(
-        `✅ Question ${questionIndex} configurée en vrai/faux sans options`
-      );
+      setValue(`questions.${questionIndex}.options`, []);
+      setValue(`questions.${questionIndex}.correctAnswer`, "true");
     } else if (newType === "qcm") {
-      // Pour QCM, créer des options avec texte vide (à remplir)
       setValue(`questions.${questionIndex}.type`, newType);
       setValue(`questions.${questionIndex}.options`, [
         { text: "", isCorrect: false },
         { text: "", isCorrect: false },
       ]);
-      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Vider correctAnswer
+      setValue(`questions.${questionIndex}.correctAnswer`, "");
     } else if (newType === "reponse_libre") {
       setValue(`questions.${questionIndex}.type`, newType);
-      setValue(`questions.${questionIndex}.options`, []); // Pas d'options
-      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Réponse libre
+      setValue(`questions.${questionIndex}.options`, []);
+      setValue(`questions.${questionIndex}.correctAnswer`, "");
     } else if (newType === "nuage_mots") {
       setValue(`questions.${questionIndex}.type`, newType);
-      setValue(`questions.${questionIndex}.options`, []); // Pas d'options
-      setValue(`questions.${questionIndex}.correctAnswer`, ""); // Pas de réponse unique
+      setValue(`questions.${questionIndex}.options`, []);
+      setValue(`questions.${questionIndex}.correctAnswer`, "");
     }
   };
 
-  // Gestionnaires
+  // Gestionnaires pour les options
   const handleAddOption = (questionIndex) => {
     const currentOptions =
       getValues(`questions.${questionIndex}.options`) || [];
@@ -166,14 +177,12 @@ const QuizCreate = () => {
       getValues(`questions.${questionIndex}.options`) || [];
 
     if (questionType === "qcm") {
-      // QCM: permettre plusieurs réponses correctes
       const newOptions = currentOptions.map((option, i) => ({
         ...option,
         isCorrect: i === optionIndex ? !option.isCorrect : option.isCorrect,
       }));
       setValue(`questions.${questionIndex}.options`, newOptions);
     } else if (questionType === "vrai_faux") {
-      // Vrai/Faux: une seule réponse correcte
       const newOptions = currentOptions.map((option, i) => ({
         ...option,
         isCorrect: i === optionIndex,
@@ -182,12 +191,11 @@ const QuizCreate = () => {
     }
   };
 
+  // Gestionnaires pour les tags
   const handleAddTag = (tagValue) => {
     if (!tagValue.trim()) return;
-
     const currentTags = getValues("tags") || [];
     const newTag = tagValue.trim().toLowerCase();
-
     if (!currentTags.includes(newTag)) {
       setValue("tags", [...currentTags, newTag]);
     }
@@ -201,94 +209,52 @@ const QuizCreate = () => {
     );
   };
 
-  // CORRECTION: Fonction onSubmit améliorée
+  // NOUVEAU: Gestionnaire pour l'import en masse
+  const handleBulkImport = (importedQuestions) => {
+    const currentQuestions = getValues("questions") || [];
+    const newQuestions = [...currentQuestions, ...importedQuestions];
+    replaceQuestions(newQuestions);
+
+    toast.success(
+      `${importedQuestions.length} questions importées avec succès`
+    );
+
+    // Passer automatiquement à l'onglet questions
+    setActiveTab("questions");
+  };
+
+  // CORRECTION: Fonction onSubmit avec validation améliorée
   const onSubmit = async (data) => {
     try {
       setLoading(true);
 
-      // Validation des questions
-      const validationErrors = [];
-
-      data.questions.forEach((question, index) => {
-        if (!question.question?.trim()) {
-          validationErrors.push(`Question ${index + 1}: Le texte est requis`);
-        }
-
-        if (question.type === "qcm") {
-          const validOptions =
-            question.options?.filter((opt) => opt.text?.trim()) || [];
-          const correctOptions = validOptions.filter((opt) => opt.isCorrect);
-
-          if (validOptions.length < 2) {
-            validationErrors.push(
-              `Question ${index + 1}: Au moins 2 options requises`
-            );
-          }
-          if (correctOptions.length === 0) {
-            validationErrors.push(
-              `Question ${index + 1}: Au moins une réponse correcte requise`
-            );
-          }
-        } else if (question.type === "vrai_faux") {
-          if (!question.correctAnswer || question.correctAnswer === "") {
-            validationErrors.push(
-              `Question ${index + 1}: Réponse correcte requise pour Vrai/Faux`
-            );
-          }
-        } else if (question.type === "reponse_libre") {
-          if (!question.correctAnswer?.trim()) {
-            validationErrors.push(
-              `Question ${index + 1}: Réponse correcte requise`
-            );
-          }
-        }
-      });
-
-      if (validationErrors.length > 0) {
-        toast.error("Erreurs de validation détectées");
-        console.error("Erreurs:", validationErrors);
+      // Validation globale
+      if (!data.questions || data.questions.length === 0) {
+        toast.error("Le quiz doit contenir au moins une question");
         return;
       }
 
-      // CORRECTION: Nettoyer les données selon le type de question
+      // CORRECTION: Utiliser la fonction de validation utilitaire
+      const allValidationErrors = [];
+      data.questions.forEach((question, index) => {
+        const errors = validateQuestion(question, index);
+        allValidationErrors.push(...errors);
+      });
+
+      if (allValidationErrors.length > 0) {
+        toast.error("Erreurs de validation détectées");
+        console.error("Erreurs:", allValidationErrors);
+        // Optionnel: afficher les erreurs dans une modal
+        return;
+      }
+
+      // CORRECTION: Utiliser la fonction de nettoyage utilitaire
       const cleanData = {
         ...data,
-        questions: data.questions.map((q, index) => {
-          const baseQuestion = {
-            ...q,
-            order: index + 1,
-          };
-
-          if (q.type === "qcm") {
-            // Pour QCM, garder les options et vider correctAnswer
-            return {
-              ...baseQuestion,
-              options: q.options?.filter((opt) => opt.text?.trim()) || [],
-              correctAnswer: undefined, // Supprimer correctAnswer pour QCM
-            };
-          } else if (q.type === "vrai_faux") {
-            // Pour Vrai/Faux, garder correctAnswer et supprimer options
-            return {
-              ...baseQuestion,
-              options: [], // Pas d'options pour vrai/faux
-              correctAnswer: q.correctAnswer, // Garder "true" ou "false"
-            };
-          } else if (q.type === "reponse_libre") {
-            // Pour réponse libre, garder correctAnswer et supprimer options
-            return {
-              ...baseQuestion,
-              options: [], // Pas d'options
-              correctAnswer: q.correctAnswer,
-            };
-          } else {
-            // Autres types
-            return {
-              ...baseQuestion,
-              options: [],
-              correctAnswer: q.correctAnswer || "",
-            };
-          }
-        }),
+        estimatedDuration: quizStats.estimatedMinutes, // Utiliser les stats calculées
+        questions: data.questions.map((q, index) =>
+          cleanQuestionData(q, index)
+        ),
       };
 
       console.log("📤 Données nettoyées à envoyer:", cleanData);
@@ -334,12 +300,14 @@ const QuizCreate = () => {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Catégorie
           </label>
-          <input
-            {...register("category")}
-            type="text"
-            className="input"
-            placeholder="Ex: Sciences, Histoire, Sport..."
-          />
+          <select {...register("category")} className="input">
+            <option value="">Sélectionner une catégorie</option>
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -371,30 +339,50 @@ const QuizCreate = () => {
           </select>
         </div>
 
+        {/* CORRECTION: Affichage amélioré des statistiques */}
         <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-          <h4 className="font-medium text-gray-900 dark:text-white mb-2">
-            Statistiques
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">
+            Statistiques du quiz
           </h4>
-          <div className="grid grid-cols-3 gap-4 text-sm">
+          <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="text-center">
-              <div className="font-semibold text-primary-600 dark:text-primary-400">
+              <div className="font-semibold text-primary-600 dark:text-primary-400 text-lg">
                 {quizStats.questionCount}
               </div>
               <div className="text-gray-500">Questions</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-secondary-600 dark:text-secondary-400">
+              <div className="font-semibold text-secondary-600 dark:text-secondary-400 text-lg">
                 {quizStats.totalPoints}
               </div>
               <div className="text-gray-500">Points</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-success-600 dark:text-success-400">
-                {Math.ceil(quizStats.estimatedDuration / 60)}min
+              <div className="font-semibold text-success-600 dark:text-success-400 text-lg">
+                {quizStats.estimatedMinutes}min
               </div>
-              <div className="text-gray-500">Durée</div>
+              <div className="text-gray-500">Durée estimée</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-warning-600 dark:text-warning-400 text-lg">
+                {quizStats.averagePointsPerQuestion}
+              </div>
+              <div className="text-gray-500">Pts/Question</div>
             </div>
           </div>
+
+          {/* Indicateur de durée */}
+          {quizStats.estimatedMinutes > 0 && (
+            <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center text-xs text-blue-700 dark:text-blue-300">
+                <InformationCircleIcon className="h-4 w-4 mr-1" />
+                <span>
+                  Durée moyenne par question: {quizStats.averageTimePerQuestion}
+                  s
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -440,6 +428,46 @@ const QuizCreate = () => {
 
   const QuestionsTab = () => (
     <div className="space-y-6">
+      {/* Header avec actions */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+          Questions ({questions.length})
+        </h3>
+        <div className="flex items-center space-x-3">
+          <button
+            type="button"
+            onClick={() => setShowBulkImport(true)}
+            className="btn-outline btn-sm"
+          >
+            <DocumentArrowUpIcon className="h-4 w-4 mr-1" />
+            Import en masse
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              addQuestion({
+                type: "qcm",
+                question: "",
+                options: [
+                  { text: "", isCorrect: false },
+                  { text: "", isCorrect: false },
+                ],
+                correctAnswer: "",
+                explanation: "",
+                points: 1,
+                timeLimit: 30,
+                media: null,
+              })
+            }
+            className="btn-primary btn-sm"
+          >
+            <PlusIcon className="h-4 w-4 mr-1" />
+            Ajouter une question
+          </button>
+        </div>
+      </div>
+
+      {/* Liste des questions */}
       {questions.map((field, questionIndex) => (
         <div key={field.id} className="card p-6 relative">
           {/* Header de la question */}
@@ -448,7 +476,6 @@ const QuizCreate = () => {
               <span className="flex items-center justify-center w-8 h-8 bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 rounded-full text-sm font-medium">
                 {questionIndex + 1}
               </span>
-              {/* CORRECTION: Select avec gestionnaire de changement */}
               <select
                 {...register(`questions.${questionIndex}.type`)}
                 onChange={(e) =>
@@ -509,9 +536,14 @@ const QuizCreate = () => {
               rows={3}
               placeholder="Posez votre question..."
             />
+            {errors.questions?.[questionIndex]?.question && (
+              <p className="mt-1 text-sm text-danger-600">
+                {errors.questions[questionIndex].question.message}
+              </p>
+            )}
           </div>
 
-          {/* CORRECTION: Options pour QCM seulement */}
+          {/* Options pour QCM seulement */}
           {watch(`questions.${questionIndex}.type`) === "qcm" && (
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -572,7 +604,7 @@ const QuizCreate = () => {
             </div>
           )}
 
-          {/* CORRECTION: Réponse correcte pour Vrai/Faux - PAS D'OPTIONS */}
+          {/* Réponse correcte pour Vrai/Faux */}
           {watch(`questions.${questionIndex}.type`) === "vrai_faux" && (
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -616,35 +648,45 @@ const QuizCreate = () => {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Points
+                Points *
               </label>
               <input
                 {...register(`questions.${questionIndex}.points`, {
                   valueAsNumber: true,
-                  min: 1,
-                  max: 100,
+                  min: { value: 1, message: "Minimum 1 point" },
+                  max: { value: 100, message: "Maximum 100 points" },
                 })}
                 type="number"
                 min="1"
                 max="100"
                 className="input"
               />
+              {errors.questions?.[questionIndex]?.points && (
+                <p className="mt-1 text-xs text-danger-600">
+                  {errors.questions[questionIndex].points.message}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Temps (sec)
+                Temps limite (sec) *
               </label>
               <input
                 {...register(`questions.${questionIndex}.timeLimit`, {
                   valueAsNumber: true,
-                  min: 5,
-                  max: 300,
+                  min: { value: 5, message: "Minimum 5 secondes" },
+                  max: { value: 300, message: "Maximum 300 secondes" },
                 })}
                 type="number"
                 min="5"
                 max="300"
                 className="input"
               />
+              {errors.questions?.[questionIndex]?.timeLimit && (
+                <p className="mt-1 text-xs text-danger-600">
+                  {errors.questions[questionIndex].timeLimit.message}
+                </p>
+              )}
             </div>
             <div className="flex items-end">
               <button
@@ -673,29 +715,51 @@ const QuizCreate = () => {
         </div>
       ))}
 
-      {/* Ajouter une question */}
-      <button
-        type="button"
-        onClick={() =>
-          addQuestion({
-            type: "qcm",
-            question: "",
-            options: [
-              { text: "", isCorrect: false },
-              { text: "", isCorrect: false },
-            ],
-            correctAnswer: "",
-            explanation: "",
-            points: 1,
-            timeLimit: 30,
-            media: null,
-          })
-        }
-        className="w-full btn-outline py-4 border-dashed"
-      >
-        <PlusIcon className="h-5 w-5 mr-2" />
-        Ajouter une question
-      </button>
+      {/* Message si aucune question */}
+      {questions.length === 0 && (
+        <div className="text-center py-12 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+          <QuestionMarkCircleIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Aucune question ajoutée
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400 mb-4">
+            Commencez par ajouter une question ou importez plusieurs questions
+            en une fois.
+          </p>
+          <div className="flex justify-center space-x-3">
+            <button
+              type="button"
+              onClick={() => setShowBulkImport(true)}
+              className="btn-outline"
+            >
+              <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
+              Import en masse
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                addQuestion({
+                  type: "qcm",
+                  question: "",
+                  options: [
+                    { text: "", isCorrect: false },
+                    { text: "", isCorrect: false },
+                  ],
+                  correctAnswer: "",
+                  explanation: "",
+                  points: 1,
+                  timeLimit: 30,
+                  media: null,
+                })
+              }
+              className="btn-primary"
+            >
+              <PlusIcon className="h-4 w-4 mr-2" />
+              Créer ma première question
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -888,9 +952,7 @@ const QuizCreate = () => {
                 <div className="flex flex-wrap gap-4 text-sm text-gray-500 dark:text-gray-400">
                   <span>{quizStats.questionCount} questions</span>
                   <span>{quizStats.totalPoints} points</span>
-                  <span>
-                    ~{Math.ceil(quizStats.estimatedDuration / 60)} minutes
-                  </span>
+                  <span>~{quizStats.estimatedMinutes} minutes</span>
                   <span
                     className={`badge ${getDifficultyBadge(
                       watch("difficulty")
@@ -954,10 +1016,6 @@ const QuizCreate = () => {
                         <span className="font-medium text-success-600 dark:text-success-400">
                           {question.correctAnswer === "true" ? "Vrai" : "Faux"}
                         </span>
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Les options "Vrai" et "Faux" seront générées
-                        automatiquement.
                       </p>
                     </div>
                   )}
@@ -1083,6 +1141,14 @@ const QuizCreate = () => {
 
       {/* Modal d'aperçu */}
       <PreviewModal />
+
+      {/* Modal d'import en masse */}
+      {showBulkImport && (
+        <BulkQuestionsImport
+          onImport={handleBulkImport}
+          onClose={() => setShowBulkImport(false)}
+        />
+      )}
     </div>
   );
 };
