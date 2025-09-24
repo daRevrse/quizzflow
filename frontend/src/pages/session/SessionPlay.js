@@ -239,21 +239,135 @@ const SessionPlay = () => {
 
   const fetchFinalResults = async () => {
     try {
-      if (!participantInfo?.id || !sessionId) return;
+      if (!participantInfo?.id || !sessionId) {
+        console.warn(
+          "Informations manquantes pour récupérer les résultats finaux"
+        );
+        return;
+      }
 
-      const response = await fetch(
-        `/api/session/${sessionId}/participant/${participantInfo.id}/results`
-      );
+      console.log("🔍 Récupération résultats finaux:", {
+        sessionId,
+        participantId: participantInfo.id,
+      });
 
-      if (response.ok) {
-        const data = await response.json();
-        setFinalResults(data);
-        setShowFinalResults(true);
+      // CORRECTION: Utiliser l'API session générale au lieu d'un endpoint spécifique
+      const response = await sessionService.getSession(sessionId);
+
+      if (response?.session) {
+        const session = response.session;
+
+        // Trouver les données du participant
+        const participant = session.participants?.find(
+          (p) => p.id === participantInfo.id || p.name === participantInfo.name
+        );
+
+        if (participant) {
+          // Calculer les statistiques du participant
+          const responses = session.responses || {};
+          const participantResponses = [];
+          let correctAnswers = 0;
+          let totalTimeSpent = 0;
+
+          // Analyser toutes les réponses du participant
+          Object.keys(responses).forEach((questionId) => {
+            const questionResponses = responses[questionId] || [];
+            const participantResponse = questionResponses.find(
+              (r) => r.participantId === participant.id
+            );
+
+            if (participantResponse) {
+              participantResponses.push(participantResponse);
+              if (participantResponse.isCorrect) correctAnswers++;
+              totalTimeSpent += participantResponse.timeSpent || 0;
+            }
+          });
+
+          const totalQuestions = session.quiz?.questions?.length || 0;
+          const accuracyRate =
+            totalQuestions > 0
+              ? Math.round((correctAnswers / totalQuestions) * 100)
+              : 0;
+
+          // Calculer le rang
+          const participants = session.participants || [];
+          const sortedParticipants = participants
+            .filter((p) => typeof p.score === "number")
+            .sort((a, b) => (b.score || 0) - (a.score || 0));
+
+          const rank =
+            sortedParticipants.findIndex((p) => p.id === participant.id) + 1;
+
+          const finalResultsData = {
+            participant: {
+              id: participant.id,
+              name: participant.name,
+              score: participant.score || 0,
+              correctAnswers,
+              totalQuestions,
+              accuracyRate,
+              totalTimeSpent,
+              averageTimePerQuestion:
+                participantResponses.length > 0
+                  ? Math.round(totalTimeSpent / participantResponses.length)
+                  : 0,
+              responses: participantResponses,
+            },
+            rank: rank > 0 ? rank : null,
+            session: {
+              id: session.id,
+              code: session.code,
+              title: session.title,
+              quiz: session.quiz,
+            },
+          };
+
+          console.log("✅ Résultats finaux calculés:", finalResultsData);
+
+          setFinalResults(finalResultsData);
+          setShowFinalResults(true);
+        } else {
+          console.warn("Participant non trouvé dans la session");
+          toast.error("Impossible de récupérer vos résultats");
+        }
       } else {
-        console.warn("Résultats pas encore disponibles");
+        throw new Error("Session non trouvée");
       }
     } catch (error) {
       console.error("Erreur récupération résultats finaux:", error);
+
+      // Fallback : créer des résultats basiques
+      if (participantInfo && session) {
+        const fallbackResults = {
+          participant: {
+            id: participantInfo.id,
+            name: participantInfo.name,
+            score: playerScore,
+            correctAnswers: 0,
+            totalQuestions: totalQuestions,
+            accuracyRate: 0,
+            totalTimeSpent: 0,
+            averageTimePerQuestion: 0,
+            responses: [],
+          },
+          rank: null,
+          session: {
+            id: session.id,
+            code: session.code,
+            title: session.title,
+            quiz: session.quiz,
+          },
+        };
+
+        setFinalResults(fallbackResults);
+        setShowFinalResults(true);
+
+        toast.warn(
+          "Résultats partiels - certaines données ne sont pas disponibles"
+        );
+      } else {
+        toast.error("Impossible de récupérer les résultats");
+      }
     }
   };
 
