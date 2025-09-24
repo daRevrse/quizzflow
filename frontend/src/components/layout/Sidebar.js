@@ -9,6 +9,7 @@ import {
   ChartBarIcon,
   Cog6ToothIcon,
   QuestionMarkCircleIcon,
+  TrophyIcon,
 } from "@heroicons/react/24/outline";
 import classNames from "classnames";
 
@@ -47,6 +48,12 @@ const Sidebar = () => {
       href: "/session/create",
       icon: PlayIcon,
       show: user?.role === "formateur" || user?.role === "admin",
+    },
+    {
+      name: "Perfomance",
+      href: "/results",
+      icon: TrophyIcon,
+      show: user?.role === "etudiant",
     },
     {
       name: "Rejoindre",
@@ -105,7 +112,7 @@ const Sidebar = () => {
             <span className="text-white font-bold text-sm">Q</span>
           </div>
           <span className="text-lg font-semibold text-gray-900 dark:text-white">
-            QuizApp
+            QuizFlow
           </span>
         </div>
       </div>
@@ -121,7 +128,7 @@ const Sidebar = () => {
         </nav>
 
         {/* Section utilisateur */}
-        {user && (
+        {/* {user && (
           <div className="px-4 py-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <div className="flex-shrink-0">
@@ -151,7 +158,7 @@ const Sidebar = () => {
               </div>
             </div>
           </div>
-        )}
+        )} */}
 
         {/* Navigation secondaire */}
         <nav className="px-4 py-4 border-t border-gray-200 dark:border-gray-700 space-y-2">

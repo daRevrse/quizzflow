@@ -1,11 +1,10 @@
-// SessionCreate.js - Version corrigée avec statistiques cohérentes
+// SessionCreate.js - Version corrigée pour l'affichage des informations des quiz
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { useAuthStore } from "../../stores/authStore";
 import { quizService, sessionService } from "../../services/api";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
-// CORRECTION: Import de la fonction utilitaire pour les statistiques
 import { calculateQuizStats } from "../../utils/quizUtils";
 import toast from "react-hot-toast";
 import {
@@ -31,7 +30,7 @@ const SessionCreate = () => {
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // CORRECTION: Calculer les statistiques du quiz sélectionné
+  // Calculer les statistiques du quiz sélectionné
   const selectedQuizStats = selectedQuiz
     ? calculateQuizStats(selectedQuiz.questions)
     : null;
@@ -120,7 +119,7 @@ const SessionCreate = () => {
         return;
       }
 
-      // CORRECTION: Formater correctement les settings
+      // Formater correctement les settings
       const formattedSettings = {};
 
       // Convertir les valeurs en types appropriés
@@ -197,9 +196,29 @@ const SessionCreate = () => {
     }
   };
 
-  // CORRECTION: Fonction pour calculer les statistiques d'un quiz dans la liste
+  // Fonction pour calculer les statistiques d'un quiz dans la liste
+  // CORRECTION: Utiliser les données disponibles directement du quiz au lieu de recalculer
   const getQuizStats = (quiz) => {
-    return calculateQuizStats(quiz.questions);
+    // Si le quiz a des questions, calculer depuis les questions
+    if (quiz.questions && Array.isArray(quiz.questions)) {
+      return calculateQuizStats(quiz.questions);
+    }
+
+    // Sinon, utiliser les données déjà présentes dans le quiz
+    return {
+      questionCount: quiz.questionCount || 0,
+      totalPoints: quiz.totalPoints || 0,
+      estimatedDuration: quiz.estimatedDuration || 0,
+      estimatedMinutes: Math.ceil((quiz.estimatedDuration || 0) / 60) || 1,
+      averagePointsPerQuestion:
+        quiz.questionCount > 0
+          ? Math.round(((quiz.totalPoints || 0) / quiz.questionCount) * 10) / 10
+          : 0,
+      averageTimePerQuestion:
+        quiz.questionCount > 0
+          ? Math.round((quiz.estimatedDuration || 0) / quiz.questionCount)
+          : 30,
+    };
   };
 
   return (
@@ -266,7 +285,7 @@ const SessionCreate = () => {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {filteredQuizzes.map((quiz) => {
-                      // CORRECTION: Calculer les statistiques pour chaque quiz
+                      // Calculer les statistiques pour chaque quiz
                       const quizStats = getQuizStats(quiz);
 
                       return (
@@ -303,12 +322,24 @@ const SessionCreate = () => {
                             )}
                           </div>
 
-                          {/* CORRECTION: Utiliser les statistiques calculées */}
+                          {/* Affichage des statistiques avec fallback */}
                           <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-                            <span>{quizStats.questionCount} questions</span>
-                            <span>{quizStats.totalPoints} points</span>
-                            <span>~{quizStats.estimatedMinutes} min</span>
+                            <span>
+                              {quizStats.questionCount || 0} question
+                              {quizStats.questionCount !== 1 ? "s" : ""}
+                            </span>
+                            <span>
+                              {quizStats.totalPoints || 0} point
+                              {quizStats.totalPoints !== 1 ? "s" : ""}
+                            </span>
+                            <span>~{quizStats.estimatedMinutes || 1} min</span>
                           </div>
+
+                          {quiz.description && (
+                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                              {quiz.description}
+                            </div>
+                          )}
 
                           {quiz.stats?.totalSessions > 0 && (
                             <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -316,6 +347,24 @@ const SessionCreate = () => {
                               {quiz.stats.totalSessions > 1 ? "s" : ""}{" "}
                               précédente
                               {quiz.stats.totalSessions > 1 ? "s" : ""}
+                            </div>
+                          )}
+
+                          {quiz.tags && quiz.tags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {quiz.tags.slice(0, 2).map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                >
+                                  #{tag}
+                                </span>
+                              ))}
+                              {quiz.tags.length > 2 && (
+                                <span className="text-xs text-gray-400">
+                                  +{quiz.tags.length - 2}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -532,7 +581,7 @@ const SessionCreate = () => {
               </div>
             </div>
 
-            {/* CORRECTION: Aperçu du quiz sélectionné avec statistiques correctes */}
+            {/* Aperçu du quiz sélectionné avec statistiques correctes */}
             {selectedQuiz && selectedQuizStats && (
               <div className="bg-white dark:bg-gray-800 shadow rounded-lg mt-6">
                 <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -554,7 +603,7 @@ const SessionCreate = () => {
                       )}
                     </div>
 
-                    {/* CORRECTION: Utiliser les statistiques calculées */}
+                    {/* Utiliser les statistiques calculées */}
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <span className="text-gray-500 dark:text-gray-400">

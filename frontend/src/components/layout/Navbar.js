@@ -84,14 +84,14 @@ const Navbar = () => {
             )}
 
             {/* Logo */}
-            <Link to="/" className="flex items-center space-x-2 ml-2 lg:ml-0">
+            {/* <Link to="/" className="flex items-center space-x-2 ml-2 lg:ml-0">
               <div className="w-8 h-8 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">Q</span>
               </div>
               <span className="text-xl font-bold text-gray-900 dark:text-white">
                 QuizApp
               </span>
-            </Link>
+            </Link> */}
           </div>
 
           {/* Actions de droite */}

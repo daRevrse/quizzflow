@@ -20,6 +20,7 @@ import {
   CogIcon,
   EyeIcon,
   InformationCircleIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -39,7 +40,7 @@ const SessionHost = () => {
   const [leaderboard, setLeaderboard] = useState([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true); // Configurable
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
   const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
 
   // États pour la gestion des questions
@@ -187,9 +188,7 @@ const SessionHost = () => {
         prev
           ? {
               ...prev,
-              participantCount:
-                // data.participantCount || prev.participantCount + 1,
-                prev.participantCount + 1,
+              participantCount: prev.participantCount + 1,
             }
           : null
       );
@@ -282,7 +281,7 @@ const SessionHost = () => {
     const handleSessionUpdated = (data) => {
       if (!isSocketMounted || !componentMountedRef.current) return;
 
-      console.log("📝 Session mise à jour:", data);
+      console.log("🔄 Session mise à jour:", data);
 
       if (data.sessionId === session.id) {
         setSession((prev) => (prev ? { ...prev, ...data.updates } : null));
@@ -314,35 +313,6 @@ const SessionHost = () => {
   }, [socket, isConnected, session]);
 
   // Timer pour la question courante
-  // useEffect(() => {
-  //   if (questionTimer === null || questionTimer <= 0) return;
-
-  //   const interval = setInterval(() => {
-  //     setQuestionTimer((prev) => {
-  //       if (prev === null || prev <= 1) {
-  //         // Temps écoulé
-  //         clearInterval(interval);
-  //         if (componentMountedRef.current) {
-  //           // toast.warning("Temps écoulé pour cette question !");
-  //           toast("⏰ Temps écoulé pour cette question !", {
-  //             icon: "⚠️",
-  //             style: {
-  //               background: "#F59E0B",
-  //               color: "white",
-  //             },
-  //             duration: 3000,
-  //           });
-  //           // Passer automatiquement aux résultats
-  //           setShowResults(true);
-  //         }
-  //         return 0;
-  //       }
-  //       return prev - 1;
-  //     });
-  //   }, 1000);
-
-  //   return () => clearInterval(interval);
-  // }, [questionTimer]);
   useEffect(() => {
     if (questionTimer === null || questionTimer <= 0) return;
 
@@ -363,7 +333,7 @@ const SessionHost = () => {
               duration: 3000,
             });
 
-            // CORRECTION: Déclencher l'avancement automatique
+            // Déclencher l'avancement automatique
             handleAutoAdvance();
           }
           return 0;
@@ -373,7 +343,7 @@ const SessionHost = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [questionTimer, autoAdvanceEnabled]); // Ajouter autoAdvanceEnabled aux dépendances
+  }, [questionTimer, autoAdvanceEnabled]);
 
   // Fonction utilitaire pour exécuter des actions avec protection
   const executeAction = useCallback(
@@ -439,7 +409,7 @@ const SessionHost = () => {
       const currentIndex = session?.currentQuestionIndex || 0;
       const totalQuestions = session?.quiz?.questions?.length || 0;
 
-      console.log(`🔍 Avancement auto: ${currentIndex + 1}/${totalQuestions}`);
+      console.log(`🔄 Avancement auto: ${currentIndex + 1}/${totalQuestions}`);
 
       if (currentIndex >= totalQuestions - 1) {
         // Dernière question : terminer la session
@@ -522,6 +492,46 @@ const SessionHost = () => {
     });
   }, [sessionId, executeAction, navigate]);
 
+  // NOUVELLE FONCTION: Annuler/Supprimer la session
+  const handleCancelSession = useCallback(() => {
+    const sessionTitle = session?.title || "cette session";
+    const isActive = session?.status === "active";
+
+    // Message de confirmation différent selon le statut
+    let confirmMessage;
+    if (isActive) {
+      confirmMessage = `⚠️ Attention ! La session "${sessionTitle}" est actuellement active avec ${participants.length} participant(s).\n\nVoulez-vous vraiment l'annuler définitivement ?\n\n• Tous les participants seront déconnectés\n• Les données de cette session seront perdues\n• Cette action est irréversible`;
+    } else {
+      confirmMessage = `Êtes-vous sûr de vouloir supprimer définitivement la session "${sessionTitle}" ?\n\nCette action est irréversible.`;
+    }
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    executeAction("annulation", async () => {
+      // Si la session est active, la terminer d'abord (optionnel selon la logique métier)
+      if (isActive) {
+        try {
+          await sessionService.endSession(sessionId);
+        } catch (error) {
+          console.warn("Erreur lors de la fermeture avant suppression:", error);
+        }
+      }
+
+      // Supprimer la session
+      await sessionService.deleteSession(sessionId);
+      toast.success("Session supprimée avec succès");
+
+      // Naviguer vers la liste des sessions
+      setTimeout(() => {
+        if (componentMountedRef.current) {
+          navigate("/sessions");
+        }
+      }, 1000);
+    });
+  }, [sessionId, executeAction, navigate, session, participants.length]);
+
   // Formatage des données
   const formatDuration = (start, end = null) => {
     if (!start) return "N/A";
@@ -591,7 +601,7 @@ const SessionHost = () => {
     });
   }, [executeAction, isAutoAdvancing]);
 
-  // AJOUT: Fonction pour formater le temps restant
+  // Fonction pour formater le temps restant
   const formatTimeWithProgress = (seconds) => {
     if (seconds === null || seconds === undefined) return "--";
 
@@ -609,7 +619,7 @@ const SessionHost = () => {
     return { timeString, percentage };
   };
 
-  // MODIFICATION: Affichage du timer avec indicateur d'avancement automatique
+  // Affichage du timer avec indicateur d'avancement automatique
   const renderQuestionTimer = () => {
     if (questionTimer === null || questionTimer <= 0) return null;
 
@@ -679,7 +689,7 @@ const SessionHost = () => {
     );
   };
 
-  // MODIFICATION: Contrôles de navigation avec état
+  // Contrôles de navigation avec état
   const renderNavigationControls = () => {
     const currentIndex = session?.currentQuestionIndex || 0;
     const totalQuestions = session?.quiz?.questions?.length || 0;
@@ -801,6 +811,21 @@ const SessionHost = () => {
               </div>
 
               <div className="flex space-x-3">
+                {/* Bouton Annuler/Supprimer la session */}
+                <button
+                  onClick={handleCancelSession}
+                  disabled={actionLoading}
+                  className="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-600 rounded-md text-sm font-medium text-red-700 dark:text-red-300 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                  title={
+                    session?.status === "active"
+                      ? "Annuler la session active"
+                      : "Supprimer la session"
+                  }
+                >
+                  <TrashIcon className="h-4 w-4 mr-2" />
+                  {session?.status === "active" ? "Annuler" : "Supprimer"}
+                </button>
+
                 <button
                   onClick={() => navigate(`/session/${sessionId}/results`)}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
@@ -932,21 +957,6 @@ const SessionHost = () => {
               </div>
 
               {renderQuestionTimer()}
-              {/* {questionTimer !== null && questionTimer > 0 && (
-                <div className="bg-red-50 dark:bg-red-900 rounded-lg p-4">
-                  <div className="flex items-center">
-                    <ClockIcon className="h-8 w-8 text-red-600 dark:text-red-400" />
-                    <div className="ml-3">
-                      <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                        Temps restant
-                      </p>
-                      <p className="text-2xl font-semibold text-red-900 dark:text-red-100">
-                        {formatTime(questionTimer)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )} */}
             </div>
           </div>
         </div>
@@ -1014,12 +1024,12 @@ const SessionHost = () => {
                     ))}
                   </div>
                 </div>
+
+                {/* Contrôles de navigation */}
+                {session?.status === "active" && renderNavigationControls()}
               </div>
             </div>
           )}
-          {session?.status === "active" &&
-            currentQuestion &&
-            renderNavigationControls()}
 
           {/* Liste des participants */}
           <div className={currentQuestion ? "lg:col-span-1" : "lg:col-span-3"}>

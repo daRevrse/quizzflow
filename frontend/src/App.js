@@ -40,6 +40,7 @@ import PublicOnlyRoute from "./components/auth/PublicOnlyRoute";
 import SessionsList from "./pages/session/SessionsList";
 import ParticipantResults from "./pages/session/ParticipantResults";
 import ParticipantHistory from "./pages/participant/ParticipantHistory";
+import Statistics from "./pages/Statistics";
 
 function App() {
   const { user, isLoading, initializeAuth } = useAuthStore();
@@ -295,6 +296,15 @@ function MainLayout() {
                 element={
                   <ProtectedRoute>
                     <Settings />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/stats"
+                element={
+                  <ProtectedRoute>
+                    <Statistics />
                   </ProtectedRoute>
                 }
               />
