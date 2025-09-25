@@ -221,70 +221,7 @@ router.get("/", optionalAuth, async (req, res) => {
 });
 
 // GET /api/quiz/my - Mes quiz
-// router.get("/my", authenticateToken, async (req, res) => {
-//   try {
-//     const { page = 1, limit = 20, search, category, difficulty } = req.query;
-//     const pageNum = parseInt(page);
-//     const limitNum = parseInt(limit);
-//     const offset = (pageNum - 1) * limitNum;
 
-//     const whereConditions = {
-//       creatorId: req.user.id,
-//       isActive: true,
-//     };
-
-//     if (search) {
-//       whereConditions[Op.or] = [
-//         { title: { [Op.like]: `%${search}%` } },
-//         { description: { [Op.like]: `%${search}%` } },
-//       ];
-//     }
-
-//     if (category) {
-//       whereConditions.category = category;
-//     }
-
-//     if (difficulty) {
-//       whereConditions.difficulty = difficulty;
-//     }
-
-//     const { count, rows: quizzes } = await Quiz.findAndCountAll({
-//       where: whereConditions,
-//       order: [["updatedAt", "DESC"]],
-//       limit: limitNum,
-//       offset,
-//     });
-
-//     res.json({
-//       quizzes: quizzes.map((quiz) => ({
-//         id: quiz.id,
-//         title: quiz.title,
-//         description: quiz.description,
-//         category: quiz.category,
-//         tags: quiz.tags,
-//         difficulty: quiz.difficulty,
-//         questionCount: quiz.getQuestionCount(),
-//         totalPoints: quiz.getTotalPoints(),
-//         estimatedDuration: quiz.estimatedDuration,
-//         settings: quiz.settings,
-//         stats: quiz.stats,
-//         createdAt: quiz.createdAt,
-//         updatedAt: quiz.updatedAt,
-//       })),
-//       pagination: {
-//         current: pageNum,
-//         pages: Math.ceil(count / limitNum),
-//         total: count,
-//         limit: limitNum,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Erreur lors de la récupération des quiz personnels:", error);
-//     res.status(500).json({
-//       error: "Erreur lors de la récupération des quiz",
-//     });
-//   }
-// });
 // GET /api/quiz/my - Mes quiz
 router.get("/my", authenticateToken, async (req, res) => {
   try {
@@ -381,62 +318,133 @@ router.get("/categories", async (req, res) => {
 });
 
 // GET /api/quiz/:id - Récupérer un quiz spécifique
-router.get("/:id", optionalAuth, loadQuiz, async (req, res) => {
+// router.get("/:id", optionalAuth, loadQuiz, async (req, res) => {
+//   try {
+//     const quiz = req.quiz;
+
+//     // Vérifier les permissions de lecture
+//     const isOwner = req.user && req.user.id === quiz.creatorId;
+//     const isAdmin = req.user && req.user.role === "admin";
+//     const isPublic = quiz.settings.isPublic;
+
+//     if (!isPublic && !isOwner && !isAdmin) {
+//       return res.status(403).json({
+//         error: "Accès refusé - Quiz privé",
+//         code: "PRIVATE_QUIZ",
+//       });
+//     }
+
+//     // Réponse différente selon les permissions
+//     if (isOwner || isAdmin) {
+//       // Propriétaire/Admin voit tout
+//       res.json({
+//         quiz: {
+//           id: quiz.id,
+//           title: quiz.title,
+//           description: quiz.description,
+//           questions: quiz.questions,
+//           settings: quiz.settings,
+//           category: quiz.category,
+//           tags: quiz.tags,
+//           difficulty: quiz.difficulty,
+//           estimatedDuration: quiz.estimatedDuration,
+//           stats: quiz.stats,
+//           creator: quiz.creator,
+//           createdAt: quiz.createdAt,
+//           updatedAt: quiz.updatedAt,
+//         },
+//       });
+//     } else {
+//       // Utilisateur externe ne voit que les infos publiques
+//       res.json({
+//         quiz: {
+//           ...quiz.getPublicData(),
+//           creator: quiz.creator,
+//           // Questions sans les réponses correctes pour les quiz publics
+//           questions: quiz.questions?.map((q) => ({
+//             id: q.id,
+//             type: q.type,
+//             question: q.question,
+//             options: q.options?.map((opt) => ({ text: opt.text })),
+//             points: q.points,
+//             timeLimit: q.timeLimit,
+//             order: q.order,
+//             media: q.media,
+//           })),
+//         },
+//       });
+//     }
+//   } catch (error) {
+//     console.error("Erreur lors de la récupération du quiz:", error);
+//     res.status(500).json({
+//       error: "Erreur lors de la récupération du quiz",
+//     });
+//   }
+// });
+router.get("/:id", authenticateToken, loadQuiz, async (req, res) => {
   try {
     const quiz = req.quiz;
+    const user = req.user;
 
-    // Vérifier les permissions de lecture
-    const isOwner = req.user && req.user.id === quiz.creatorId;
-    const isAdmin = req.user && req.user.role === "admin";
-    const isPublic = quiz.settings.isPublic;
+    // Vérifier les permissions de base
+    const isOwner = user.id === quiz.creatorId;
+    const isAdmin = user.role === "admin";
+    const isFormateur = user.role === "formateur";
+    const isPublicQuiz = quiz.settings?.isPublic;
+    const isEtudiant = user.role === "etudiant";
 
-    if (!isPublic && !isOwner && !isAdmin) {
+    // Permissions d'accès
+    const canAccess = isOwner || isAdmin || isFormateur || isPublicQuiz;
+
+    if (!canAccess) {
       return res.status(403).json({
-        error: "Accès refusé - Quiz privé",
-        code: "PRIVATE_QUIZ",
+        error: "Accès non autorisé à ce quiz",
       });
     }
 
-    // Réponse différente selon les permissions
-    if (isOwner || isAdmin) {
-      // Propriétaire/Admin voit tout
-      res.json({
+    // Pour les étudiants accédant à des quiz publics, rediriger vers la vue publique
+    if (isEtudiant && isPublicQuiz && !isOwner) {
+      return res.status(200).json({
+        message: "Redirection vers la vue publique recommandée",
         quiz: {
           id: quiz.id,
           title: quiz.title,
-          description: quiz.description,
-          questions: quiz.questions,
-          settings: quiz.settings,
-          category: quiz.category,
-          tags: quiz.tags,
-          difficulty: quiz.difficulty,
-          estimatedDuration: quiz.estimatedDuration,
-          stats: quiz.stats,
-          creator: quiz.creator,
-          createdAt: quiz.createdAt,
-          updatedAt: quiz.updatedAt,
-        },
-      });
-    } else {
-      // Utilisateur externe ne voit que les infos publiques
-      res.json({
-        quiz: {
-          ...quiz.getPublicData(),
-          creator: quiz.creator,
-          // Questions sans les réponses correctes pour les quiz publics
-          questions: quiz.questions?.map((q) => ({
-            id: q.id,
-            type: q.type,
-            question: q.question,
-            options: q.options?.map((opt) => ({ text: opt.text })),
-            points: q.points,
-            timeLimit: q.timeLimit,
-            order: q.order,
-            media: q.media,
-          })),
-        },
+          isPublic: true,
+          redirectTo: `/quiz/${quiz.id}/public`
+        }
       });
     }
+
+    // Pour les propriétaires/formateurs/admins, retourner la vue complète
+    const fullQuizData = {
+      id: quiz.id,
+      title: quiz.title,
+      description: quiz.description,
+      category: quiz.category,
+      difficulty: quiz.difficulty,
+      tags: quiz.tags,
+      questions: quiz.questions,
+      settings: quiz.settings,
+      creator: quiz.creator,
+      createdAt: quiz.createdAt,
+      updatedAt: quiz.updatedAt,
+      questionCount: quiz.getQuestionCount(),
+      totalPoints: quiz.getTotalPoints(),
+      estimatedDuration: quiz.estimatedDuration,
+      stats: quiz.stats,
+    };
+
+    res.json({
+      message: "Quiz récupéré avec succès",
+      quiz: fullQuizData,
+      permissions: {
+        canEdit: isOwner || isAdmin,
+        canDelete: isOwner || isAdmin,
+        canCreateSession: canAccess && !isEtudiant,
+        canViewFull: !isEtudiant || isOwner,
+      },
+    });
+
   } catch (error) {
     console.error("Erreur lors de la récupération du quiz:", error);
     res.status(500).json({
@@ -602,65 +610,7 @@ router.delete(
 );
 
 // POST /api/quiz/:id/duplicate - Dupliquer un quiz
-// router.post(
-//   "/:id/duplicate",
-//   authenticateToken,
-//   requireRole("formateur", "admin"),
-//   loadQuiz,
-//   async (req, res) => {
-//     try {
-//       const originalQuiz = req.quiz;
 
-//       // Vérifier les permissions (propriétaire ou quiz public)
-//       const canDuplicate =
-//         originalQuiz.creatorId === req.user.id ||
-//         originalQuiz.settings.isPublic ||
-//         req.user.role === "admin";
-
-//       if (!canDuplicate) {
-//         return res.status(403).json({
-//           error: "Permission insuffisante pour dupliquer ce quiz",
-//         });
-//       }
-
-//       const duplicatedQuiz = await Quiz.create({
-//         title: `${originalQuiz.title} (Copie)`,
-//         description: originalQuiz.description,
-//         creatorId: req.user.id,
-//         questions: originalQuiz.questions,
-//         settings: {
-//           ...originalQuiz.settings,
-//           isPublic: false, // La copie est privée par défaut
-//         },
-//         category: originalQuiz.category,
-//         tags: originalQuiz.tags,
-//         difficulty: originalQuiz.difficulty,
-//       });
-
-//       res.status(201).json({
-//         message: "Quiz dupliqué avec succès",
-//         quiz: {
-//           id: duplicatedQuiz.id,
-//           title: duplicatedQuiz.title,
-//           description: duplicatedQuiz.description,
-//           category: duplicatedQuiz.category,
-//           tags: duplicatedQuiz.tags,
-//           difficulty: duplicatedQuiz.difficulty,
-//           questionCount: duplicatedQuiz.getQuestionCount(),
-//           totalPoints: duplicatedQuiz.getTotalPoints(),
-//           estimatedDuration: duplicatedQuiz.estimatedDuration,
-//           settings: duplicatedQuiz.settings,
-//           createdAt: duplicatedQuiz.createdAt,
-//         },
-//       });
-//     } catch (error) {
-//       console.error("Erreur lors de la duplication du quiz:", error);
-//       res.status(500).json({
-//         error: "Erreur lors de la duplication du quiz",
-//       });
-//     }
-//   }
-// );
 router.post(
   "/:id/duplicate",
   authenticateToken,
@@ -735,5 +685,112 @@ router.post(
     }
   }
 );
+
+// GET /api/quiz/:id/public - Vue publique d'un quiz (sans révéler les réponses)
+router.get("/:id/public", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id; // Utilisateur optionnel (peut être null)
+
+    console.log(`🔍 Demande vue publique quiz ${id} par utilisateur ${userId || 'anonyme'}`);
+
+    const quiz = await Quiz.findByPk(id, {
+      include: [
+        {
+          model: User,
+          as: "creator",
+          attributes: ["id", "firstName", "username"],
+        },
+      ],
+    });
+
+    if (!quiz || !quiz.isActive) {
+      return res.status(404).json({
+        error: "Quiz non trouvé",
+      });
+    }
+
+    // Vérifier les permissions d'accès
+    const canAccess = 
+      quiz.settings?.isPublic || // Quiz public
+      (userId && (
+        userId === quiz.creatorId || // Propriétaire
+        req.user?.role === "admin" || // Admin
+        req.user?.role === "formateur" // Formateur
+      ));
+
+    if (!canAccess) {
+      return res.status(403).json({
+        error: "Ce quiz n'est pas accessible publiquement",
+      });
+    }
+
+    // Préparer la version publique du quiz
+    const publicQuizData = {
+      id: quiz.id,
+      title: quiz.title,
+      description: quiz.description,
+      category: quiz.category,
+      difficulty: quiz.difficulty,
+      tags: quiz.tags,
+      settings: {
+        isPublic: quiz.settings?.isPublic || false,
+        allowAnonymous: quiz.settings?.allowAnonymous || false,
+        showResults: quiz.settings?.showResults || false,
+      },
+      creator: quiz.creator ? {
+        id: quiz.creator.id,
+        firstName: quiz.creator.firstName,
+        username: quiz.creator.username,
+      } : null,
+      createdAt: quiz.createdAt,
+      updatedAt: quiz.updatedAt,
+      questionCount: quiz.getQuestionCount(),
+      totalPoints: quiz.getTotalPoints(),
+      estimatedDuration: quiz.estimatedDuration,
+    };
+
+    // Ajouter les informations des questions SANS révéler les réponses
+    if (quiz.questions && Array.isArray(quiz.questions)) {
+      publicQuizData.questions = quiz.questions.map((question, index) => ({
+        id: question.id || `question_${index}`,
+        type: question.type,
+        question: question.question,
+        image: question.image,
+        // Pour QCM, inclure seulement les textes des options (pas les bonnes réponses)
+        ...(question.type === 'qcm' && question.options && {
+          options: question.options.map(opt => ({
+            text: opt.text || opt
+          }))
+        }),
+        // Ne PAS inclure: correctAnswer, explanation, isCorrect, points, timeLimit
+      }));
+    }
+
+    // Ajouter les statistiques publiques si disponibles
+    if (quiz.stats) {
+      publicQuizData.stats = {
+        totalSessions: quiz.stats.totalSessions || 0,
+        totalParticipants: quiz.stats.totalParticipants || 0,
+        averageScore: quiz.stats.averageScore || 0,
+        completionRate: quiz.stats.completionRate || 0,
+        // Ne pas inclure les statistiques détaillées par question
+      };
+    }
+
+    console.log(`✅ Vue publique quiz ${id} envoyée`);
+
+    res.json({
+      message: "Vue publique du quiz récupérée avec succès",
+      quiz: publicQuizData,
+    });
+
+  } catch (error) {
+    console.error("❌ Erreur vue publique quiz:", error);
+    res.status(500).json({
+      error: "Erreur lors de la récupération de la vue publique du quiz",
+    });
+  }
+});
 
 module.exports = router;

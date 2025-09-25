@@ -394,7 +394,7 @@ const SessionPlay = () => {
     if (
       timeRemaining !== null &&
       timeRemaining > 0 &&
-      !isAnswered &&
+      // !isAnswered &&
       !showResults
     ) {
       console.log(`⏰ Démarrage timer: ${timeRemaining}s`);
@@ -406,7 +406,8 @@ const SessionPlay = () => {
             clearInterval(timerRef.current);
             timerRef.current = null;
 
-            if (componentMountedRef.current && !isAnswered) {
+            // if (componentMountedRef.current && !isAnswered) {
+            if (componentMountedRef.current) {
               handleTimeUp();
             }
             return 0;
@@ -422,7 +423,7 @@ const SessionPlay = () => {
         timerRef.current = null;
       }
     };
-  }, [timeRemaining, isAnswered, showResults]);
+  }, [timeRemaining, showResults]);
 
   // Gestion des événements Socket.IO
   useEffect(() => {
@@ -1858,8 +1859,7 @@ const SessionPlay = () => {
                   });
                 })()}
               </div>
-              // CORRECTION: Mise à jour du bouton de soumission pour gérer les
-              réponses libres
+
               {/* Actions */}
               <div className="px-6 pb-6">
                 {!isAnswered && !showResults && (

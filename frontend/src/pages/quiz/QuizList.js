@@ -13,6 +13,7 @@ import {
   TrashIcon,
   DocumentDuplicateIcon,
   PlayIcon,
+  LockClosedIcon,
   ChartBarIcon,
   AdjustmentsHorizontalIcon,
   XMarkIcon,
@@ -292,20 +293,23 @@ const QuizList = () => {
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              checked={selectedQuizzes.includes(quiz.id)}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  setSelectedQuizzes((prev) => [...prev, quiz.id]);
-                } else {
-                  setSelectedQuizzes((prev) =>
-                    prev.filter((id) => id !== quiz.id)
-                  );
-                }
-              }}
-            />
+            {/* Checkbox seulement pour formateurs/admins */}
+            {(user?.role === "formateur" || user?.role === "admin") && (
+              <input
+                type="checkbox"
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                checked={selectedQuizzes.includes(quiz.id)}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedQuizzes((prev) => [...prev, quiz.id]);
+                  } else {
+                    setSelectedQuizzes((prev) =>
+                      prev.filter((id) => id !== quiz.id)
+                    );
+                  }
+                }}
+              />
+            )}
           </div>
           <span className={`badge ${getDifficultyBadge(quiz.difficulty)}`}>
             {quiz.difficulty}
@@ -374,20 +378,34 @@ const QuizList = () => {
             <span className="mx-1">•</span>
             <span>{formatDate(quiz.createdAt)}</span>
           </div>
+
+          {/* Badge public pour les quiz publics */}
+          {quiz.settings?.isPublic && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+              <EyeIcon className="w-3 h-3 mr-1" />
+              Public
+            </span>
+          )}
         </div>
       </div>
 
       {/* Actions */}
       <div className="bg-gray-50 dark:bg-gray-700 px-6 py-3 flex justify-between items-center">
         <div className="flex space-x-2">
+          {/* MODIFICATION PRINCIPALE: Lien conditionnel selon le rôle */}
           <Link
-            to={`/quiz/${quiz.id}`}
+            to={
+              user?.role === "etudiant"
+                ? `/quiz/${quiz.id}/public` // Vue publique pour les étudiants
+                : `/quiz/${quiz.id}` // Vue complète pour formateurs/admins
+            }
             className="p-2 text-gray-400 hover:text-primary-600 transition-colors"
-            title="Voir"
+            title={user?.role === "etudiant" ? "Aperçu public" : "Voir"}
           >
             <EyeIcon className="h-4 w-4" />
           </Link>
 
+          {/* Actions de modification seulement pour formateurs/admins */}
           {(user?.role === "formateur" || user?.role === "admin") && (
             <>
               <Link
@@ -417,6 +435,7 @@ const QuizList = () => {
           )}
         </div>
 
+        {/* Bouton Lancer seulement pour formateurs/admins */}
         {(user?.role === "formateur" || user?.role === "admin") && (
           <Link
             to={`/session/create?quiz=${quiz.id}`}
@@ -425,6 +444,14 @@ const QuizList = () => {
             <PlayIcon className="h-4 w-4 mr-1" />
             Lancer
           </Link>
+        )}
+
+        {/* Message informatif pour étudiants */}
+        {user?.role === "etudiant" && (
+          <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
+            <LockClosedIcon className="w-3 h-3 mr-1" />
+            Aperçu seulement
+          </span>
         )}
       </div>
     </div>
@@ -522,7 +549,7 @@ const QuizList = () => {
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             {user?.role === "etudiant"
-              ? "Découvrez les quiz publics disponibles"
+              ? "Découvrez les quiz publics disponibles • Aperçu sans révéler les questions"
               : "Gérez et organisez vos quiz interactifs"}
           </p>
         </div>

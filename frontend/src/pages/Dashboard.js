@@ -186,79 +186,83 @@ const Dashboard = () => {
       </div>
 
       {/* Statistiques */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="card p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <PuzzlePieceIcon className="h-8 w-8 text-primary-600 dark:text-primary-400" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                  {user?.role === "etudiant" ? "Quiz Participés" : "Quiz Créés"}
-                </dt>
-                <dd className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {stats.totalQuizzes}
-                </dd>
-              </dl>
+      {user?.role === "formateur" || user?.role === "admin" ? (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="card p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <PuzzlePieceIcon className="h-8 w-8 text-primary-600 dark:text-primary-400" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
+                    {user?.role === "etudiant"
+                      ? "Quiz Participés"
+                      : "Quiz Créés"}
+                  </dt>
+                  <dd className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.totalQuizzes}
+                  </dd>
+                </dl>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="card p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <UserGroupIcon className="h-8 w-8 text-secondary-600 dark:text-secondary-400" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                  Sessions
-                </dt>
-                <dd className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {stats.totalSessions}
-                </dd>
-              </dl>
+          <div className="card p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <UserGroupIcon className="h-8 w-8 text-secondary-600 dark:text-secondary-400" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
+                    Sessions
+                  </dt>
+                  <dd className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.totalSessions}
+                  </dd>
+                </dl>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="card p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <FireIcon className="h-8 w-8 text-warning-600 dark:text-warning-400" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                  Participants
-                </dt>
-                <dd className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {stats.totalParticipants}
-                </dd>
-              </dl>
+          <div className="card p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <FireIcon className="h-8 w-8 text-warning-600 dark:text-warning-400" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
+                    Participants
+                  </dt>
+                  <dd className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.totalParticipants}
+                  </dd>
+                </dl>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="card p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <TrophyIcon className="h-8 w-8 text-success-600 dark:text-success-400" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                  Score Moyen
-                </dt>
-                <dd className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {stats.averageScore}%
-                </dd>
-              </dl>
+          <div className="card p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <TrophyIcon className="h-8 w-8 text-success-600 dark:text-success-400" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
+                    Score Moyen
+                  </dt>
+                  <dd className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.averageScore}%
+                  </dd>
+                </dl>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Actions rapides */}
       <div className="card p-6">
@@ -447,7 +451,7 @@ const Dashboard = () => {
       </div>
 
       {/* Section vide pour les étudiants */}
-      {user?.role === "etudiant" && (
+      {/* {user?.role === "etudiant" && (
         <div className="card p-6 text-center">
           <UserGroupIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
@@ -460,7 +464,7 @@ const Dashboard = () => {
             Rejoindre un Quiz
           </Link>
         </div>
-      )}
+      )} */}
     </div>
   );
 };

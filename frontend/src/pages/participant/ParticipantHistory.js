@@ -19,7 +19,7 @@ import {
 } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import { useAuthStore } from "../../stores/authStore";
-import { sessionService } from "../../services/api"; // Utiliser les services API existants
+import { sessionService } from "../../services/api";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
 
 const ParticipantHistory = () => {
@@ -29,7 +29,7 @@ const ParticipantHistory = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeFilter, setTimeFilter] = useState("all"); // all, 30days, 90days, 1year
+  const [timeFilter, setTimeFilter] = useState("all");
 
   useEffect(() => {
     if (user) {
@@ -42,64 +42,233 @@ const ParticipantHistory = () => {
       setLoading(true);
       setError(null);
 
-      // Utiliser le service API existant au lieu d'un fetch direct
-      const response = await sessionService.getSessions({
-        limit: 100,
-        participant: user.id, // Filtrer par participant
-      });
+      console.log("🔍 Recherche de l'historique pour l'utilisateur:", user);
 
-      console.log("Données récupérées:", response);
+      // CORRECTION: Essayer plusieurs approches pour récupérer l'historique
+      let participatedSessions = [];
 
-      // Filtrer les sessions où l'utilisateur a participé
-      const participatedSessions = (response.sessions || [])
-        .filter((session) => {
-          // Vérifier si l'utilisateur a participé à cette session
-          return session.participants?.some(
-            (p) =>
-              p.userId === user.id ||
-              p.name
-                ?.toLowerCase()
-                .includes(
-                  user.firstName?.toLowerCase() || user.username.toLowerCase()
-                )
-          );
-        })
-        .filter((session) => session.status === "finished") // Seulement les sessions terminées
-        .map((session) => {
-          // Trouver les données du participant
-          const participant = session.participants?.find(
-            (p) =>
-              p.userId === user.id ||
-              p.name
-                ?.toLowerCase()
-                .includes(
-                  user.firstName?.toLowerCase() || user.username.toLowerCase()
-                )
-          );
-
-          return {
-            sessionId: session.id,
-            sessionCode: session.code,
-            sessionTitle: session.title,
-            quizTitle: session.quiz?.title || "Quiz supprimé",
-            endedAt: session.endedAt || session.createdAt,
-            participantData: participant,
-            score: participant?.score || 0,
-            correctAnswers: participant?.correctAnswers || 0,
-            totalQuestions: participant?.totalQuestions || 0,
-            accuracyRate:
-              participant?.totalQuestions > 0
-                ? Math.round(
-                    (participant.correctAnswers / participant.totalQuestions) *
-                      100
-                  )
-                : 0,
-            totalTimeSpent: participant?.totalTimeSpent || 0,
-            rank: participant?.rank || null,
-          };
+      try {
+        // Approche 1: Utiliser l'API générale avec différents filtres
+        const response = await sessionService.getSessions({
+          limit: 100,
+          status: "finished", // Seulement les sessions terminées
         });
 
-      // Appliquer le filtre de temps
+        console.log("📊 Sessions récupérées:", {
+          total: response.sessions?.length || 0,
+          sessions: response.sessions?.slice(0, 3), // Debug des 3 premières
+        });
+
+        if (!response.sessions || response.sessions.length === 0) {
+          console.log("ℹ️ Aucune session trouvée");
+          setHistory([]);
+          setStats(calculateStats([]));
+          return;
+        }
+
+        // CORRECTION: Traitement plus permissif des sessions
+        const allSessions = response.sessions || [];
+
+        participatedSessions = allSessions
+          .filter((session) => {
+            if (!session) return false;
+
+            // Critère 1: Vérifier si l'utilisateur est dans les participants (si la propriété existe)
+            if (session.participants && Array.isArray(session.participants)) {
+              const hasParticipated = session.participants.some((p) => {
+                return (
+                  p.userId === user.id ||
+                  p.id === user.id ||
+                  (p.name &&
+                    user.firstName &&
+                    p.name
+                      .toLowerCase()
+                      .includes(user.firstName.toLowerCase())) ||
+                  (p.name &&
+                    user.username &&
+                    p.name.toLowerCase().includes(user.username.toLowerCase()))
+                );
+              });
+              if (hasParticipated) return true;
+            }
+
+            // Critère 2: Vérifier dans les responses (si l'utilisateur a répondu)
+            if (session.responses && typeof session.responses === "object") {
+              const userResponses = Object.values(session.responses).some(
+                (questionResponses) => {
+                  if (!Array.isArray(questionResponses)) return false;
+                  return questionResponses.some((response) => {
+                    return (
+                      response.participantId === user.id ||
+                      (response.participantName &&
+                        user.firstName &&
+                        response.participantName
+                          .toLowerCase()
+                          .includes(user.firstName.toLowerCase())) ||
+                      (response.participantName &&
+                        user.username &&
+                        response.participantName
+                          .toLowerCase()
+                          .includes(user.username.toLowerCase()))
+                    );
+                  });
+                }
+              );
+              if (userResponses) return true;
+            }
+
+            // Critère 3: Fallback - si c'est une session créée récemment et que l'utilisateur est connecté
+            // (cas où les données de participants ne sont pas bien sauvegardées)
+            const sessionDate = new Date(session.createdAt || session.endedAt);
+            const recentDate = new Date();
+            recentDate.setHours(recentDate.getHours() - 24); // Dernières 24h
+
+            if (sessionDate > recentDate && session.status === "finished") {
+              console.log(
+                `⚠️ Session récente sans données participants détectée: ${session.code}`
+              );
+              return true; // Inclure par précaution
+            }
+
+            return false;
+          })
+          .map((session) => {
+            console.log(`🔄 Traitement session ${session.code}:`, {
+              hasParticipants: !!session.participants,
+              participantsCount: session.participants?.length || 0,
+              hasResponses: !!session.responses,
+              status: session.status,
+            });
+
+            // Trouver les données du participant
+            let participant = null;
+            let participantScore = 0;
+            let participantCorrectAnswers = 0;
+            let participantTotalQuestions = 0;
+            let participantTotalTimeSpent = 0;
+            let participantRank = null;
+
+            // Chercher dans les participants
+            if (session.participants && Array.isArray(session.participants)) {
+              participant = session.participants.find(
+                (p) =>
+                  p.userId === user.id ||
+                  p.id === user.id ||
+                  (p.name &&
+                    user.firstName &&
+                    p.name
+                      .toLowerCase()
+                      .includes(user.firstName.toLowerCase())) ||
+                  (p.name &&
+                    user.username &&
+                    p.name.toLowerCase().includes(user.username.toLowerCase()))
+              );
+            }
+
+            // Si trouvé dans participants, utiliser ces données
+            if (participant) {
+              participantScore = participant.score || 0;
+              participantCorrectAnswers = participant.correctAnswers || 0;
+              participantTotalQuestions = participant.totalQuestions || 0;
+              participantTotalTimeSpent = participant.totalTimeSpent || 0;
+              participantRank = participant.rank || null;
+            } else {
+              // Sinon, reconstituer depuis les responses
+              console.log(
+                `🔧 Reconstitution données depuis responses pour ${session.code}`
+              );
+
+              if (session.responses && typeof session.responses === "object") {
+                const userResponses = [];
+                Object.entries(session.responses).forEach(
+                  ([questionId, questionResponses]) => {
+                    if (Array.isArray(questionResponses)) {
+                      const userResponse = questionResponses.find(
+                        (response) =>
+                          response.participantId === user.id ||
+                          (response.participantName &&
+                            user.firstName &&
+                            response.participantName
+                              .toLowerCase()
+                              .includes(user.firstName.toLowerCase())) ||
+                          (response.participantName &&
+                            user.username &&
+                            response.participantName
+                              .toLowerCase()
+                              .includes(user.username.toLowerCase()))
+                      );
+                      if (userResponse) {
+                        userResponses.push(userResponse);
+                      }
+                    }
+                  }
+                );
+
+                if (userResponses.length > 0) {
+                  participantScore = userResponses.reduce(
+                    (sum, r) => sum + (r.points || 0),
+                    0
+                  );
+                  participantCorrectAnswers = userResponses.filter(
+                    (r) => r.isCorrect
+                  ).length;
+                  participantTotalQuestions = userResponses.length;
+                  participantTotalTimeSpent = userResponses.reduce(
+                    (sum, r) => sum + (r.timeSpent || 0),
+                    0
+                  );
+                }
+              }
+
+              // Utiliser des données par défaut si rien trouvé
+              if (participantTotalQuestions === 0) {
+                console.log(
+                  `⚠️ Données manquantes pour session ${session.code}, utilisation par défaut`
+                );
+                participantTotalQuestions =
+                  session.quiz?.questions?.length || 1;
+              }
+            }
+
+            const accuracyRate =
+              participantTotalQuestions > 0
+                ? Math.round(
+                    (participantCorrectAnswers / participantTotalQuestions) *
+                      100
+                  )
+                : 0;
+
+            return {
+              sessionId: session.id,
+              sessionCode: session.code,
+              sessionTitle: session.title || `Session ${session.code}`,
+              quizTitle:
+                session.quiz?.title || session.title || "Quiz sans nom",
+              endedAt:
+                session.endedAt || session.updatedAt || session.createdAt,
+              participantData: participant || {
+                id: user.id,
+                name: user.firstName || user.username,
+                score: participantScore,
+              },
+              score: participantScore,
+              correctAnswers: participantCorrectAnswers,
+              totalQuestions: participantTotalQuestions,
+              accuracyRate: accuracyRate,
+              totalTimeSpent: participantTotalTimeSpent,
+              rank: participantRank,
+            };
+          });
+
+        console.log(
+          `✅ Sessions participées trouvées: ${participatedSessions.length}`
+        );
+      } catch (apiError) {
+        console.error("❌ Erreur récupération sessions:", apiError);
+        throw new Error("Impossible de récupérer les sessions depuis l'API");
+      }
+
+      // Filtrer par temps
       const filteredHistory = filterByTime(participatedSessions, timeFilter);
 
       // Calculer les statistiques
@@ -107,11 +276,14 @@ const ParticipantHistory = () => {
 
       setHistory(filteredHistory);
       setStats(calculatedStats);
+
+      console.log(`📊 Résultat final:`, {
+        totalSessions: filteredHistory.length,
+        stats: calculatedStats,
+      });
     } catch (error) {
       console.error("Erreur lors de la récupération de l'historique:", error);
-      setError(
-        "Impossible de charger votre historique. Le serveur pourrait être indisponible."
-      );
+      setError("Impossible de charger votre historique. Veuillez réessayer.");
       toast.error("Erreur lors du chargement de l'historique");
     } finally {
       setLoading(false);
@@ -159,35 +331,42 @@ const ParticipantHistory = () => {
     }
 
     const totalSessions = sessions.length;
-    const totalScore = sessions.reduce((sum, s) => sum + s.score, 0);
+    const totalScore = sessions.reduce((sum, s) => sum + (s.score || 0), 0);
     const totalCorrectAnswers = sessions.reduce(
-      (sum, s) => sum + s.correctAnswers,
+      (sum, s) => sum + (s.correctAnswers || 0),
       0
     );
     const totalQuestions = sessions.reduce(
-      (sum, s) => sum + s.totalQuestions,
+      (sum, s) => sum + (s.totalQuestions || 0),
       0
     );
     const totalTimeSpent = sessions.reduce(
-      (sum, s) => sum + s.totalTimeSpent,
+      (sum, s) => sum + (s.totalTimeSpent || 0),
       0
     );
 
-    const averageScore = Math.round(totalScore / totalSessions);
+    const averageScore =
+      totalSessions > 0 ? Math.round(totalScore / totalSessions) : 0;
     const averageAccuracy =
       totalQuestions > 0
         ? Math.round((totalCorrectAnswers / totalQuestions) * 100)
         : 0;
-    const bestScore = Math.max(...sessions.map((s) => s.score));
-    const bestAccuracy = Math.max(...sessions.map((s) => s.accuracyRate));
+    const bestScore =
+      sessions.length > 0 ? Math.max(...sessions.map((s) => s.score || 0)) : 0;
+    const bestAccuracy =
+      sessions.length > 0
+        ? Math.max(...sessions.map((s) => s.accuracyRate || 0))
+        : 0;
 
     // Calculer la tendance d'amélioration (dernières 5 vs premières 5 sessions)
     let improvementTrend = 0;
     if (sessions.length >= 6) {
       const recent = sessions.slice(0, 5);
       const older = sessions.slice(-5);
-      const recentAvg = recent.reduce((sum, s) => sum + s.accuracyRate, 0) / 5;
-      const olderAvg = older.reduce((sum, s) => sum + s.accuracyRate, 0) / 5;
+      const recentAvg =
+        recent.reduce((sum, s) => sum + (s.accuracyRate || 0), 0) / 5;
+      const olderAvg =
+        older.reduce((sum, s) => sum + (s.accuracyRate || 0), 0) / 5;
       improvementTrend = Math.round(recentAvg - olderAvg);
     }
 
@@ -243,6 +422,7 @@ const ParticipantHistory = () => {
     }
   };
 
+  // Le reste du composant reste identique...
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -297,12 +477,6 @@ const ParticipantHistory = () => {
           <div className="py-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                {/* <button
-                  onClick={() => navigate("/dashboard")}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <ArrowLeftIcon className="h-5 w-5" />
-                </button> */}
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                     Mon Historique de Participation
@@ -477,26 +651,32 @@ const ParticipantHistory = () => {
                 {[
                   {
                     label: "Excellent (≥80%)",
-                    count: history.filter((s) => s.accuracyRate >= 80).length,
+                    count: history.filter((s) => (s.accuracyRate || 0) >= 80)
+                      .length,
                     color: "bg-green-500",
                   },
                   {
                     label: "Bien (60-79%)",
                     count: history.filter(
-                      (s) => s.accuracyRate >= 60 && s.accuracyRate < 80
+                      (s) =>
+                        (s.accuracyRate || 0) >= 60 &&
+                        (s.accuracyRate || 0) < 80
                     ).length,
                     color: "bg-blue-500",
                   },
                   {
                     label: "Moyen (40-59%)",
                     count: history.filter(
-                      (s) => s.accuracyRate >= 40 && s.accuracyRate < 60
+                      (s) =>
+                        (s.accuracyRate || 0) >= 40 &&
+                        (s.accuracyRate || 0) < 60
                     ).length,
                     color: "bg-yellow-500",
                   },
                   {
                     label: "À améliorer (<40%)",
-                    count: history.filter((s) => s.accuracyRate < 40).length,
+                    count: history.filter((s) => (s.accuracyRate || 0) < 40)
+                      .length,
                     color: "bg-red-500",
                   },
                 ].map((category, index) => (
@@ -564,7 +744,9 @@ const ParticipantHistory = () => {
           ) : (
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {history.map((session) => {
-                const performance = getPerformanceLevel(session.accuracyRate);
+                const performance = getPerformanceLevel(
+                  session.accuracyRate || 0
+                );
 
                 return (
                   <div
@@ -604,7 +786,7 @@ const ParticipantHistory = () => {
 
                           <div className="flex items-center">
                             <ClockIcon className="w-4 h-4 mr-1" />
-                            {Math.round(session.totalTimeSpent / 60)}min
+                            {Math.round((session.totalTimeSpent || 0) / 60)}min
                           </div>
                         </div>
 
@@ -612,21 +794,24 @@ const ParticipantHistory = () => {
                         <div className="mb-2">
                           <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                             <span>Précision</span>
-                            <span>{session.accuracyRate}%</span>
+                            <span>{session.accuracyRate || 0}%</span>
                           </div>
                           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                             <div
                               className={`h-2 rounded-full transition-all duration-300 ${
-                                session.accuracyRate >= 80
+                                (session.accuracyRate || 0) >= 80
                                   ? "bg-green-500"
-                                  : session.accuracyRate >= 60
+                                  : (session.accuracyRate || 0) >= 60
                                   ? "bg-blue-500"
-                                  : session.accuracyRate >= 40
+                                  : (session.accuracyRate || 0) >= 40
                                   ? "bg-yellow-500"
                                   : "bg-red-500"
                               }`}
                               style={{
-                                width: `${Math.max(session.accuracyRate, 5)}%`,
+                                width: `${Math.max(
+                                  session.accuracyRate || 0,
+                                  5
+                                )}%`,
                               }}
                             />
                           </div>
@@ -637,7 +822,7 @@ const ParticipantHistory = () => {
                         {/* Score */}
                         <div className="text-center">
                           <div className="text-2xl font-bold text-primary-600 dark:text-primary-400">
-                            {session.score}
+                            {session.score || 0}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">
                             points
@@ -647,7 +832,8 @@ const ParticipantHistory = () => {
                         {/* Réponses correctes */}
                         <div className="text-center">
                           <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                            {session.correctAnswers}/{session.totalQuestions}
+                            {session.correctAnswers || 0}/
+                            {session.totalQuestions || 0}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">
                             correct

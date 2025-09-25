@@ -192,6 +192,36 @@ export const quizService = {
     const response = await apiClient.post(`/quiz/${quizId}/duplicate`);
     return response.data;
   },
+
+  getQuizPublic: async (quizId) => {
+    if (!quizId) {
+      throw new Error("ID de quiz requis");
+    }
+
+    try {
+      console.log("📡 quizService.getQuizPublic:", quizId);
+
+      const response = await apiClient.get(`/quiz/${quizId}/public`);
+
+      console.log("✅ getQuizPublic response:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("❌ getQuizPublic error:", error);
+
+      if (error.response?.status === 403) {
+        throw new Error("Ce quiz n'est pas accessible publiquement");
+      }
+
+      if (error.response?.status === 404) {
+        throw new Error("Quiz non trouvé");
+      }
+
+      throw new Error(
+        error.response?.data?.error ||
+          "Erreur lors de la récupération de la vue publique du quiz"
+      );
+    }
+  },
 };
 
 // Service de gestion des sessions - CORRIGÉ ET OPTIMISÉ

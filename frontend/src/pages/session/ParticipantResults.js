@@ -16,7 +16,8 @@ import {
 } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
-import apiClient from "../../services/api";
+// CORRECTION: Importer sessionService au lieu d'apiClient
+import { sessionService } from "../../services/api";
 
 const ParticipantResults = () => {
   const { sessionId, participantId } = useParams();
@@ -56,8 +57,8 @@ const ParticipantResults = () => {
           "API spécifique indisponible, utilisation de l'API générale"
         );
 
-        // Fallback : utiliser l'API générale de session
-        const sessionResponse = await apiClient.getSession(sessionId);
+        // CORRECTION: Utiliser sessionService.getSession au lieu d'apiClient.getSession
+        const sessionResponse = await sessionService.getSession(sessionId);
         const sessionData = sessionResponse.session;
 
         if (!sessionData) {
@@ -162,6 +163,7 @@ const ParticipantResults = () => {
     }
   };
 
+  // ... rest of the component code remains exactly the same ...
   const handleShare = async () => {
     const shareData = {
       title: `Résultats du quiz`,
