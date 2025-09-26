@@ -40,8 +40,8 @@ const SessionHost = () => {
   const [leaderboard, setLeaderboard] = useState([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
-  const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
+  // const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
+  // const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
 
   // États pour la gestion des questions
   const [questionTimer, setQuestionTimer] = useState(null);
@@ -288,6 +288,34 @@ const SessionHost = () => {
       }
     };
 
+    const handleNextQuestionFromServer = (data) => {
+      if (!isSocketMounted || !componentMountedRef.current) return;
+
+      console.log("🎯 Question automatique reçue du serveur:", data);
+
+      // Mettre à jour l'état local
+      if (data.question && data.question.timeLimit) {
+        setQuestionTimer(data.question.timeLimit);
+        console.log(`⏰ Timer local mis à jour: ${data.question.timeLimit}s`);
+      } else {
+        setQuestionTimer(null);
+      }
+
+      // Recharger la session pour avoir l'état à jour
+      setTimeout(() => {
+        if (componentMountedRef.current) {
+          loadSession();
+        }
+      }, 500);
+
+      if (data.autoAdvanced) {
+        toast.success("⏰ Avancement automatique par le serveur", {
+          duration: 3000,
+          style: { background: "#10B981", color: "white" },
+        });
+      }
+    };
+
     // Écouter les événements
     socket.on("participant_joined", handleParticipantJoined);
     socket.on("participant_left", handleParticipantLeft);
@@ -297,6 +325,7 @@ const SessionHost = () => {
     socket.on("host_connected", handleHostConnected);
     socket.on("session_updated", handleSessionUpdated);
     socket.on("error", handleError);
+    socket.on("next_question", handleNextQuestionFromServer);
 
     // Nettoyage
     return () => {
@@ -309,43 +338,10 @@ const SessionHost = () => {
       socket.off("host_connected", handleHostConnected);
       socket.off("session_updated", handleSessionUpdated);
       socket.off("error", handleError);
+      socket.off("next_question", handleNextQuestionFromServer);
     };
   }, [socket, isConnected, session]);
 
-  // Timer pour la question courante
-  useEffect(() => {
-    if (questionTimer === null || questionTimer <= 0) return;
-
-    const interval = setInterval(() => {
-      setQuestionTimer((prev) => {
-        if (prev === null || prev <= 1) {
-          // Temps écoulé
-          clearInterval(interval);
-          if (componentMountedRef.current && autoAdvanceEnabled) {
-            console.log("⏰ Temps écoulé côté hôte, avancement automatique...");
-
-            toast("⏰ Temps écoulé pour cette question !", {
-              icon: "⚠️",
-              style: {
-                background: "#F59E0B",
-                color: "white",
-              },
-              duration: 3000,
-            });
-
-            // Déclencher l'avancement automatique
-            handleAutoAdvance();
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [questionTimer, autoAdvanceEnabled]);
-
-  // Fonction utilitaire pour exécuter des actions avec protection
   const executeAction = useCallback(
     async (actionName, actionFn) => {
       if (!componentMountedRef.current) return;
@@ -399,54 +395,43 @@ const SessionHost = () => {
     [sessionId, loadSession]
   );
 
-  const handleAutoAdvance = useCallback(async () => {
-    if (isAutoAdvancing || !componentMountedRef.current) return;
+  useEffect(() => {
+    if (questionTimer === null || questionTimer <= 0) return;
 
-    try {
-      setIsAutoAdvancing(true);
+    const interval = setInterval(() => {
+      setQuestionTimer((prev) => {
+        if (prev === null || prev <= 1) {
+          // Temps écoulé - PLUS D'AUTO-ADVANCE ICI
+          clearInterval(interval);
 
-      // Vérifier s'il y a une question suivante
-      const currentIndex = session?.currentQuestionIndex || 0;
-      const totalQuestions = session?.quiz?.questions?.length || 0;
-
-      console.log(`🔄 Avancement auto: ${currentIndex + 1}/${totalQuestions}`);
-
-      if (currentIndex >= totalQuestions - 1) {
-        // Dernière question : terminer la session
-        console.log("🏁 Dernière question, fin automatique de session");
-
-        toast.success("Dernière question terminée ! Fin de session...", {
-          duration: 3000,
-        });
-
-        // Attendre un peu avant de terminer
-        setTimeout(() => {
+          // Juste afficher un toast informatif
           if (componentMountedRef.current) {
-            executeAction("fin automatique", async () => {
-              endSession();
-            });
+            console.log(
+              "⏰ Temps écoulé côté hôte (le serveur va gérer l'avancement)"
+            );
+
+            toast(
+              "⏰ Temps écoulé ! Le serveur va avancer automatiquement...",
+              {
+                icon: "⏰",
+                style: {
+                  background: "#F59E0B",
+                  color: "white",
+                },
+                duration: 3000,
+              }
+            );
           }
-        }, 2000);
-      } else {
-        // Passer à la question suivante
-        console.log(`➡️ Passage automatique à la question ${currentIndex + 2}`);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-        await executeAction("passage automatique", async () => {
-          nextQuestion();
-        });
+    return () => clearInterval(interval);
+  }, [questionTimer]);
 
-        toast.success(`Question ${currentIndex + 2}`, {
-          icon: "➡️",
-          duration: 2000,
-        });
-      }
-    } catch (error) {
-      console.error("❌ Erreur avancement automatique:", error);
-      toast.error("Erreur lors de l'avancement automatique");
-    } finally {
-      setIsAutoAdvancing(false);
-    }
-  }, [session, nextQuestion, endSession, executeAction, isAutoAdvancing]);
+  // Fonction utilitaire pour exécuter des actions avec protection
 
   // Actions de session
   const handleStartSession = useCallback(() => {
@@ -584,22 +569,20 @@ const SessionHost = () => {
   };
 
   const handleNextQuestion = useCallback(() => {
-    if (isAutoAdvancing) return;
-
+    // ENLEVER le check isAutoAdvancing car on ne le fait plus côté frontend
     executeAction("passage manuel", async () => {
-      nextQuestion();
-      toast.success("Question suivante !");
+      if (socket && isConnected) {
+        socket.emit("next_question", { sessionId: session.id });
+      }
     });
-  }, [nextQuestion, executeAction, isAutoAdvancing]);
+  }, [socket, isConnected, session?.id, executeAction]);
 
   const handlePreviousQuestion = useCallback(() => {
-    if (isAutoAdvancing) return;
-
     executeAction("retour", async () => {
       // Implémenter previousQuestion si disponible
       toast.info("Question précédente");
     });
-  }, [executeAction, isAutoAdvancing]);
+  }, [executeAction]);
 
   // Fonction pour formater le temps restant
   const formatTimeWithProgress = (seconds) => {
@@ -625,12 +608,27 @@ const SessionHost = () => {
 
     const { timeString, percentage } = formatTimeWithProgress(questionTimer);
     const isLowTime = questionTimer <= 10;
+    const isCriticalTime = questionTimer <= 5;
 
     return (
-      <div className="bg-red-50 dark:bg-red-900 rounded-lg p-4 relative overflow-hidden">
+      <div
+        className={`rounded-lg p-4 relative overflow-hidden ${
+          isCriticalTime
+            ? "bg-red-100 dark:bg-red-900"
+            : isLowTime
+            ? "bg-orange-50 dark:bg-orange-900"
+            : "bg-blue-50 dark:bg-blue-900"
+        }`}
+      >
         {/* Barre de progression */}
         <div
-          className="absolute inset-0 bg-red-200 dark:bg-red-800 transition-all duration-1000 ease-linear"
+          className={`absolute inset-0 transition-all duration-1000 ease-linear ${
+            isCriticalTime
+              ? "bg-red-200 dark:bg-red-800"
+              : isLowTime
+              ? "bg-orange-200 dark:bg-orange-800"
+              : "bg-blue-200 dark:bg-blue-800"
+          }`}
           style={{ width: `${percentage}%` }}
         />
 
@@ -638,51 +636,57 @@ const SessionHost = () => {
           <div className="flex items-center">
             <ClockIcon
               className={`h-8 w-8 ${
-                isLowTime ? "animate-pulse text-red-700" : "text-red-600"
-              } dark:text-red-400`}
+                isCriticalTime
+                  ? "animate-pulse text-red-700"
+                  : isLowTime
+                  ? "text-orange-600"
+                  : "text-blue-600"
+              } dark:text-current`}
             />
             <div className="ml-3">
-              <p className="text-sm font-medium text-red-600 dark:text-red-400">
+              <p
+                className={`text-sm font-medium ${
+                  isCriticalTime
+                    ? "text-red-700"
+                    : isLowTime
+                    ? "text-orange-600"
+                    : "text-blue-600"
+                } dark:text-current`}
+              >
                 Temps restant
-                {autoAdvanceEnabled && (
-                  <span className="ml-2 text-xs">
-                    (Avancement auto {isAutoAdvancing ? "⏳" : "🤖"})
-                  </span>
-                )}
+                {/* ENLEVER les références à autoAdvanceEnabled */}
               </p>
               <p
                 className={`text-2xl font-semibold ${
-                  isLowTime ? "animate-pulse" : ""
-                } text-red-900 dark:text-red-100`}
+                  isCriticalTime ? "animate-pulse" : ""
+                } text-gray-900 dark:text-white`}
               >
                 {timeString}
               </p>
             </div>
           </div>
 
-          {/* Toggle pour activer/désactiver l'auto-advance */}
-          <div className="flex items-center space-x-2">
-            <label className="text-xs text-red-600 dark:text-red-400">
-              Auto
-            </label>
-            <button
-              onClick={() => setAutoAdvanceEnabled(!autoAdvanceEnabled)}
-              className={`w-8 h-4 rounded-full transition-colors ${
-                autoAdvanceEnabled ? "bg-red-600" : "bg-gray-400"
-              }`}
-            >
-              <div
-                className={`w-3 h-3 bg-white rounded-full shadow transform transition-transform ${
-                  autoAdvanceEnabled ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
-            </button>
+          {/* ENLEVER complètement le toggle auto-advance */}
+          <div className="text-right">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Avancement automatique
+            </p>
+            <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+              🤖 Géré par le serveur
+            </p>
           </div>
         </div>
 
-        {isLowTime && (
-          <div className="mt-2 text-xs text-red-700 dark:text-red-300">
-            ⚠️ Temps bientôt écoulé !
+        {/* Messages selon le temps restant */}
+        {isCriticalTime && (
+          <div className="mt-2 text-xs text-red-700 dark:text-red-300 animate-pulse">
+            🚨 Avancement automatique imminent !
+          </div>
+        )}
+
+        {isLowTime && !isCriticalTime && (
+          <div className="mt-2 text-xs text-orange-700 dark:text-orange-300">
+            ⏰ Le serveur va bientôt avancer automatiquement
           </div>
         )}
       </div>
@@ -700,7 +704,7 @@ const SessionHost = () => {
       <div className="flex items-center justify-between mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
         <button
           onClick={handlePreviousQuestion}
-          disabled={isFirstQuestion || actionLoading || isAutoAdvancing}
+          disabled={isFirstQuestion || actionLoading} // ENLEVER isAutoAdvancing
           className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <ArrowLeftIcon className="w-4 h-4 mr-2" />
@@ -712,16 +716,17 @@ const SessionHost = () => {
             Question {currentIndex + 1} sur {totalQuestions}
           </span>
 
-          {questionTimer > 0 && autoAdvanceEnabled && (
+          {/* ENLEVER les infos d'auto-advance */}
+          {questionTimer > 0 && (
             <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 px-2 py-1 rounded">
-              Auto: {questionTimer}s
+              Auto-serveur: {questionTimer}s
             </span>
           )}
         </div>
 
         <button
           onClick={handleNextQuestion}
-          disabled={isLastQuestion || actionLoading || isAutoAdvancing}
+          disabled={isLastQuestion || actionLoading} // ENLEVER isAutoAdvancing
           className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Suivante
