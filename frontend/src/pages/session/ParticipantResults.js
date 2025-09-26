@@ -16,7 +16,6 @@ import {
 } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
-// CORRECTION: Importer sessionService au lieu d'apiClient
 import { sessionService } from "../../services/api";
 
 const ParticipantResults = () => {
@@ -33,129 +32,208 @@ const ParticipantResults = () => {
   const fetchParticipantResults = async () => {
     try {
       setLoading(true);
+      setError(null);
 
-      // CORRECTION: Essayer d'abord l'API spécifique, puis fallback sur l'API générale
-      let response;
-      let data;
+      console.log("🔍 Récupération des résultats participant:", {
+        sessionId,
+        participantId,
+      });
 
-      try {
-        // Tentative avec l'API spécifique
-        response = await fetch(
-          `/api/session/${sessionId}/participant/${participantId}/results`
-        );
+      // Récupérer directement la session et extraire les données du participant
+      const sessionResponse = await sessionService.getSession(sessionId);
+      const sessionData = sessionResponse.session;
 
-        if (response.ok) {
-          data = await response.json();
-        } else if (response.status === 404 || response.status === 500) {
-          // L'endpoint n'existe pas, utiliser l'API générale
-          throw new Error("Endpoint spécifique non disponible");
-        } else {
-          throw new Error(`Erreur HTTP: ${response.status}`);
-        }
-      } catch (apiError) {
-        console.log(
-          "API spécifique indisponible, utilisation de l'API générale"
-        );
-
-        // CORRECTION: Utiliser sessionService.getSession au lieu d'apiClient.getSession
-        const sessionResponse = await sessionService.getSession(sessionId);
-        const sessionData = sessionResponse.session;
-
-        if (!sessionData) {
-          throw new Error("Session non trouvée");
-        }
-
-        // Trouver le participant
-        const participant = sessionData.participants?.find(
-          (p) =>
-            p.id === participantId ||
-            p.id.includes(participantId) ||
-            participantId.includes(p.id)
-        );
-
-        if (!participant) {
-          throw new Error("Participant non trouvé dans cette session");
-        }
-
-        // Reconstruire les résultats du participant
-        const responses = sessionData.responses || {};
-        const participantResponses = [];
-
-        Object.keys(responses).forEach((questionId, questionIndex) => {
-          const questionResponses = responses[questionId] || [];
-          const participantResponse = questionResponses.find(
-            (r) => r.participantId === participant.id
-          );
-
-          if (participantResponse) {
-            // Trouver la question correspondante
-            const question = sessionData.quiz?.questions?.find(
-              (q) => q.id === questionId || q.order === questionIndex + 1
-            ) || { question: `Question ${questionIndex + 1}` };
-
-            participantResponses.push({
-              questionId: questionId,
-              questionText: question.question,
-              answer: participantResponse.answer,
-              isCorrect: participantResponse.isCorrect || false,
-              points: participantResponse.points || 0,
-              timeSpent: participantResponse.timeSpent || 0,
-              submittedAt: participantResponse.submittedAt,
-            });
-          }
-        });
-
-        // Calculer les statistiques
-        const totalQuestions = sessionData.quiz?.questions?.length || 0;
-        const correctAnswers = participantResponses.filter(
-          (r) => r.isCorrect
-        ).length;
-        const totalTimeSpent = participantResponses.reduce(
-          (sum, r) => sum + (r.timeSpent || 0),
-          0
-        );
-        const accuracyRate =
-          totalQuestions > 0
-            ? Math.round((correctAnswers / totalQuestions) * 100)
-            : 0;
-
-        // Calculer le rang
-        const participants = sessionData.participants || [];
-        const sortedParticipants = participants
-          .filter((p) => typeof p.score === "number")
-          .sort((a, b) => (b.score || 0) - (a.score || 0));
-
-        const rank =
-          sortedParticipants.findIndex((p) => p.id === participant.id) + 1;
-
-        // Reconstituer la structure attendue
-        data = {
-          participant: {
-            id: participant.id,
-            name: participant.name,
-            score: participant.score || 0,
-            correctAnswers,
-            totalQuestions,
-            accuracyRate,
-            totalTimeSpent,
-            averageTimePerQuestion:
-              participantResponses.length > 0
-                ? Math.round(totalTimeSpent / participantResponses.length)
-                : 0,
-          },
-          responses: participantResponses,
-          rank: rank > 0 ? rank : null,
-          session: {
-            id: sessionData.id,
-            code: sessionData.code,
-            title: sessionData.title,
-          },
-        };
+      if (!sessionData) {
+        throw new Error("Session non trouvée");
       }
 
-      setResults(data);
+      console.log("📊 Session récupérée:", sessionData);
+
+      // Trouver le participant avec une recherche plus flexible
+      const participants = sessionData.participants || [];
+      const participant = participants.find(
+        (p) =>
+          p &&
+          (p.id === participantId ||
+            p.id.includes(participantId) ||
+            participantId.includes(p.id) ||
+            p.id.toString() === participantId.toString())
+      );
+
+      if (!participant) {
+        console.error("Participant non trouvé:", {
+          recherché: participantId,
+          participants: participants.map((p) => ({ id: p.id, name: p.name })),
+        });
+        throw new Error("Participant non trouvé dans cette session");
+      }
+
+      console.log("👤 Participant trouvé:", participant);
+
+      // CORRECTION PRINCIPALE: Calculer le score maximum possible du quiz
+      const quizQuestions = sessionData.quiz?.questions || [];
+      const maxPossibleScore = quizQuestions.reduce((total, question) => {
+        return total + (parseInt(question.points) || 1);
+      }, 0);
+
+      console.log("💯 Calcul score maximum:", {
+        nombreQuestions: quizQuestions.length,
+        scoreMaximum: maxPossibleScore,
+        scoreObtenu: participant.score || 0,
+      });
+
+      // CORRECTION: Récupérer les réponses détaillées pour calculer les vraies stats
+      const responses = sessionData.responses || {};
+      const participantResponses = [];
+      let actualCorrectAnswers = 0;
+      let actualTotalTimeSpent = 0;
+
+      Object.keys(responses).forEach((questionId, questionIndex) => {
+        const questionResponses = responses[questionId] || [];
+        const participantResponse = questionResponses.find(
+          (r) => r.participantId === participant.id
+        );
+
+        if (participantResponse) {
+          // Trouver la question correspondante
+          const question = quizQuestions.find(
+            (q) => q.id === questionId || q.order === questionIndex + 1
+          ) || {
+            question: `Question ${questionIndex + 1}`,
+            id: questionId,
+            points: 1,
+          };
+
+          participantResponses.push({
+            questionId: questionId,
+            questionText:
+              question.question ||
+              question.text ||
+              `Question ${questionIndex + 1}`,
+            answer: participantResponse.answer,
+            isCorrect: participantResponse.isCorrect || false,
+            points: participantResponse.points || 0,
+            timeSpent: participantResponse.timeSpent || 0,
+            submittedAt: participantResponse.submittedAt,
+            maxPoints: parseInt(question.points) || 1,
+          });
+
+          // CORRECTION: Compter les bonnes réponses basées sur les points obtenus
+          if (participantResponse.isCorrect || participantResponse.points > 0) {
+            actualCorrectAnswers++;
+          }
+          actualTotalTimeSpent += participantResponse.timeSpent || 0;
+        }
+      });
+
+      console.log("📝 Réponses analysées:", {
+        nombreRéponses: participantResponses.length,
+        bonnesRéponses: actualCorrectAnswers,
+        tempsTotal: actualTotalTimeSpent,
+      });
+
+      // CORRECTION: Calculer le taux de réussite basé sur le score ET sur les bonnes réponses
+      const scoreBasedAccuracyRate =
+        maxPossibleScore > 0
+          ? Math.round(((participant.score || 0) / maxPossibleScore) * 100)
+          : 0;
+
+      const answerBasedAccuracyRate =
+        participantResponses.length > 0
+          ? Math.round(
+              (actualCorrectAnswers / participantResponses.length) * 100
+            )
+          : 0;
+
+      // Utiliser le taux le plus élevé (certains quiz donnent des points partiels)
+      const finalAccuracyRate = Math.max(
+        scoreBasedAccuracyRate,
+        answerBasedAccuracyRate
+      );
+
+      console.log("🎯 Calculs de taux de réussite:", {
+        scoreBasedAccuracyRate,
+        answerBasedAccuracyRate,
+        finalAccuracyRate,
+        scoreObtenu: participant.score,
+        scoreMaximum: maxPossibleScore,
+      });
+
+      // Structure des statistiques du participant
+      const participantStats = {
+        id: participant.id,
+        name: participant.name,
+        score: participant.score || 0,
+        maxPossibleScore: maxPossibleScore,
+        correctAnswers: actualCorrectAnswers,
+        totalQuestions: participantResponses.length,
+        totalTimeSpent: actualTotalTimeSpent,
+        // CORRECTION: Utiliser le calcul corrigé
+        accuracyRate: finalAccuracyRate,
+        // CORRECTION: Calculer le temps moyen par question basé sur les vraies réponses
+        averageTimePerQuestion:
+          participantResponses.length > 0
+            ? Math.round(actualTotalTimeSpent / participantResponses.length)
+            : 0,
+        // Ajouter des stats supplémentaires
+        scorePercentage:
+          maxPossibleScore > 0
+            ? Math.round(((participant.score || 0) / maxPossibleScore) * 100)
+            : 0,
+      };
+
+      // Calculer le rang basé sur les scores réels des participants
+      const validParticipants = participants.filter(
+        (p) => p && typeof p.score === "number" && !isNaN(p.score)
+      );
+
+      const sortedParticipants = validParticipants.sort(
+        (a, b) => (b.score || 0) - (a.score || 0)
+      );
+
+      const rank =
+        sortedParticipants.findIndex((p) => p.id === participant.id) + 1;
+
+      console.log("🏆 Calcul du rang:", {
+        totalParticipants: validParticipants.length,
+        participantScore: participant.score,
+        rank: rank > 0 ? rank : null,
+        classement: sortedParticipants
+          .slice(0, 5)
+          .map((p) => ({ name: p.name, score: p.score })),
+      });
+
+      // Structure finale des résultats
+      const resultData = {
+        participant: participantStats,
+        responses: participantResponses,
+        rank: rank > 0 ? rank : null,
+        session: {
+          id: sessionData.id,
+          code: sessionData.code,
+          title: sessionData.title,
+          status: sessionData.status,
+          quiz: sessionData.quiz,
+        },
+        // Ajouter les statistiques globales pour contexte
+        sessionStats: {
+          totalParticipants: participants.length,
+          totalActiveParticipants: validParticipants.length,
+          averageScore:
+            validParticipants.length > 0
+              ? Math.round(
+                  validParticipants.reduce((sum, p) => sum + p.score, 0) /
+                    validParticipants.length
+                )
+              : 0,
+          maxPossibleScore: maxPossibleScore,
+        },
+      };
+
+      console.log("✅ Résultats finaux avec calculs corrigés:", resultData);
+      setResults(resultData);
     } catch (error) {
-      console.error("Erreur lors de la récupération des résultats:", error);
+      console.error("💥 Erreur lors de la récupération des résultats:", error);
       setError(error.message);
       toast.error("Erreur lors du chargement des résultats");
     } finally {
@@ -163,11 +241,12 @@ const ParticipantResults = () => {
     }
   };
 
-  // ... rest of the component code remains exactly the same ...
   const handleShare = async () => {
+    if (!results) return;
+
     const shareData = {
-      title: `Résultats du quiz`,
-      text: `J'ai obtenu ${results?.participant.score} points avec ${results?.participant.accuracyRate}% de bonnes réponses !`,
+      title: `Résultats du quiz - ${results.session.title}`,
+      text: `J'ai obtenu ${results.participant.score}/${results.participant.maxPossibleScore} points (${results.participant.accuracyRate}%) !`,
       url: window.location.href,
     };
 
@@ -177,9 +256,9 @@ const ParticipantResults = () => {
       } else {
         // Fallback: copier dans le presse-papier
         await navigator.clipboard.writeText(
-          shareData.text + "\n" + shareData.url
+          `${shareData.text}\n${shareData.url}`
         );
-        toast.success("Lien copié dans le presse-papier !");
+        toast.success("Résultats copiés dans le presse-papier !");
       }
     } catch (error) {
       console.error("Erreur lors du partage:", error);
@@ -218,9 +297,8 @@ const ParticipantResults = () => {
     );
   }
 
-  const { participant, responses, rank } = results;
+  const { participant, responses, rank, session, sessionStats } = results;
   const performance = participant.accuracyRate;
-  const timeEfficiency = participant.averageTimePerQuestion;
 
   // Déterminer le niveau de performance
   let performanceLevel = "Peut mieux faire";
@@ -261,7 +339,7 @@ const ParticipantResults = () => {
                   Mes Résultats
                 </h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {participant.name} • Session terminée
+                  {participant.name} • {session.title}
                 </p>
               </div>
             </div>
@@ -290,10 +368,16 @@ const ParticipantResults = () => {
               <p className="text-gray-600 dark:text-gray-400">
                 Vous avez terminé le quiz avec succès
               </p>
+              {rank && (
+                <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                  Classement: #{rank} sur {sessionStats.totalActiveParticipants}{" "}
+                  participants
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Stats principales */}
+          {/* Stats principales avec score maximum */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <div className="text-center">
               <div className="text-3xl font-bold text-primary-600 mb-1">
@@ -301,6 +385,9 @@ const ParticipantResults = () => {
               </div>
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 Points obtenus
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-500">
+                sur {participant.maxPossibleScore}
               </div>
             </div>
 
@@ -311,6 +398,10 @@ const ParticipantResults = () => {
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 Taux de réussite
               </div>
+              <div className="text-xs text-gray-400 dark:text-gray-500">
+                {participant.correctAnswers}/{participant.totalQuestions}{" "}
+                correctes
+              </div>
             </div>
 
             <div className="text-center">
@@ -320,14 +411,22 @@ const ParticipantResults = () => {
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 Classement
               </div>
+              {sessionStats.totalActiveParticipants > 0 && (
+                <div className="text-xs text-gray-400 dark:text-gray-500">
+                  sur {sessionStats.totalActiveParticipants}
+                </div>
+              )}
             </div>
 
             <div className="text-center">
               <div className="text-3xl font-bold text-orange-600 mb-1">
-                {Math.round(participant.totalTimeSpent / 60)}min
+                {Math.floor(participant.totalTimeSpent / 60)}min
               </div>
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 Temps total
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-500">
+                {participant.totalTimeSpent % 60}s
               </div>
             </div>
           </div>
@@ -335,7 +434,7 @@ const ParticipantResults = () => {
 
         {/* Statistiques détaillées */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Performance */}
+          {/* Performance avec score détaillé */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <div className="flex items-center mb-4">
               <ChartBarIcon className="w-5 h-5 text-primary-600 mr-2" />
@@ -344,6 +443,14 @@ const ParticipantResults = () => {
               </h3>
             </div>
             <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Score obtenu
+                </span>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {participant.score}/{participant.maxPossibleScore}
+                </span>
+              </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   Réponses correctes
@@ -366,6 +473,14 @@ const ParticipantResults = () => {
                   style={{ width: `${participant.accuracyRate}%` }}
                 ></div>
               </div>
+              {sessionStats.averageScore > 0 && (
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-400">Moyenne générale</span>
+                  <span className="text-gray-400">
+                    {sessionStats.averageScore} pts
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -383,7 +498,7 @@ const ParticipantResults = () => {
                   Temps total
                 </span>
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {Math.round(participant.totalTimeSpent / 60)}min{" "}
+                  {Math.floor(participant.totalTimeSpent / 60)}min{" "}
                   {participant.totalTimeSpent % 60}s
                 </span>
               </div>
@@ -420,88 +535,103 @@ const ParticipantResults = () => {
                   Score
                 </span>
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {participant.score} pts
+                  {participant.score}/{participant.maxPossibleScore} pts
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Participants actifs
+                </span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {sessionStats.totalActiveParticipants}
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Détail des réponses */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Détail de vos réponses
-            </h3>
-          </div>
+        {/* Détail des réponses avec points maximaux */}
+        {responses.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Détail de vos réponses
+              </h3>
+            </div>
 
-          <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {responses.map((response, index) => (
-              <div key={response.questionId} className="p-6">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                      Question {index + 1}
-                    </h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                      Votre réponse:{" "}
-                      <span className="font-medium">{response.answer}</span>
-                    </p>
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {responses.map((response, index) => (
+                <div key={response.questionId} className="p-6">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                        Question {index + 1}
+                      </h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+                        {response.questionText}
+                      </p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Votre réponse:{" "}
+                        <span className="font-medium">{response.answer}</span>
+                      </p>
+                    </div>
+
+                    <div className="flex items-center space-x-4 ml-4">
+                      {/* Temps */}
+                      <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                        <ClockIcon className="w-4 h-4 mr-1" />
+                        {response.timeSpent}s
+                      </div>
+
+                      {/* Points avec maximum */}
+                      <div className="flex items-center text-sm font-medium">
+                        <span
+                          className={
+                            response.isCorrect
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }
+                        >
+                          {response.points}/{response.maxPoints} pts
+                        </span>
+                      </div>
+
+                      {/* Statut */}
+                      <div className="flex items-center">
+                        {response.isCorrect ? (
+                          <CheckCircleIcon className="w-5 h-5 text-green-500" />
+                        ) : (
+                          <XCircleIcon className="w-5 h-5 text-red-500" />
+                        )}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex items-center space-x-4 ml-4">
-                    {/* Temps */}
-                    <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                      <ClockIcon className="w-4 h-4 mr-1" />
-                      {response.timeSpent}s
-                    </div>
-
-                    {/* Points */}
-                    <div className="flex items-center text-sm font-medium">
-                      <span
-                        className={
-                          response.isCorrect ? "text-green-600" : "text-red-600"
-                        }
-                      >
-                        {response.points} pts
-                      </span>
-                    </div>
-
-                    {/* Statut */}
-                    <div className="flex items-center">
-                      {response.isCorrect ? (
-                        <CheckCircleIcon className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <XCircleIcon className="w-5 h-5 text-red-500" />
-                      )}
+                  {/* Barre de progression du temps */}
+                  <div className="mt-3">
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                      <div
+                        className={`h-1 rounded-full transition-all duration-300 ${
+                          response.timeSpent <= 30
+                            ? "bg-green-500"
+                            : response.timeSpent <= 60
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
+                        }`}
+                        style={{
+                          width: `${Math.min(
+                            (response.timeSpent / 120) * 100,
+                            100
+                          )}%`,
+                        }}
+                      ></div>
                     </div>
                   </div>
                 </div>
-
-                {/* Barre de progression du temps */}
-                <div className="mt-3">
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
-                    <div
-                      className={`h-1 rounded-full transition-all duration-300 ${
-                        response.timeSpent <= 30
-                          ? "bg-green-500"
-                          : response.timeSpent <= 60
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                      }`}
-                      style={{
-                        width: `${Math.min(
-                          (response.timeSpent / 120) * 100,
-                          100
-                        )}%`,
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Actions */}
         <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
