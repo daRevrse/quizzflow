@@ -246,16 +246,24 @@ const SessionPlay = () => {
         return;
       }
 
-      console.log("🔍 Récupération résultats finaux:", {
+      console.log("📊 Récupération résultats finaux:", {
         sessionId,
         participantId: participantInfo.id,
       });
 
-      // CORRECTION: Utiliser l'API session générale au lieu d'un endpoint spécifique
+      // CORRECTION: Utiliser l'API session générale
       const response = await sessionService.getSession(sessionId);
 
       if (response?.session) {
         const session = response.session;
+
+        // CORRECTION: Vérifier plusieurs status valides pour les résultats
+        const validStatusForResults = ["finished", "completed", "ended"];
+
+        if (!validStatusForResults.includes(session.status)) {
+          console.warn(`Status session non final: ${session.status}`);
+          // Pour debug: essayer quand même de récupérer les résultats
+        }
 
         // Trouver les données du participant
         const participant = session.participants?.find(
@@ -319,6 +327,9 @@ const SessionPlay = () => {
               code: session.code,
               title: session.title,
               quiz: session.quiz,
+              status: session.status, // CORRECTION: Inclure le status
+              endedAt: session.endedAt,
+              autoEnded: session.autoEnded || false, // CORRECTION: Inclure autoEnded
             },
           };
 
@@ -336,7 +347,7 @@ const SessionPlay = () => {
     } catch (error) {
       console.error("Erreur récupération résultats finaux:", error);
 
-      // Fallback : créer des résultats basiques
+      // CORRECTION: Fallback amélioré
       if (participantInfo && session) {
         const fallbackResults = {
           participant: {
@@ -356,6 +367,9 @@ const SessionPlay = () => {
             code: session.code,
             title: session.title,
             quiz: session.quiz,
+            status: "finished", // CORRECTION: Status par défaut
+            endedAt: new Date().toISOString(),
+            autoEnded: false,
           },
         };
 
@@ -486,19 +500,52 @@ const SessionPlay = () => {
     };
 
     const handleSessionEnded = (data) => {
-      console.log("📋 Session terminée:", data);
+      if (!isSocketMounted || !componentMountedRef.current) return;
+
+      console.log("📋 Session terminée via Socket:", data);
+
+      // Arrêter tous les timers
       setSessionStatus("finished");
-      toast.success("Session terminée ! Merci d'avoir participé 🎉");
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+
+      // Nettoyer l'état des questions
       setCurrentQuestion(null);
       setShowResults(false);
       setShowCorrectAnswer(false);
+      setTimeRemaining(null);
+
+      // CORRECTION: Message différent selon le type de fin
+      let toastMessage = "Session terminée ! Merci d'avoir participé 🎉";
+      let toastConfig = {
+        duration: 4000,
+        style: { background: "#10B981", color: "white" },
+      };
+
+      if (data.autoEnded) {
+        toastMessage = "⏰ Session terminée automatiquement - temps écoulé !";
+        toastConfig.style.background = "#F59E0B"; // Orange pour auto
+        toastConfig.icon = "⏰";
+      }
+
+      if (data.reason === "timer_expired") {
+        toastMessage =
+          "⏰ Toutes les questions ont été posées - Session terminée !";
+      }
+
+      toast.success(toastMessage, toastConfig);
+
+      // CORRECTION: Délai réduit pour récupérer les résultats
       setTimeout(() => {
-        fetchFinalResults();
-      }, 2000);
+        if (componentMountedRef.current) {
+          console.log(
+            "🔄 Récupération des résultats finaux après fin de session"
+          );
+          fetchFinalResults();
+        }
+      }, 1500); // Réduit de 2000 à 1500ms
     };
 
     const handleNextQuestion = (data) => {
@@ -1504,146 +1551,170 @@ const SessionPlay = () => {
 
                   // Questions vrai/faux (existant, mais amélioré)
                   if (currentQuestion.type === "vrai_faux") {
-                    // Si la question vrai/faux utilise correctAnswer au lieu d'options
-                    if (
-                      (!currentQuestion.options ||
-                        currentQuestion.options.length === 0) &&
-                      currentQuestion.correctAnswer !== undefined
-                    ) {
-                      console.log(
-                        "🔧 Génération automatique des options vrai/faux"
-                      );
+                    console.log("🔧 Traitement question vrai/faux:", {
+                      correctAnswer: currentQuestion.correctAnswer,
+                      options: currentQuestion.options,
+                    });
 
-                      const vraiOptions = [
+                    let vraiOptions;
+
+                    // CORRECTION: Détecter le format de la réponse correcte
+                    if (
+                      Array.isArray(currentQuestion.options) &&
+                      currentQuestion.options.length === 2
+                    ) {
+                      // Format avec options explicites
+                      vraiOptions = currentQuestion.options.map(
+                        (option, index) => ({
+                          text: option.text || (index === 0 ? "Vrai" : "Faux"),
+                          isCorrect: option.isCorrect === true,
+                        })
+                      );
+                    } else {
+                      // Format avec correctAnswer seulement - générer les options
+                      let vraiIsCorrect = false;
+
+                      // CORRECTION: Logique plus robuste pour déterminer la bonne réponse
+                      if (typeof currentQuestion.correctAnswer === "boolean") {
+                        vraiIsCorrect = currentQuestion.correctAnswer === true;
+                      } else if (
+                        typeof currentQuestion.correctAnswer === "number"
+                      ) {
+                        vraiIsCorrect = currentQuestion.correctAnswer === 0; // 0 = Vrai, 1 = Faux
+                      } else if (
+                        typeof currentQuestion.correctAnswer === "string"
+                      ) {
+                        const correctStr = currentQuestion.correctAnswer
+                          .toLowerCase()
+                          .trim();
+                        vraiIsCorrect = ["true", "vrai", "0"].includes(
+                          correctStr
+                        );
+                      }
+
+                      vraiOptions = [
                         {
                           text: "Vrai",
-                          isCorrect:
-                            currentQuestion.correctAnswer === "true" ||
-                            currentQuestion.correctAnswer === true ||
-                            currentQuestion.correctAnswer === 0,
+                          isCorrect: vraiIsCorrect,
                         },
                         {
                           text: "Faux",
-                          isCorrect:
-                            currentQuestion.correctAnswer === "false" ||
-                            currentQuestion.correctAnswer === false ||
-                            currentQuestion.correctAnswer === 1,
+                          isCorrect: !vraiIsCorrect,
                         },
                       ];
+                    }
 
-                      return vraiOptions.map((answer, index) => {
-                        const isCorrectAnswer = answer.isCorrect;
-                        const isSelected = selectedAnswer === index;
-                        const isCorrect = showCorrectAnswer && isCorrectAnswer;
-                        const isWrong =
-                          showCorrectAnswer && isSelected && !isCorrectAnswer;
+                    console.log("📝 Options vrai/faux générées:", vraiOptions);
 
-                        const responseCount =
-                          questionResults?.responses?.filter(
-                            (r) => r.answer === index
-                          ).length || 0;
-                        const percentage =
-                          questionResults?.totalResponses > 0
-                            ? Math.round(
-                                (responseCount /
-                                  questionResults.totalResponses) *
-                                  100
-                              )
-                            : 0;
+                    return vraiOptions.map((answer, index) => {
+                      const isCorrectAnswer = answer.isCorrect;
+                      const isSelected = selectedAnswer === index;
+                      const isCorrect = showCorrectAnswer && isCorrectAnswer;
+                      const isWrong =
+                        showCorrectAnswer && isSelected && !isCorrectAnswer;
 
-                        return (
-                          <div key={index} className="relative">
-                            <button
-                              onClick={() => handleSelectAnswer(index)}
-                              disabled={
-                                isAnswered || showResults || isSubmitting
-                              }
-                              className={`w-full p-4 text-left border-2 rounded-xl transition-all duration-200 ${
-                                isSelected && !showResults
-                                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400 transform scale-105 shadow-md"
-                                  : showResults && isCorrect
-                                  ? "border-green-500 bg-green-50 dark:bg-green-900/30 dark:border-green-400"
-                                  : showResults && isWrong
-                                  ? "border-red-500 bg-red-50 dark:bg-red-900/30 dark:border-red-400"
-                                  : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
-                              } ${
-                                isAnswered || showResults || isSubmitting
-                                  ? "cursor-not-allowed opacity-75"
-                                  : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:shadow-sm"
-                              }`}
-                            >
-                              <div className="flex items-center">
+                      const responseCount =
+                        questionResults?.responses?.filter(
+                          (r) => r.answer === index
+                        ).length || 0;
+                      const percentage =
+                        questionResults?.totalResponses > 0
+                          ? Math.round(
+                              (responseCount / questionResults.totalResponses) *
+                                100
+                            )
+                          : 0;
+
+                      return (
+                        <div key={index} className="relative">
+                          <button
+                            onClick={() => handleSelectAnswer(index)}
+                            disabled={isAnswered || showResults || isSubmitting}
+                            className={`w-full p-4 text-left border-2 rounded-xl transition-all duration-200 ${
+                              isSelected && !showResults
+                                ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400 transform scale-105 shadow-md"
+                                : showResults && isCorrect
+                                ? "border-green-500 bg-green-50 dark:bg-green-900/30 dark:border-green-400"
+                                : showResults && isWrong
+                                ? "border-red-500 bg-red-50 dark:bg-red-900/30 dark:border-red-400"
+                                : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                            } ${
+                              isAnswered || showResults || isSubmitting
+                                ? "cursor-not-allowed opacity-75"
+                                : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:shadow-sm"
+                            }`}
+                          >
+                            <div className="flex items-center">
+                              <div
+                                className={`flex-shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-colors ${
+                                  isSelected && !showResults
+                                    ? "border-blue-500 bg-blue-500 text-white"
+                                    : showResults && isCorrect
+                                    ? "border-green-500 bg-green-500 text-white"
+                                    : showResults && isWrong
+                                    ? "border-red-500 bg-red-500 text-white"
+                                    : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {String.fromCharCode(65 + index)}
+                              </div>
+
+                              <div className="flex-1 ml-4">
                                 <div
-                                  className={`flex-shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-colors ${
-                                    isSelected && !showResults
-                                      ? "border-blue-500 bg-blue-500 text-white"
-                                      : showResults && isCorrect
-                                      ? "border-green-500 bg-green-500 text-white"
+                                  className={`font-medium transition-colors ${
+                                    showResults && isCorrect
+                                      ? "text-green-800 dark:text-green-200"
                                       : showResults && isWrong
-                                      ? "border-red-500 bg-red-500 text-white"
-                                      : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400"
+                                      ? "text-red-800 dark:text-red-200"
+                                      : "text-gray-900 dark:text-white"
                                   }`}
                                 >
-                                  {String.fromCharCode(65 + index)}
+                                  {answer.text}
                                 </div>
 
-                                <div className="flex-1 ml-4">
+                                {showResults && questionResults && (
                                   <div
-                                    className={`font-medium transition-colors ${
-                                      showResults && isCorrect
-                                        ? "text-green-800 dark:text-green-200"
-                                        : showResults && isWrong
-                                        ? "text-red-800 dark:text-red-200"
-                                        : "text-gray-900 dark:text-white"
+                                    className={`text-sm mt-1 ${
+                                      isCorrect
+                                        ? "text-green-600 dark:text-green-300"
+                                        : isWrong
+                                        ? "text-red-600 dark:text-red-300"
+                                        : "text-gray-500 dark:text-gray-400"
                                     }`}
                                   >
-                                    {answer.text}
-                                  </div>
-
-                                  {showResults && questionResults && (
-                                    <div
-                                      className={`text-sm mt-1 ${
-                                        isCorrect
-                                          ? "text-green-600 dark:text-green-300"
-                                          : isWrong
-                                          ? "text-red-600 dark:text-red-300"
-                                          : "text-gray-500 dark:text-gray-400"
-                                      }`}
-                                    >
-                                      {percentage}% ({responseCount} participant
-                                      {responseCount !== 1 ? "s" : ""})
-                                    </div>
-                                  )}
-                                </div>
-
-                                {showResults && (isCorrect || isWrong) && (
-                                  <div className="ml-2">
-                                    {isCorrect ? (
-                                      <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                                    ) : (
-                                      <XCircleIcon className="h-5 w-5 text-red-500" />
-                                    )}
+                                    {percentage}% ({responseCount} participant
+                                    {responseCount !== 1 ? "s" : ""})
                                   </div>
                                 )}
                               </div>
-                            </button>
 
-                            {showResults && questionResults && (
-                              <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-200 dark:bg-gray-700 rounded-b-xl overflow-hidden">
-                                <div
-                                  className={`h-full transition-all duration-1000 ${
-                                    isCorrect
-                                      ? "bg-green-500"
-                                      : "bg-gray-400 dark:bg-gray-500"
-                                  }`}
-                                  style={{ width: `${percentage}%` }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      });
-                    }
+                              {showResults && (isCorrect || isWrong) && (
+                                <div className="ml-2">
+                                  {isCorrect ? (
+                                    <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                                  ) : (
+                                    <XCircleIcon className="h-5 w-5 text-red-500" />
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+
+                          {showResults && questionResults && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-200 dark:bg-gray-700 rounded-b-xl overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-1000 ${
+                                  isCorrect
+                                    ? "bg-green-500"
+                                    : "bg-gray-400 dark:bg-gray-500"
+                                }`}
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
                   }
 
                   // NOUVEAU: Questions nuage de mots

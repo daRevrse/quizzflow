@@ -223,59 +223,92 @@ function calculateSessionStats(sessionData) {
         const session = await Session.findByPk(sessionId, {
           include: [{ model: Quiz, as: "quiz" }],
         });
-  
+    
         if (!session) {
           console.log(`❌ Session ${sessionId} non trouvée`);
           debugTimer(sessionId, "SESSION_NOT_FOUND");
           return;
         }
-  
+    
         console.log(`✅ Session trouvée: ${session.code} (status: ${session.status})`);
-  
+    
         if (session.status !== "active") {
           console.log(`⚠️ Session ${sessionId} non active (${session.status}), timer annulé`);
           debugTimer(sessionId, "SESSION_NOT_ACTIVE", { status: session.status });
           return;
         }
-  
+    
         const totalQuestions = session.quiz?.questions?.length || 0;
         console.log(`📊 Questions: ${questionIndex + 1}/${totalQuestions}`);
         
-        if (questionIndex >= totalQuestions - 1) {
-          // Dernière question : terminer la session
+        if (questionIndex >= totalQuestions - 1) {// CORRECTION: Dernière question - terminer proprement la session
           console.log(`🏁 === DERNIÈRE QUESTION TERMINÉE ===`);
           console.log(`   Fin automatique de session ${sessionId}`);
           
           debugTimer(sessionId, "AUTO_END_SESSION", { questionIndex, totalQuestions });
           
-          await session.update({ 
-            status: "finished", 
-            endedAt: new Date() 
-          });
-  
-          console.log(`📢 Notification fin de session automatique`);
-          
-          // Notifier tous les participants
-          io.to(`session_${sessionId}`).emit("session_ended", {
-            sessionId,
-            finalStats: session.stats || {},
-            message: "Session terminée automatiquement",
-            autoEnded: true
-          });
-  
-          // Notifier l'hôte spécifiquement
-          io.to(`host_${sessionId}`).emit("session_ended", {
-            sessionId,
-            finalStats: session.stats || {},
-            message: "Session terminée automatiquement",
-            autoEnded: true,
-            isHost: true
-          });
-  
-          console.log(`✅ Session ${sessionId} terminée automatiquement`);
-  
-        } else {
-          // Passer à la question suivante
+          // CORRECTION: Vérifier le statut avant de terminer
+          if (session.status === "finished") {
+            console.log(`⚠️ Session ${sessionId} déjà terminée, pas d'action nécessaire`);
+            debugTimer(sessionId, "SESSION_ALREADY_FINISHED");
+            return;
+          }
+        
+          if (!["active", "paused"].includes(session.status)) {
+            console.log(`⚠️ Session ${sessionId} dans un état non terminable: ${session.status}`);
+            debugTimer(sessionId, "SESSION_NOT_TERMINABLE", { status: session.status });
+            return;
+          }
+        
+          try {
+            // Utiliser la méthode endSession du modèle
+            await session.endSession();
+            
+            // Calculer les stats finales
+            const finalStats = calculateSessionStats({
+              participants: session.participants,
+              responses: session.responses,
+            });
+            
+            await session.update({ stats: finalStats });
+        
+            console.log(`📢 Notification fin de session automatique`);
+            
+            // Notification uniforme avec status "finished"
+            const endNotification = {
+              sessionId,
+              finalStats: finalStats,
+              message: "Session terminée automatiquement - temps écoulé",
+              autoEnded: true,
+              endedAt: session.endedAt,
+              reason: "timer_expired"
+            };
+        
+            // Notifier tous les participants
+            io.to(`session_${sessionId}`).emit("session_ended", endNotification);
+        
+            // Notifier l'hôte spécifiquement
+            io.to(`host_${sessionId}`).emit("session_ended", {
+              ...endNotification,
+              isHost: true
+            });
+        
+            console.log(`✅ Session ${sessionId} terminée automatiquement`);
+        
+          } catch (endError) {
+            console.error(`❌ Erreur lors de la fin automatique de session ${sessionId}:`, endError);
+            
+            // Si l'erreur indique que la session est déjà terminée, ce n'est pas grave
+            if (endError.message?.includes("terminée") || endError.message?.includes("finished")) {
+              console.log(`⚠️ Session ${sessionId} était déjà terminée - pas d'erreur réelle`);
+              debugTimer(sessionId, "SESSION_ALREADY_FINISHED_ON_END");
+            } else {
+              // Pour d'autres erreurs, on les log mais on continue
+              console.error(`❌ Erreur inattendue fin automatique session ${sessionId}:`, endError);
+              debugTimer(sessionId, "AUTO_END_ERROR", { error: endError.message });
+            }
+          }} else {
+          // Passer à la question suivante (code existant)
           const newIndex = questionIndex + 1;
           const nextQuestion = session.quiz.questions[newIndex];
           
@@ -294,18 +327,18 @@ function calculateSessionStats(sessionData) {
             currentQuestionIndex: newIndex,
             currentQuestionStartedAt: new Date(),
           });
-  
+    
           console.log(`📢 Notification nouvelle question automatique`);
-  
+    
           // Notifier tous les participants
           io.to(`session_${sessionId}`).emit("next_question", {
             sessionId,
             questionIndex: newIndex,
             question: nextQuestion,
             startedAt: new Date(),
-            autoAdvanced: true // Indiquer que c'est un passage automatique
+            autoAdvanced: true
           });
-  
+    
           // Notifier l'hôte spécifiquement  
           io.to(`host_${sessionId}`).emit("next_question", {
             sessionId,
@@ -315,9 +348,9 @@ function calculateSessionStats(sessionData) {
             autoAdvanced: true,
             isHost: true
           });
-  
+    
           console.log(`✅ Passage automatique vers question ${newIndex + 1} réussi`);
-  
+    
           // Démarrer le timer pour la nouvelle question si elle a une limite de temps
           if (nextQuestion && nextQuestion.timeLimit) {
             console.log(`⏰ Démarrage timer pour nouvelle question: ${nextQuestion.timeLimit}s`);
@@ -326,7 +359,7 @@ function calculateSessionStats(sessionData) {
             console.log(`⏰ Pas de timer pour la nouvelle question`);
           }
         }
-  
+    
       } catch (error) {
         console.error(`💥 === ERREUR TIMER AUTOMATIQUE ===`);
         console.error(`   Session: ${sessionId}`);
@@ -470,19 +503,99 @@ function calculateSessionStats(sessionData) {
   
     try {
       // Arrêter le timer automatique
-      stopQuestionTimer(socket.sessionId);
+      stopQuestionTimer(socket.sessionId, "manual_end");
   
-      const session = await Session.findByPk(socket.sessionId);
+      const session = await Session.findByPk(socket.sessionId, {
+        include: [{ model: Quiz, as: "quiz" }],
+      });
+      
       if (!session) {
         return socket.emit("error", { message: "Session non trouvée" });
       }
   
-      // ... reste du code endSession existant
+      // CORRECTION: Gérer le cas où la session est déjà terminée
+      if (session.status === "finished") {
+        console.log(`⚠️ Session ${session.id} déjà terminée, envoi confirmation`);
+        
+        // Confirmer que la session est terminée sans erreur
+        socket.emit("session_ended", {
+          sessionId: session.id,
+          finalStats: session.stats || {},
+          message: "Session déjà terminée",
+          autoEnded: false,
+          endedAt: session.endedAt,
+          alreadyFinished: true
+        });
+        
+        return;
+      }
   
-      console.log(`🏁 Session ${session.code} terminée manuellement`);
+      // Vérifier que la session peut être terminée
+      if (!["active", "paused"].includes(session.status)) {
+        return socket.emit("error", { 
+          message: `Impossible de terminer une session avec le statut "${session.status}"`,
+          currentStatus: session.status,
+          code: "INVALID_SESSION_STATUS"
+        });
+      }
+  
+      console.log(`🏁 Fin manuelle de session ${session.code} depuis Socket.IO`);
+  
+      // Utiliser la méthode endSession du modèle
+      await session.endSession();
+      await session.reload();
+  
+      // Calculer les stats finales
+      const finalStats = calculateSessionStats({
+        participants: session.participants,
+        responses: session.responses,
+      });
+      
+      await session.update({ stats: finalStats });
+  
+      console.log(`✅ Session ${session.code} terminée manuellement via Socket.IO`);
+  
+      // Notifier tous les participants
+      io.to(`session_${session.id}`).emit("session_ended", {
+        sessionId: session.id,
+        finalStats: finalStats,
+        message: "Session terminée par l'hôte",
+        autoEnded: false,
+        endedAt: session.endedAt,
+        manualEnd: true
+      });
+  
+      // Notifier spécifiquement l'hôte
+      socket.emit("session_ended", {
+        sessionId: session.id,
+        finalStats: finalStats,
+        message: "Session terminée avec succès",
+        autoEnded: false,
+        endedAt: session.endedAt,
+        manualEnd: true,
+        isHost: true
+      });
+  
+      // Nettoyer le timer de la Map
+      activeQuestionTimers.delete(session.id);
+  
     } catch (error) {
-      console.error("Erreur fin de session:", error);
-      socket.emit("error", { message: "Erreur lors de la fin de session" });
+      console.error("Erreur fin de session Socket.IO:", error);
+      
+      // Gestion spécifique des erreurs de statut
+      if (error.message?.includes("statut") || error.message?.includes("terminée")) {
+        socket.emit("error", { 
+          message: error.message,
+          code: "INVALID_SESSION_STATUS",
+          currentStatus: session?.status
+        });
+      } else {
+        socket.emit("error", { 
+          message: "Erreur lors de la fin de session",
+          code: "END_SESSION_ERROR",
+          details: process.env.NODE_ENV === "development" ? error.message : undefined
+        });
+      }
     }
   }
   
@@ -1396,16 +1509,50 @@ function calculateSessionStats(sessionData) {
     }
     else if (question.type === "vrai_faux" || question.type === "vraifaux") {
       console.log(`   Type Vrai/Faux - Réponse correcte: ${question.correctAnswer}`);
-      // Normaliser les réponses booléennes
-      const normalizedAnswer = String(answer).toLowerCase();
-      const normalizedCorrect = String(question.correctAnswer).toLowerCase();
-      isCorrect = normalizedAnswer === normalizedCorrect || 
-                 (normalizedAnswer === "true" && normalizedCorrect === "vrai") ||
-                 (normalizedAnswer === "false" && normalizedCorrect === "faux") ||
-                 (normalizedAnswer === "vrai" && normalizedCorrect === "true") ||
-                 (normalizedAnswer === "faux" && normalizedCorrect === "false");
-      console.log(`   Comparaison normalisée: "${normalizedAnswer}" vs "${normalizedCorrect}" => ${isCorrect}`);
-    } 
+      console.log(`   Réponse reçue: ${answer} (type: ${typeof answer})`);
+      
+      // CORRECTION: Gérer tous les formats possibles
+      let normalizedAnswer;
+      let normalizedCorrect;
+      
+      // 1. Si la réponse est un index (0 = Vrai, 1 = Faux)
+      if (typeof answer === 'number' || !isNaN(parseInt(answer))) {
+        const answerIndex = parseInt(answer);
+        normalizedAnswer = answerIndex === 0 ? "vrai" : "faux";
+        console.log(`   Réponse par index ${answerIndex} → "${normalizedAnswer}"`);
+      } else {
+        // 2. Si la réponse est du texte
+        normalizedAnswer = String(answer).toLowerCase().trim();
+        console.log(`   Réponse par texte → "${normalizedAnswer}"`);
+      }
+      
+      // Normaliser la réponse correcte
+      if (typeof question.correctAnswer === 'boolean') {
+        normalizedCorrect = question.correctAnswer ? "vrai" : "faux";
+      } else if (typeof question.correctAnswer === 'number') {
+        normalizedCorrect = question.correctAnswer === 0 ? "vrai" : "faux";
+      } else {
+        normalizedCorrect = String(question.correctAnswer).toLowerCase().trim();
+      }
+      
+      console.log(`   Réponse correcte normalisée → "${normalizedCorrect}"`);
+      
+      // 3. Comparaison avec toutes les variantes possibles
+      isCorrect = (
+        normalizedAnswer === normalizedCorrect ||
+        // Variantes en français
+        (normalizedAnswer === "vrai" && ["true", "vrai", "1", "0"].includes(normalizedCorrect)) ||
+        (normalizedAnswer === "faux" && ["false", "faux", "0", "1"].includes(normalizedCorrect)) ||
+        // Variantes en anglais
+        (normalizedAnswer === "true" && ["true", "vrai", "1", "0"].includes(normalizedCorrect)) ||
+        (normalizedAnswer === "false" && ["false", "faux", "0", "1"].includes(normalizedCorrect)) ||
+        // Gestion spéciale selon la logique du quiz
+        (normalizedAnswer === "vrai" && normalizedCorrect === "0") ||  // 0 = Vrai
+        (normalizedAnswer === "faux" && normalizedCorrect === "1")     // 1 = Faux
+      );
+      
+      console.log(`   Résultat comparaison: "${normalizedAnswer}" vs "${normalizedCorrect}" → ${isCorrect}`);
+    }
     else if (question.type === "reponse_libre" || question.type === "text") {
       console.log(`   Type Réponse libre - Réponse correcte: "${question.correctAnswer}"`);
       if (question.correctAnswer) {

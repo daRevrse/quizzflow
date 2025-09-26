@@ -11,48 +11,6 @@ const generateSessionCode = () => {
   return code;
 };
 
-// Fonction pour calculer les statistiques de session
-// const calculateSessionStats = (session) => {
-//   const participants = Array.isArray(session.participants)
-//     ? session.participants
-//     : [];
-//   const responses = session.responses || {};
-
-//   const totalParticipants = participants.length;
-//   const totalResponses = Object.keys(responses).reduce((total, questionId) => {
-//     return total + (responses[questionId]?.length || 0);
-//   }, 0);
-
-//   let totalScore = 0;
-//   let activeParticipants = 0;
-
-//   participants.forEach((participant) => {
-//     if (participant && typeof participant === "object") {
-//       if (typeof participant.score === "number" && !isNaN(participant.score)) {
-//         totalScore += participant.score;
-//         activeParticipants++;
-//       }
-//     }
-//   });
-
-//   const averageScore =
-//     activeParticipants > 0
-//       ? Math.round((totalScore / activeParticipants) * 100) / 100
-//       : 0;
-//   const participationRate =
-//     totalParticipants > 0
-//       ? Math.round((activeParticipants / totalParticipants) * 100)
-//       : 0;
-
-//   return {
-//     totalParticipants,
-//     totalResponses,
-//     averageScore,
-//     participationRate,
-//     activeParticipants,
-//   };
-// };
-
 const calculateSessionStats = (session) => {
   const participants = Array.isArray(session.participants) ? session.participants : [];
   const responses = session.responses || {};
@@ -1363,11 +1321,20 @@ Session.prototype.resumeSession = function () {
 
 // Terminer la session
 Session.prototype.endSession = function () {
+  // Si la session est déjà terminée, ne rien faire et retourner l'instance
+  if (this.status === "finished") {
+    console.log(`⚠️ Session ${this.id} déjà terminée, pas de modification nécessaire`);
+    return Promise.resolve(this);
+  }
+
+  // Vérifier que la session peut être terminée
   if (!["active", "paused"].includes(this.status)) {
     throw new Error(
-      "Seules les sessions actives ou en pause peuvent être terminées"
+      `Impossible de terminer une session avec le statut "${this.status}". Seules les sessions actives ou en pause peuvent être terminées.`
     );
   }
+
+  console.log(`🏁 Fin de session ${this.id} depuis le statut "${this.status}"`);
 
   const now = new Date();
   const finalStats = calculateSessionStats(this);
@@ -1658,6 +1625,28 @@ Session.prototype.getParticipantResults = function(participantId) {
     rank: this.getParticipantRank(participantId),
   };
 };
+
+Session.prototype.finalizeSession = async function() {
+  console.log(`🎯 Finalisation complète de la session ${this.code}`);
+  
+  // Calculer les stats finales
+  const finalStats = this.calculateFinalStats();
+  
+  // Terminer la session avec les stats
+  await this.update({
+    status: 'finished',
+    endedAt: new Date(),
+    stats: finalStats,
+    updatedAt: new Date()
+  });
+  
+  // Recharger l'instance
+  await this.reload();
+  
+  console.log(`✅ Session ${this.code} complètement finalisée`);
+  
+  return this;
+}
 
 // Méthode pour obtenir le rang d'un participant
 Session.prototype.getParticipantRank = function(participantId) {

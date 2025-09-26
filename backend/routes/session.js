@@ -1276,14 +1276,32 @@ router.post(
     try {
       const session = req.session;
 
+      // Si la session est déjà terminée, retourner un succès avec les données actuelles
+      if (session.status === "finished") {
+        console.log(`⚠️ Tentative de terminer une session déjà terminée: ${session.id}`);
+        
+        return res.json({
+          message: "Session déjà terminée",
+          session: {
+            id: session.id,
+            status: session.status,
+            endedAt: session.endedAt,
+            stats: session.stats,
+          },
+          alreadyFinished: true,
+        });
+      }
+
+      // Vérifier que la session peut être terminée
       if (!["active", "paused"].includes(session.status)) {
         return res.status(400).json({
-          error:
-            "Seules les sessions actives ou en pause peuvent être terminées",
+          error: `Impossible de terminer une session avec le statut "${session.status}". Seules les sessions actives ou en pause peuvent être terminées.`,
           code: "INVALID_SESSION_STATUS",
           currentStatus: session.status,
         });
       }
+
+      console.log(`🏁 Fin manuelle de session ${session.id} depuis le statut ${session.status}`);
 
       await session.endSession();
       await session.reload();
@@ -1293,10 +1311,11 @@ router.post(
           sessionId: session.id,
           endedAt: session.endedAt,
           finalStats: session.stats,
+          manualEnd: true,
         });
       }
 
-      console.log(`✅ Session terminée: ${session.id}`);
+      console.log(`✅ Session terminée manuellement: ${session.id}`);
 
       res.json({
         message: "Session terminée",
@@ -1310,9 +1329,19 @@ router.post(
     } catch (error) {
       console.error("❌ Erreur lors de la fermeture:", error);
 
+      // Gestion spécifique des erreurs de statut
+      if (error.message?.includes("statut") || error.message?.includes("terminée")) {
+        return res.status(400).json({
+          error: error.message,
+          code: "INVALID_SESSION_STATUS",
+          currentStatus: req.session?.status,
+        });
+      }
+
       res.status(500).json({
         error: "Erreur lors de la fermeture de la session",
         code: "END_SESSION_ERROR",
+        details: process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   }

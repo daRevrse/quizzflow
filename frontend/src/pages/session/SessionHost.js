@@ -40,8 +40,8 @@ const SessionHost = () => {
   const [leaderboard, setLeaderboard] = useState([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState(null);
-  // const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
-  // const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
+  const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
 
   // États pour la gestion des questions
   const [questionTimer, setQuestionTimer] = useState(null);
@@ -395,32 +395,109 @@ const SessionHost = () => {
     [sessionId, loadSession]
   );
 
+  const handleAutoAdvance = useCallback(async () => {
+    if (isAutoAdvancing || !componentMountedRef.current) return;
+
+    try {
+      setIsAutoAdvancing(true);
+
+      // Vérifier s'il y a une question suivante
+      const currentIndex = session?.currentQuestionIndex || 0;
+      const totalQuestions = session?.quiz?.questions?.length || 0;
+
+      console.log(`🔄 Avancement auto: ${currentIndex + 1}/${totalQuestions}`);
+
+      if (currentIndex >= totalQuestions - 1) {
+        // 🔴 DERNIÈRE QUESTION : terminer la session
+        console.log("🏁 Dernière question, fin automatique de session");
+
+        toast.success("Dernière question terminée ! Fin de session...", {
+          duration: 3000,
+        });
+
+        // Attendre un peu avant de terminer
+        setTimeout(() => {
+          if (componentMountedRef.current) {
+            executeAction("fin automatique", async () => {
+              // Utiliser l'API directement + Socket
+              await sessionService.endSession(sessionId);
+              if (socket && isConnected) {
+                socket.emit("end_session");
+              }
+            });
+          }
+        }, 2000);
+      } else {
+        // Passer à la question suivante
+        console.log(`➡️ Passage automatique à la question ${currentIndex + 2}`);
+
+        await executeAction("passage automatique", async () => {
+          if (socket && isConnected) {
+            socket.emit("next_question", { sessionId: session.id });
+          }
+        });
+
+        toast.success(`Question ${currentIndex + 2}`, {
+          icon: "➡️",
+          duration: 2000,
+        });
+      }
+    } catch (error) {
+      console.error("❌ Erreur avancement automatique:", error);
+      toast.error("Erreur lors de l'avancement automatique");
+    } finally {
+      setIsAutoAdvancing(false);
+    }
+  }, [
+    session,
+    sessionId,
+    socket,
+    isConnected,
+    executeAction,
+    isAutoAdvancing,
+    sessionService,
+  ]);
+
   useEffect(() => {
     if (questionTimer === null || questionTimer <= 0) return;
 
     const interval = setInterval(() => {
       setQuestionTimer((prev) => {
         if (prev === null || prev <= 1) {
-          // Temps écoulé - PLUS D'AUTO-ADVANCE ICI
           clearInterval(interval);
 
-          // Juste afficher un toast informatif
           if (componentMountedRef.current) {
-            console.log(
-              "⏰ Temps écoulé côté hôte (le serveur va gérer l'avancement)"
-            );
+            if (autoAdvanceEnabled) {
+              // 🔴 RESTAURER l'auto-advance côté frontend
+              console.log(
+                "⏰ Temps écoulé côté hôte, avancement automatique..."
+              );
 
-            toast(
-              "⏰ Temps écoulé ! Le serveur va avancer automatiquement...",
-              {
-                icon: "⏰",
+              toast("⏰ Temps écoulé pour cette question !", {
+                icon: "⚠️",
                 style: {
                   background: "#F59E0B",
                   color: "white",
                 },
                 duration: 3000,
-              }
-            );
+              });
+
+              // Déclencher l'avancement automatique
+              handleAutoAdvance();
+            } else {
+              // Mode serveur uniquement
+              toast(
+                "⏰ Temps écoulé ! Le serveur va avancer automatiquement...",
+                {
+                  icon: "⏰",
+                  style: {
+                    background: "#F59E0B",
+                    color: "white",
+                  },
+                  duration: 3000,
+                }
+              );
+            }
           }
           return 0;
         }
@@ -429,9 +506,7 @@ const SessionHost = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [questionTimer]);
-
-  // Fonction utilitaire pour exécuter des actions avec protection
+  }, [questionTimer, autoAdvanceEnabled, handleAutoAdvance]); // 🔴 RÉTABLIR les dépendances
 
   // Actions de session
   const handleStartSession = useCallback(() => {
@@ -460,22 +535,56 @@ const SessionHost = () => {
   }, [sessionId, executeAction]);
 
   const handleEndSession = useCallback(() => {
+    // Vérifier le statut avant de demander confirmation
+    if (!session) {
+      toast.error("Session non trouvée");
+      return;
+    }
+
+    // Si la session est déjà terminée, rediriger vers les résultats
+    if (session.status === "finished") {
+      toast.info("La session est déjà terminée");
+      navigate(`/session/${sessionId}/results`);
+      return;
+    }
+
+    // Vérifier que la session peut être terminée
+    if (!["active", "paused"].includes(session.status)) {
+      toast.error(
+        `Impossible de terminer une session avec le statut "${session.status}"`
+      );
+      return;
+    }
+
     if (!window.confirm("Êtes-vous sûr de vouloir terminer cette session ?")) {
       return;
     }
 
     executeAction("fermeture", async () => {
-      await sessionService.endSession(sessionId);
-      toast.success("Session terminée");
+      try {
+        await sessionService.endSession(sessionId);
+        toast.success("Session terminée");
 
-      // Naviguer vers les résultats après un délai
-      setTimeout(() => {
-        if (componentMountedRef.current) {
+        // Naviguer vers les résultats après un délai
+        setTimeout(() => {
+          if (componentMountedRef.current) {
+            navigate(`/session/${sessionId}/results`);
+          }
+        }, 1500);
+      } catch (error) {
+        // Gestion spécifique si la session est déjà terminée
+        if (
+          error.message?.includes("terminée") ||
+          error.message?.includes("finished")
+        ) {
+          toast.info("La session était déjà terminée");
           navigate(`/session/${sessionId}/results`);
+        } else {
+          throw error; // Re-lancer l'erreur pour qu'elle soit gérée par executeAction
         }
-      }, 1500);
+      }
     });
-  }, [sessionId, executeAction, navigate]);
+  }, [sessionId, executeAction, navigate, session]);
 
   // NOUVELLE FONCTION: Annuler/Supprimer la session
   const handleCancelSession = useCallback(() => {
@@ -654,7 +763,11 @@ const SessionHost = () => {
                 } dark:text-current`}
               >
                 Temps restant
-                {/* ENLEVER les références à autoAdvanceEnabled */}
+                {autoAdvanceEnabled && (
+                  <span className="ml-2 text-xs">
+                    (Avancement auto {isAutoAdvancing ? "⏳" : "🤖"})
+                  </span>
+                )}
               </p>
               <p
                 className={`text-2xl font-semibold ${
@@ -666,27 +779,56 @@ const SessionHost = () => {
             </div>
           </div>
 
-          {/* ENLEVER complètement le toggle auto-advance */}
-          <div className="text-right">
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Avancement automatique
-            </p>
-            <p className="text-xs text-green-600 dark:text-green-400 font-medium">
-              🤖 Géré par le serveur
-            </p>
+          {/* 🔴 RÉTABLIR le toggle pour activer/désactiver l'auto-advance */}
+          <div className="flex items-center space-x-2">
+            <label
+              className={`text-xs ${
+                isCriticalTime
+                  ? "text-red-600"
+                  : isLowTime
+                  ? "text-orange-600"
+                  : "text-blue-600"
+              } dark:text-current`}
+            >
+              {autoAdvanceEnabled ? "Auto Frontend" : "Auto Serveur"}
+            </label>
+            <button
+              onClick={() => setAutoAdvanceEnabled(!autoAdvanceEnabled)}
+              className={`w-8 h-4 rounded-full transition-colors ${
+                autoAdvanceEnabled
+                  ? isCriticalTime
+                    ? "bg-red-600"
+                    : isLowTime
+                    ? "bg-orange-600"
+                    : "bg-blue-600"
+                  : "bg-gray-400"
+              }`}
+            >
+              <div
+                className={`w-3 h-3 bg-white rounded-full shadow transform transition-transform ${
+                  autoAdvanceEnabled ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
           </div>
         </div>
 
         {/* Messages selon le temps restant */}
         {isCriticalTime && (
           <div className="mt-2 text-xs text-red-700 dark:text-red-300 animate-pulse">
-            🚨 Avancement automatique imminent !
+            🚨{" "}
+            {autoAdvanceEnabled
+              ? "Avancement automatique imminent !"
+              : "Le serveur va avancer automatiquement !"}
           </div>
         )}
 
         {isLowTime && !isCriticalTime && (
           <div className="mt-2 text-xs text-orange-700 dark:text-orange-300">
-            ⏰ Le serveur va bientôt avancer automatiquement
+            ⏰{" "}
+            {autoAdvanceEnabled
+              ? "Avancement automatique bientôt..."
+              : "Le serveur va bientôt avancer automatiquement"}
           </div>
         )}
       </div>
@@ -704,7 +846,7 @@ const SessionHost = () => {
       <div className="flex items-center justify-between mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
         <button
           onClick={handlePreviousQuestion}
-          disabled={isFirstQuestion || actionLoading} // ENLEVER isAutoAdvancing
+          disabled={isFirstQuestion || actionLoading || isAutoAdvancing} // 🔴 RÉTABLIR isAutoAdvancing
           className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <ArrowLeftIcon className="w-4 h-4 mr-2" />
@@ -716,17 +858,18 @@ const SessionHost = () => {
             Question {currentIndex + 1} sur {totalQuestions}
           </span>
 
-          {/* ENLEVER les infos d'auto-advance */}
           {questionTimer > 0 && (
             <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 px-2 py-1 rounded">
-              Auto-serveur: {questionTimer}s
+              {autoAdvanceEnabled
+                ? `Auto-frontend: ${questionTimer}s`
+                : `Auto-serveur: ${questionTimer}s`}
             </span>
           )}
         </div>
 
         <button
           onClick={handleNextQuestion}
-          disabled={isLastQuestion || actionLoading} // ENLEVER isAutoAdvancing
+          disabled={isLastQuestion || actionLoading || isAutoAdvancing} // 🔴 RÉTABLIR isAutoAdvancing
           className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Suivante
@@ -816,7 +959,7 @@ const SessionHost = () => {
               </div>
 
               <div className="flex space-x-3">
-                {/* Bouton Annuler/Supprimer la session */}
+                {/* Bouton Annuler/Supprimer - toujours visible */}
                 <button
                   onClick={handleCancelSession}
                   disabled={actionLoading}
@@ -831,6 +974,7 @@ const SessionHost = () => {
                   {session?.status === "active" ? "Annuler" : "Supprimer"}
                 </button>
 
+                {/* Bouton Voir résultats - toujours visible */}
                 <button
                   onClick={() => navigate(`/session/${sessionId}/results`)}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
@@ -839,6 +983,7 @@ const SessionHost = () => {
                   Voir résultats
                 </button>
 
+                {/* Boutons conditionnels selon le statut */}
                 {session?.status === "waiting" && (
                   <button
                     onClick={handleStartSession}
@@ -910,6 +1055,13 @@ const SessionHost = () => {
                       Terminer
                     </button>
                   </>
+                )}
+
+                {session?.status === "finished" && (
+                  <div className="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600">
+                    <CheckCircleIcon className="h-4 w-4 mr-2" />
+                    Session terminée
+                  </div>
                 )}
               </div>
             </div>

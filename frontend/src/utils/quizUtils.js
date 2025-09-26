@@ -245,8 +245,46 @@ const parseCSVQuestions = (csvContent) => {
       });
       parsedQuestion.options = options;
     } else if (parsedQuestion.type === "vrai_faux") {
-      parsedQuestion.correctAnswer =
-        question.CorrectAnswer?.toLowerCase() === "vrai" ? "true" : "false";
+      // CORRECTION: Gestion plus robuste du correctAnswer
+      const correctAnswerValue = question.CorrectAnswer?.toLowerCase().trim();
+
+      if (["vrai", "true", "1", "0"].includes(correctAnswerValue)) {
+        // Convertir en booléen ou en index selon la logique choisie
+        if (correctAnswerValue === "vrai" || correctAnswerValue === "true") {
+          parsedQuestion.correctAnswer = true; // ou 0
+        } else if (correctAnswerValue === "1") {
+          parsedQuestion.correctAnswer = 0; // Index 0 = Vrai
+        } else if (correctAnswerValue === "0") {
+          parsedQuestion.correctAnswer = 0; // 0 peut aussi signifier Vrai selon le contexte
+        }
+      } else if (["faux", "false", "0", "1"].includes(correctAnswerValue)) {
+        if (correctAnswerValue === "faux" || correctAnswerValue === "false") {
+          parsedQuestion.correctAnswer = false; // ou 1
+        } else if (correctAnswerValue === "0") {
+          parsedQuestion.correctAnswer = 1; // Index 1 = Faux
+        } else if (correctAnswerValue === "1") {
+          parsedQuestion.correctAnswer = 1; // 1 peut signifier Faux
+        }
+      } else {
+        // Valeur par défaut si non reconnu
+        parsedQuestion.correctAnswer = false;
+      }
+
+      // Optionnel : Générer aussi les options explicites
+      parsedQuestion.options = [
+        {
+          text: "Vrai",
+          isCorrect:
+            parsedQuestion.correctAnswer === true ||
+            parsedQuestion.correctAnswer === 0,
+        },
+        {
+          text: "Faux",
+          isCorrect:
+            parsedQuestion.correctAnswer === false ||
+            parsedQuestion.correctAnswer === 1,
+        },
+      ];
     } else {
       parsedQuestion.correctAnswer = question.CorrectAnswer || "";
     }
