@@ -85,68 +85,64 @@ const requireRole = (...roles) => {
 };
 
 // Middleware optionnel (n'échoue pas si pas de token)
+// const optionalAuth = async (req, res, next) => {
+//   try {
+//     const authHeader = req.headers.authorization;
+//     const token = authHeader && authHeader.split(" ")[1];
+
+//     if (token) {
+//       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+//       const user = await User.findByPk(decoded.userId, {
+//         attributes: { exclude: ["password"] },
+//       });
+
+//       if (user && user.isActive) {
+//         req.user = user;
+//       }
+//     }
+//   } catch (error) {
+//     // Ignore les erreurs d'authentification en mode optionnel
+//     console.log("Token optionnel invalide:", error.message);
+//   }
+
+//   next();
+// };
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(" ")[1];
-
-    if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findByPk(decoded.userId, {
-        attributes: { exclude: ["password"] },
-      });
-
-      if (user && user.isActive) {
-        req.user = user;
+    
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findByPk(decoded.userId);
+        
+        if (user) {
+          req.user = user;
+          req.isAuthenticated = true;
+        }
+      } catch (jwtError) {
+        // Token invalide, mais on continue quand même
+        console.log("Token invalide ou expiré, mode anonyme");
       }
     }
+    
+    // 🔴 CRITIQUE: Continuer même sans authentification
+    req.isAuthenticated = req.isAuthenticated || false;
+    req.user = req.user || null;
+    next();
+    
   } catch (error) {
-    // Ignore les erreurs d'authentification en mode optionnel
-    console.log("Token optionnel invalide:", error.message);
+    console.error("Erreur optionalAuth:", error);
+    req.isAuthenticated = false;
+    req.user = null;
+    next();
   }
-
-  next();
 };
 
+
 // Middleware pour vérifier que l'utilisateur est propriétaire de la ressource
-// const requireOwnership = (resourceField = "creatorId") => {
-//   return (req, res, next) => {
-//     if (!req.user) {
-//       return res.status(401).json({
-//         error: "Authentification requise",
-//         code: "AUTH_REQUIRED",
-//       });
-//     }
-
-//     // Vérifier dans les paramètres ou le body
-//     const resourceOwnerId =
-//       req.resource?.[resourceField] ||
-//       req.params?.[resourceField] ||
-//       req.body?.[resourceField];
-
-//     if (!resourceOwnerId) {
-//       return res.status(400).json({
-//         error: "ID du propriétaire manquant",
-//         code: "OWNER_ID_MISSING",
-//       });
-//     }
-
-//     // Admin peut tout faire
-//     if (req.user.role === "admin") {
-//       return next();
-//     }
-
-//     // Vérifier la propriété
-//     if (resourceOwnerId !== req.user.id) {
-//       return res.status(403).json({
-//         error: "Accès refusé - Vous n'êtes pas propriétaire de cette ressource",
-//         code: "NOT_OWNER",
-//       });
-//     }
-
-//     next();
-//   };
-// };
 const requireOwnership = (resourceField = "creatorId") => {
   return (req, res, next) => {
     if (!req.user) {

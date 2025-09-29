@@ -328,12 +328,12 @@ const ParticipantResults = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between py-6">
             <div className="flex items-center">
-              <button
+              {/* <button
                 onClick={() => navigate(-1)}
                 className="mr-4 p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <ArrowLeftIcon className="w-5 h-5" />
-              </button>
+              </button> */}
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                   Mes Résultats

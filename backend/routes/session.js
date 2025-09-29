@@ -440,6 +440,10 @@ router.get("/code/:code", optionalAuth, async (req, res) => {
     const participantCount = getParticipantCount(session);
     const maxParticipants = session.settings?.maxParticipants || 100;
 
+    const canJoin = 
+    session.status === "waiting" || 
+    (session.status === "active" && session.settings?.allowLateJoin);
+
     const responseData = {
       session: {
         id: session.id,
@@ -449,12 +453,14 @@ router.get("/code/:code", optionalAuth, async (req, res) => {
         status: session.status,
         participantCount: getParticipantCount(session), // ← UTILISER LA FONCTION CORRIGÉE
         currentQuestionIndex: session.currentQuestionIndex,
-        canJoin:
-          ["waiting", "active"].includes(session.status) &&
-          (session.status !== "active" || session.settings?.allowLateJoin),
+        // canJoin:
+        //   ["waiting", "active"].includes(session.status) &&
+        //   (session.status !== "active" || session.settings?.allowLateJoin),
+        canJoin,
         settings: {
           allowLateJoin: session.settings?.allowLateJoin || false,
-          allowAnonymous: session.settings?.allowAnonymous !== false,
+          // allowAnonymous: session.settings?.allowAnonymous !== false,
+          allowAnonymous: true,
           maxParticipants: session.settings?.maxParticipants || 100,
           showLeaderboard: session.settings?.showLeaderboard !== false,
         },

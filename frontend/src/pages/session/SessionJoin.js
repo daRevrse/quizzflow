@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { useAuthStore } from "../../stores/authStore";
 import { useSocket } from "../../contexts/SocketContext";
@@ -23,6 +23,9 @@ const SessionJoin = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuthStore();
   const { socket, isConnected, joinSession } = useSocket();
+
+  const [searchParams] = useSearchParams();
+  const [sessionCodeFromUrl, setSessionCodeFromUrl] = useState("");
 
   // États principaux
   const [loading, setLoading] = useState(false);
@@ -58,6 +61,75 @@ const SessionJoin = () => {
   const isNameValid = participantName && participantName.trim().length >= 2;
 
   // Charger les infos de la session si code fourni dans l'URL
+  // const loadSessionInfo = useCallback(
+  //   async (code) => {
+  //     if (!code || code.length !== 6) return;
+
+  //     try {
+  //       setLoading(true);
+  //       setError(null);
+  //       clearErrors();
+
+  //       console.log("🔍 Chargement des infos de session:", code);
+
+  //       const response = await sessionService.getSessionByCode(code);
+  //       const sessionData = response.session;
+
+  //       console.log("✅ Infos session chargées:", sessionData);
+
+  //       if (!sessionData) {
+  //         throw new Error("Session non trouvée");
+  //       }
+
+  //       // Vérifier si la session accepte de nouveaux participants
+  //       if (!sessionData.canJoin) {
+  //         let errorMessage =
+  //           "Cette session n'accepte plus de nouveaux participants";
+
+  //         if (sessionData.status === "finished") {
+  //           errorMessage = "Cette session est terminée";
+  //         } else if (sessionData.status === "cancelled") {
+  //           errorMessage = "Cette session a été annulée";
+  //         } else if (
+  //           sessionData.status === "active" &&
+  //           !sessionData.settings?.allowLateJoin
+  //         ) {
+  //           errorMessage =
+  //             "Cette session est en cours et n'autorise pas les arrivées tardives";
+  //         }
+
+  //         setError(errorMessage);
+  //         setStep("error");
+  //         return;
+  //       }
+
+  //       // Vérifier la limite de participants
+  //       if (
+  //         sessionData.participantCount >= sessionData.settings?.maxParticipants
+  //       ) {
+  //         setError(
+  //           `Session complète (${sessionData.settings.maxParticipants} participants maximum)`
+  //         );
+  //         setStep("error");
+  //         return;
+  //       }
+
+  //       setSessionInfo(sessionData);
+  //       setStep("enter-name");
+  //     } catch (error) {
+  //       console.error("❌ Erreur lors du chargement des infos:", error);
+
+  //       const errorMessage =
+  //         error.message || "Erreur lors du chargement de la session";
+  //       setError(errorMessage);
+  //       setStep("error");
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   },
+  //   [clearErrors]
+  // );
+
   const loadSessionInfo = useCallback(
     async (code) => {
       if (!code || code.length !== 6) return;
@@ -111,11 +183,24 @@ const SessionJoin = () => {
           return;
         }
 
+        // 🔴 FIX: Si pas connecté, activer automatiquement mode anonyme
+        if (!isAuthenticated) {
+          setValue("isAnonymous", true);
+
+          // Générer un nom par défaut si vide
+          if (!participantName || participantName.trim() === "") {
+            const defaultName = `Participant_${Math.random()
+              .toString(36)
+              .substring(2, 8)
+              .toUpperCase()}`;
+            setValue("participantName", defaultName);
+          }
+        }
+
         setSessionInfo(sessionData);
         setStep("enter-name");
       } catch (error) {
         console.error("❌ Erreur lors du chargement des infos:", error);
-
         const errorMessage =
           error.message || "Erreur lors du chargement de la session";
         setError(errorMessage);
@@ -124,16 +209,47 @@ const SessionJoin = () => {
         setLoading(false);
       }
     },
-    [clearErrors]
+    [clearErrors, isAuthenticated, setValue, participantName]
   );
 
   // Charger automatiquement si code dans URL
+  // useEffect(() => {
+  //   if (urlCode && urlCode.length === 6) {
+  //     setValue("sessionCode", urlCode.toUpperCase());
+  //     loadSessionInfo(urlCode);
+  //   }
+  // }, [urlCode, setValue, loadSessionInfo]);
+
   useEffect(() => {
-    if (urlCode && urlCode.length === 6) {
-      setValue("sessionCode", urlCode.toUpperCase());
-      loadSessionInfo(urlCode);
+    const codeFromUrl = searchParams.get("code");
+    if (codeFromUrl && codeFromUrl.length === 6) {
+      const normalizedCode = codeFromUrl.toUpperCase();
+      setSessionCodeFromUrl(normalizedCode);
+
+      setValue("sessionCode", normalizedCode);
+
+      loadSessionInfo(normalizedCode);
+
+      // Auto-recherche de la session
+      // const searchSession = async () => {
+      //   try {
+      //     setLoading(true);
+      //     const response = await sessionService.getSessionByCode(
+      //       normalizedCode
+      //     );
+      //     setSessionInfo(response.session);
+      //     setError(null);
+      //   } catch (error) {
+      //     console.error("Session non trouvée:", error);
+      //     // Ne pas afficher d'erreur ici, laisser l'utilisateur valider
+      //   } finally {
+      //     setLoading(false);
+      //   }
+      // };
+
+      // searchSession();
     }
-  }, [urlCode, setValue, loadSessionInfo]);
+  }, [searchParams, setValue, loadSessionInfo]);
 
   // Écouter les événements Socket.IO avec nettoyage automatique
   useEffect(() => {
@@ -151,22 +267,6 @@ const SessionJoin = () => {
       }, 1000);
       return;
     }
-
-    // const handleSessionJoined = (data) => {
-    //   if (!isComponentMounted) return;
-    //   console.log("🎉 Session rejointe:", data);
-
-    //   setJoining(false);
-    //   setStep("joined");
-    //   toast.success("Session rejointe avec succès !");
-
-    //   // Naviguer vers la page de jeu après un délai
-    //   setTimeout(() => {
-    //     if (isComponentMounted) {
-    //       navigate(`/session/${data.session?.id || sessionInfo?.id}/play`);
-    //     }
-    //   }, 2000);
-    // };
 
     const handleJoinError = (data) => {
       if (!isComponentMounted) return;
@@ -262,56 +362,6 @@ const SessionJoin = () => {
 
     await loadSessionInfo(code);
   };
-
-  // Rejoindre la session
-
-  // const handleJoinSession = async (data) => {
-  //   if (!sessionInfo) {
-  //     setError("Informations de session manquantes");
-  //     return;
-  //   }
-
-  //   try {
-  //     setJoining(true);
-  //     setError(null);
-  //     clearErrors();
-
-  //     const participantData = {
-  //       participantName: data.participantName.trim(),
-  //       isAnonymous: data.isAnonymous,
-  //     };
-
-  //     console.log("🚀 Tentative de jointure:", {
-  //       sessionId: sessionInfo.id,
-  //       participantData,
-  //     });
-
-  //     // ✅ NOUVEAU FLUX: Utiliser la méthode corrigée du context
-  //     const success = await joinSession(sessionInfo.id, participantData);
-
-  //     if (success) {
-  //       console.log("✅ Jointure réussie");
-  //       // Le context gère automatiquement la navigation
-  //     } else {
-  //       throw new Error("Échec de la jointure");
-  //     }
-  //   } catch (error) {
-  //     console.error("❌ Erreur jointure session:", error);
-  //     setJoining(false);
-
-  //     const errorMessage = error.message || "Erreur lors de la jointure";
-  //     setError(errorMessage);
-  //     toast.error(errorMessage);
-
-  //     // Gérer les erreurs spécifiques
-  //     if (errorMessage.includes("nom") && errorMessage.includes("utilisé")) {
-  //       setFormError("participantName", {
-  //         type: "manual",
-  //         message: errorMessage,
-  //       });
-  //     }
-  //   }
-  // };
 
   const handleJoinSession = async (data) => {
     if (!sessionInfo) {

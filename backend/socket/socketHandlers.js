@@ -386,6 +386,38 @@ function calculateSessionStats(sessionData) {
     console.log(`   Timer ID: ${timerId}`);
     console.log(`   Timers actifs total: ${activeQuestionTimers.size}\n`);
   }
+
+  function calculateSimilarity(str1, str2) {
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    
+    if (longer.length === 0) return 1.0;
+    
+    const editDistance = getEditDistance(shorter, longer);
+    return (longer.length - editDistance) / longer.length;
+  }
+  
+  // Distance de Levenshtein simplifiée
+  function getEditDistance(str1, str2) {
+    const costs = [];
+    for (let i = 0; i <= str1.length; i++) {
+      let lastValue = i;
+      for (let j = 0; j <= str2.length; j++) {
+        if (i === 0) {
+          costs[j] = j;
+        } else if (j > 0) {
+          let newValue = costs[j - 1];
+          if (str1.charAt(i - 1) !== str2.charAt(j - 1)) {
+            newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+          }
+          costs[j - 1] = lastValue;
+          lastValue = newValue;
+        }
+      }
+      if (i > 0) costs[str2.length] = lastValue;
+    }
+    return costs[str2.length];
+  }
   
   
   // Fonction pour arrêter le timer d'une session
@@ -1428,82 +1460,59 @@ function calculateSessionStats(sessionData) {
     
     console.log(`   Réponse reçue: "${answer}" (type: ${typeof answer})`);
     
-    // if (question.type === "qcm") {
-    //   console.log(`   Type QCM - Options:`, question.options);
-      
-    //   // Cas 1: Réponse correcte définie directement
-    //   if (question.correctAnswer !== undefined && question.correctAnswer !== null) {
-    //     // Comparaison directe avec la réponse correcte
-    //     isCorrect = String(question.correctAnswer) === String(answer);
-    //     console.log(`   Comparaison directe: ${question.correctAnswer} === ${answer} => ${isCorrect}`);
-    //   }
-    //   // Cas 2: Options avec flag isCorrect (CAS PRINCIPAL)
-    //   else if (Array.isArray(question.options)) {
-    //     const correctOptions = question.options.filter(opt => opt.isCorrect === true);
-    //     console.log(`   Options correctes trouvées:`, correctOptions.length);
-        
-    //     if (correctOptions.length > 0) {
-    //       // CORRECTION PRINCIPALE: Gérer les différents formats de réponse
-    //       const answerIndex = parseInt(answer); // Si answer est un index
-    //       const answerText = String(answer); // Si answer est du texte
-          
-    //       console.log(`   Answer index: ${answerIndex}, Answer text: "${answerText}"`);
-          
-    //       // Vérifier si la réponse correspond à une option correcte
-    //       isCorrect = correctOptions.some((opt, correctIndex) => {
-    //         const optionIndex = question.options.indexOf(opt);
-    //         console.log(`   Checking option "${opt.text}" at index ${optionIndex}`);
-            
-    //         const matches = (
-    //           // Comparaison par index (answer = 0, 1, 2, 3...)
-    //           optionIndex === answerIndex ||
-    //           // Comparaison par texte
-    //           opt.text === answerText ||
-    //           opt.text.toLowerCase().trim() === answerText.toLowerCase().trim() ||
-    //           // Comparaison par ID si présent
-    //           opt.id === answer ||
-    //           String(opt.id) === answerText
-    //         );
-            
-    //         if (matches) {
-    //           console.log(`   ✅ Match trouvé avec option: "${opt.text}" à l'index ${optionIndex}`);
-    //         }
-    //         return matches;
-    //       });
-          
-    //       console.log(`   Résultat final QCM: ${isCorrect}`);
-    //     }
-    //   }
-      
-    //   // FALLBACK: Si pas de correctAnswer et pas d'options avec isCorrect
-    //   if (!isCorrect && question.options && !question.correctAnswer) {
-    //     console.log(`   ⚠️ FALLBACK: Tentative de détection automatique de la bonne réponse`);
-    //     // Dans ce cas, on ne peut pas déterminer la bonne réponse
-    //     // Il faudrait que le quiz soit configuré correctement
-    //   }
-    // } 
     if (question.type === "qcm") {
       console.log(`   Type QCM - Options:`, question.options);
       const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
+      const isMultipleChoice = correctOptions.length > 1;
       
-      if (correctOptions.length === 0 && question.correctAnswer !== undefined) {
-        isCorrect = String(question.correctAnswer) === String(answer);
-      } else if (Array.isArray(question.options)) {
-        const answerIndex = parseInt(answer);
-        
-        // CORRECTION: Vérifier si answer est un index valide
-        if (!isNaN(answerIndex) && answerIndex >= 0 && answerIndex < question.options.length) {
-          // Réponse par index
-          isCorrect = question.options[answerIndex].isCorrect === true;
-          console.log(`   Réponse par index ${answerIndex}: ${question.options[answerIndex].text} → ${isCorrect}`);
+      console.log(`   QCM Multiple: ${isMultipleChoice} (${correctOptions.length} bonnes réponses)`);
+    
+      if (isMultipleChoice) {
+        // ✅ QCM à choix multiples
+        if (!Array.isArray(answer)) {
+          console.log(`   ❌ Réponse pas un tableau pour QCM multiple`);
+          isCorrect = false;
         } else {
-          // Réponse par texte ou ID
-          isCorrect = correctOptions.some(opt => 
-            opt.text === answer || 
-            opt.id === answer ||
-            opt.text.toLowerCase().trim() === String(answer).toLowerCase().trim()
-          );
-          console.log(`   Réponse par texte/ID: ${answer} → ${isCorrect}`);
+          // 🔴 CORRECTION: Récupérer les VRAIS indices des options correctes
+          const correctIndices = [];
+          question.options.forEach((opt, index) => {
+            if (opt.isCorrect === true) {
+              correctIndices.push(index);
+            }
+          });
+          
+          // Trier les deux tableaux pour comparaison
+          const answerIndices = answer.map(a => parseInt(a)).sort((a, b) => a - b);
+          const expectedIndices = correctIndices.sort((a, b) => a - b);
+          
+          console.log(`   Indices attendus: [${expectedIndices}]`);
+          console.log(`   Indices reçus: [${answerIndices}]`);
+          
+          // ✅ Comparaison stricte: toutes les réponses doivent être correctes
+          isCorrect = JSON.stringify(answerIndices) === JSON.stringify(expectedIndices);
+          
+          console.log(`   Résultat QCM multiple: ${isCorrect}`);
+        }
+      } else {
+        // ✅ QCM simple (une seule bonne réponse)
+        if (correctOptions.length === 0 && question.correctAnswer !== undefined) {
+          // Fallback: utiliser correctAnswer si pas d'options avec isCorrect
+          isCorrect = String(question.correctAnswer) === String(answer);
+        } else if (Array.isArray(question.options)) {
+          const answerIndex = parseInt(answer);
+          
+          if (!isNaN(answerIndex) && answerIndex >= 0 && answerIndex < question.options.length) {
+            // Réponse par index
+            isCorrect = question.options[answerIndex].isCorrect === true;
+            console.log(`   Réponse par index ${answerIndex}: ${isCorrect}`);
+          } else {
+            // Réponse par texte ou ID
+            isCorrect = correctOptions.some(opt => 
+              opt.text === answer || 
+              opt.id === answer ||
+              opt.text.toLowerCase().trim() === String(answer).toLowerCase().trim()
+            );
+          }
         }
       }
     }
@@ -1553,22 +1562,66 @@ function calculateSessionStats(sessionData) {
       
       console.log(`   Résultat comparaison: "${normalizedAnswer}" vs "${normalizedCorrect}" → ${isCorrect}`);
     }
-    else if (question.type === "reponse_libre" || question.type === "text") {
-      console.log(`   Type Réponse libre - Réponse correcte: "${question.correctAnswer}"`);
-      if (question.correctAnswer) {
-        // Comparaison flexible pour les réponses libres
-        const userAnswer = String(answer).toLowerCase().trim();
-        const correctAnswer = String(question.correctAnswer).toLowerCase().trim();
-        
-        // Comparaison exacte ou partielle selon les paramètres de la question
-        if (question.exactMatch === false || question.partialMatch === true) {
-          isCorrect = correctAnswer.includes(userAnswer) || userAnswer.includes(correctAnswer);
-        } else {
-          isCorrect = userAnswer === correctAnswer;
-        }
-        
-        console.log(`   Comparaison flexible: "${userAnswer}" vs "${correctAnswer}" => ${isCorrect}`);
+    else if (question.type === "reponse_libre") {
+      console.log(`   Type Réponse libre - Réponse correcte: ${question.correctAnswer}`);
+      
+      const userAnswer = String(answer).toLowerCase().trim();
+      const correctAnswer = String(question.correctAnswer).toLowerCase().trim();
+      
+      // Correspondance exacte
+      isCorrect = userAnswer === correctAnswer;
+      
+      // Si pas de correspondance exacte, vérifier similarité (optionnel)
+      if (!isCorrect && correctAnswer.length > 3) {
+        // Accepter si 90% de similarité (simple implémentation)
+        const similarity = calculateSimilarity(userAnswer, correctAnswer);
+        isCorrect = similarity >= 0.9;
+        console.log(`   Similarité: ${similarity} → ${isCorrect}`);
       }
+      
+      console.log(`   "${userAnswer}" === "${correctAnswer}" → ${isCorrect}`);
+    }else if (question.type === "nuage_mots") {
+      console.log(`   Type Nuage de mots - Validation spéciale`);
+      
+      // Pour les nuages de mots, pas de "bonne" ou "mauvaise" réponse
+      // On attribue des points pour la participation
+      isCorrect = true; // Toujours considéré comme correct
+      
+      // Validation que c'est bien un tableau de mots
+      if (!Array.isArray(answer)) {
+        console.log(`   ❌ Erreur: réponse n'est pas un tableau`);
+        isCorrect = false;
+      } else if (answer.length === 0) {
+        console.log(`   ❌ Erreur: aucun mot soumis`);
+        isCorrect = false;
+      } else if (answer.length > 5) {
+        console.log(`   ⚠️ Trop de mots (${answer.length}), limité à 5`);
+        // Tronquer à 5 mots
+        answer = answer.slice(0, 5);
+      }
+      
+      // Valider chaque mot
+      const validWords = answer.filter(word => {
+        if (typeof word !== 'string') return false;
+        const trimmed = word.trim();
+        return trimmed.length >= 2 && trimmed.length <= 50;
+      });
+      
+      if (validWords.length === 0) {
+        console.log(`   ❌ Aucun mot valide`);
+        isCorrect = false;
+      } else {
+        console.log(`   ✅ ${validWords.length} mots valides soumis`);
+        // Points proportionnels au nombre de mots (1-5 mots = 1-5 points max)
+        // Mais plafonné aux points de la question
+        const basePoints = Math.min(validWords.length, question.points || 1);
+        points = isCorrect ? basePoints : 0;
+      }
+    }
+    
+    // Attribution des points (sauf si déjà fait pour nuage_mots)
+    if (question.type !== "nuage_mots") {
+      points = isCorrect ? (question.points || 1) : 0;
     }
     
     points = isCorrect ? (question.points || 1) : 0;

@@ -1,5 +1,3 @@
-// Page de résultats de session - frontend/src/pages/session/SessionResults.js
-
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
@@ -16,7 +14,17 @@ import {
   EyeIcon,
   CheckCircleIcon,
   XCircleIcon,
+  CodeBracketIcon,
+  DocumentTextIcon,
+  TableCellsIcon,
+  ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
+import {
+  exportToCSV,
+  exportDetailedCSV,
+  exportToPDF,
+  exportQuestionStatsJSON,
+} from "../../utils/exportUtils";
 
 const SessionResults = () => {
   const { sessionId } = useParams();
@@ -28,6 +36,9 @@ const SessionResults = () => {
   const [results, setResults] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedQuestion, setSelectedQuestion] = useState(null);
+
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Charger les résultats
   useEffect(() => {
@@ -352,33 +363,75 @@ const SessionResults = () => {
   }, [results]);
 
   // Fonction d'export (simple - peut être améliorée)
-  const handleExport = () => {
-    if (!results) return;
+  // const handleExport = () => {
+  //   if (!results) return;
 
-    const data = {
-      session: results.session,
-      participants: results.participants,
-      leaderboard: results.leaderboard,
-      questionResults: results.questionResults,
-      quiz: results.quiz,
-      exportedAt: new Date().toISOString(),
-      exportedBy: user?.username || user?.firstName || "Utilisateur inconnu",
-    };
+  //   const data = {
+  //     session: results.session,
+  //     participants: results.participants,
+  //     leaderboard: results.leaderboard,
+  //     questionResults: results.questionResults,
+  //     quiz: results.quiz,
+  //     exportedAt: new Date().toISOString(),
+  //     exportedBy: user?.username || user?.firstName || "Utilisateur inconnu",
+  //   };
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: "application/json",
-    });
+  //   const blob = new Blob([JSON.stringify(data, null, 2)], {
+  //     type: "application/json",
+  //   });
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `session-${results.session.code}-results.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  //   const url = URL.createObjectURL(blob);
+  //   const a = document.createElement("a");
+  //   a.href = url;
+  //   a.download = `session-${results.session.code}-results.json`;
+  //   document.body.appendChild(a);
+  //   a.click();
+  //   document.body.removeChild(a);
+  //   URL.revokeObjectURL(url);
 
-    toast.success("Résultats exportés avec succès");
+  //   toast.success("Résultats exportés avec succès");
+  // };
+  const handleExport = async (format) => {
+    try {
+      setExporting(true);
+      setShowExportMenu(false);
+
+      const exportData = {
+        session: session,
+        results: results,
+        quiz: quiz,
+      };
+
+      switch (format) {
+        case "csv":
+          exportToCSV(exportData);
+          toast.success("Export CSV réussi !");
+          break;
+
+        case "csv-detailed":
+          exportDetailedCSV(exportData);
+          toast.success("Export CSV détaillé réussi !");
+          break;
+
+        case "pdf":
+          await exportToPDF(exportData);
+          toast.success("Export PDF réussi !");
+          break;
+
+        case "json":
+          exportQuestionStatsJSON(exportData);
+          toast.success("Export JSON réussi !");
+          break;
+
+        default:
+          toast.error("Format d'export non supporté");
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'export:", error);
+      toast.error("Erreur lors de l'export");
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Utilitaires
@@ -465,7 +518,7 @@ const SessionResults = () => {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-4">
+              {/* <div className="flex items-center space-x-4">
                 <button
                   onClick={handleExport}
                   className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors"
@@ -473,6 +526,132 @@ const SessionResults = () => {
                   <DocumentArrowDownIcon className="h-5 w-5 mr-2" />
                   Exporter
                 </button>
+              </div> */}
+
+              <div className="relative">
+                <button
+                  onClick={() => setShowExportMenu(!showExportMenu)}
+                  disabled={exporting}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  {exporting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-600 border-t-transparent" />
+                      <span>Export en cours...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowDownTrayIcon className="h-5 w-5" />
+                      <span>Exporter les résultats</span>
+                      <svg
+                        className={`h-4 w-4 transition-transform ${
+                          showExportMenu ? "rotate-180" : ""
+                        }`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </>
+                  )}
+                </button>
+
+                {/* Menu déroulant */}
+                {showExportMenu && (
+                  <>
+                    {/* Overlay pour fermer le menu */}
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setShowExportMenu(false)}
+                    />
+
+                    {/* Menu */}
+                    <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
+                      <div className="p-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                          Formats disponibles
+                        </div>
+
+                        {/* CSV Simple */}
+                        <button
+                          onClick={() => handleExport("csv")}
+                          className="w-full flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+                        >
+                          <TableCellsIcon className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              CSV - Classement
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Tableau des participants et scores
+                            </div>
+                          </div>
+                        </button>
+
+                        {/* CSV Détaillé */}
+                        <button
+                          onClick={() => handleExport("csv-detailed")}
+                          className="w-full flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+                        >
+                          <DocumentTextIcon className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              CSV - Détaillé
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Réponses par question et participant
+                            </div>
+                          </div>
+                        </button>
+
+                        {/* PDF */}
+                        <button
+                          onClick={() => handleExport("pdf")}
+                          className="w-full flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+                        >
+                          <DocumentArrowDownIcon className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              PDF - Rapport
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Document formaté pour impression
+                            </div>
+                          </div>
+                        </button>
+
+                        {/* JSON */}
+                        <button
+                          onClick={() => handleExport("json")}
+                          className="w-full flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+                        >
+                          <CodeBracketIcon className="h-5 w-5 text-purple-600 dark:text-purple-400 mt-0.5" />
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              JSON - Données brutes
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Statistiques par question (développeurs)
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+
+                      <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          💡 Les exports incluent toutes les statistiques et
+                          réponses
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

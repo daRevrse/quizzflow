@@ -4,6 +4,8 @@ import { useAuthStore } from "../../stores/authStore";
 import { useSocket } from "../../contexts/SocketContext";
 import { sessionService } from "../../services/api";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
+import QRCodeGenerator from "../../components/session/QRCodeGenerator";
+import WordCloudDisplay from "../../components/quiz/WordCloudDisplay";
 import toast from "react-hot-toast";
 import {
   PlayIcon,
@@ -17,10 +19,11 @@ import {
   XCircleIcon,
   ArrowRightIcon,
   ArrowLeftIcon,
-  CogIcon,
   EyeIcon,
   InformationCircleIcon,
   TrashIcon,
+  QrCodeIcon,
+  DocumentDuplicateIcon,
 } from "@heroicons/react/24/outline";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -48,6 +51,9 @@ const SessionHost = () => {
   const [showResults, setShowResults] = useState(false);
   const [questionResults, setQuestionResults] = useState(null);
 
+  // NOUVEAU: État pour le QR Code
+  const [showQRCode, setShowQRCode] = useState(false);
+
   // Refs pour éviter les actions multiples et les fuites mémoire
   const isInitializedRef = useRef(false);
   const isLoadingRef = useRef(false);
@@ -73,7 +79,6 @@ const SessionHost = () => {
 
       console.log("✅ Session data received:", { sessionData, permissions });
 
-      // Vérifications de sécurité
       if (!sessionData) {
         throw new Error("Session non trouvée");
       }
@@ -89,14 +94,12 @@ const SessionHost = () => {
 
       if (!componentMountedRef.current) return;
 
-      // Mettre à jour les états
       setSession(sessionData);
       setParticipants(
         Array.isArray(sessionData.participants) ? sessionData.participants : []
       );
       setResponses(sessionData.responses || {});
 
-      // Définir la question courante si applicable
       if (
         sessionData.status === "active" &&
         typeof sessionData.currentQuestionIndex === "number" &&
@@ -106,7 +109,6 @@ const SessionHost = () => {
           sessionData.quiz.questions[sessionData.currentQuestionIndex];
         setCurrentQuestion(question);
 
-        // Calculer le temps restant si il y a une limite de temps
         if (question?.timeLimit && sessionData.currentQuestionStartedAt) {
           const startTime = new Date(sessionData.currentQuestionStartedAt);
           const elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -162,13 +164,11 @@ const SessionHost = () => {
 
     let isSocketMounted = true;
 
-    // Rejoindre la room en tant qu'hôte
     if (socket && session.id) {
       console.log("🔗 Connexion socket host pour session:", session.id);
       hostSession(session.id);
     }
 
-    // Gestionnaires d'événements
     const handleParticipantJoined = (data) => {
       if (!isSocketMounted || !componentMountedRef.current) return;
 
@@ -183,7 +183,6 @@ const SessionHost = () => {
         return updated;
       });
 
-      // Mettre à jour le compteur dans la session
       setSession((prev) =>
         prev
           ? {
@@ -232,10 +231,8 @@ const SessionHost = () => {
         );
 
         if (existingIndex >= 0) {
-          // Remplacer la réponse existante
           questionResponses[existingIndex] = data;
         } else {
-          // Ajouter nouvelle réponse
           questionResponses.push(data);
         }
 
@@ -293,7 +290,6 @@ const SessionHost = () => {
 
       console.log("🎯 Question automatique reçue du serveur:", data);
 
-      // Mettre à jour l'état local
       if (data.question && data.question.timeLimit) {
         setQuestionTimer(data.question.timeLimit);
         console.log(`⏰ Timer local mis à jour: ${data.question.timeLimit}s`);
@@ -301,7 +297,6 @@ const SessionHost = () => {
         setQuestionTimer(null);
       }
 
-      // Recharger la session pour avoir l'état à jour
       setTimeout(() => {
         if (componentMountedRef.current) {
           loadSession();
@@ -316,7 +311,6 @@ const SessionHost = () => {
       }
     };
 
-    // Écouter les événements
     socket.on("participant_joined", handleParticipantJoined);
     socket.on("participant_left", handleParticipantLeft);
     socket.on("new_response", handleNewResponse);
@@ -327,7 +321,6 @@ const SessionHost = () => {
     socket.on("error", handleError);
     socket.on("next_question", handleNextQuestionFromServer);
 
-    // Nettoyage
     return () => {
       isSocketMounted = false;
       socket.off("participant_joined", handleParticipantJoined);
@@ -340,7 +333,7 @@ const SessionHost = () => {
       socket.off("error", handleError);
       socket.off("next_question", handleNextQuestionFromServer);
     };
-  }, [socket, isConnected, session]);
+  }, [socket, isConnected, session, hostSession, loadSession]);
 
   const executeAction = useCallback(
     async (actionName, actionFn) => {
@@ -349,12 +342,11 @@ const SessionHost = () => {
       const now = Date.now();
       const actionKey = `${actionName}_${sessionId}`;
 
-      // Empêcher les actions multiples rapides
       if (
         lastActionRef.current === actionKey &&
         now - lastActionRef.current < 2000
       ) {
-        console.warn("⚠️  Action déjà en cours:", actionName);
+        console.warn("⚠️ Action déjà en cours:", actionName);
         return;
       }
 
@@ -366,7 +358,6 @@ const SessionHost = () => {
 
         await actionFn();
 
-        // Recharger la session après action
         setTimeout(() => {
           if (componentMountedRef.current) {
             loadSession();
@@ -383,7 +374,6 @@ const SessionHost = () => {
       } finally {
         if (componentMountedRef.current) {
           setActionLoading(false);
-          // Reset après délai
           setTimeout(() => {
             if (lastActionRef.current === actionKey) {
               lastActionRef.current = null;
@@ -401,25 +391,21 @@ const SessionHost = () => {
     try {
       setIsAutoAdvancing(true);
 
-      // Vérifier s'il y a une question suivante
       const currentIndex = session?.currentQuestionIndex || 0;
       const totalQuestions = session?.quiz?.questions?.length || 0;
 
       console.log(`🔄 Avancement auto: ${currentIndex + 1}/${totalQuestions}`);
 
       if (currentIndex >= totalQuestions - 1) {
-        // 🔴 DERNIÈRE QUESTION : terminer la session
         console.log("🏁 Dernière question, fin automatique de session");
 
         toast.success("Dernière question terminée ! Fin de session...", {
           duration: 3000,
         });
 
-        // Attendre un peu avant de terminer
         setTimeout(() => {
           if (componentMountedRef.current) {
             executeAction("fin automatique", async () => {
-              // Utiliser l'API directement + Socket
               await sessionService.endSession(sessionId);
               if (socket && isConnected) {
                 socket.emit("end_session");
@@ -428,7 +414,6 @@ const SessionHost = () => {
           }
         }, 2000);
       } else {
-        // Passer à la question suivante
         console.log(`➡️ Passage automatique à la question ${currentIndex + 2}`);
 
         await executeAction("passage automatique", async () => {
@@ -448,15 +433,7 @@ const SessionHost = () => {
     } finally {
       setIsAutoAdvancing(false);
     }
-  }, [
-    session,
-    sessionId,
-    socket,
-    isConnected,
-    executeAction,
-    isAutoAdvancing,
-    sessionService,
-  ]);
+  }, [session, sessionId, socket, isConnected, executeAction, isAutoAdvancing]);
 
   useEffect(() => {
     if (questionTimer === null || questionTimer <= 0) return;
@@ -468,7 +445,6 @@ const SessionHost = () => {
 
           if (componentMountedRef.current) {
             if (autoAdvanceEnabled) {
-              // 🔴 RESTAURER l'auto-advance côté frontend
               console.log(
                 "⏰ Temps écoulé côté hôte, avancement automatique..."
               );
@@ -482,10 +458,8 @@ const SessionHost = () => {
                 duration: 3000,
               });
 
-              // Déclencher l'avancement automatique
               handleAutoAdvance();
             } else {
-              // Mode serveur uniquement
               toast(
                 "⏰ Temps écoulé ! Le serveur va avancer automatiquement...",
                 {
@@ -506,7 +480,7 @@ const SessionHost = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [questionTimer, autoAdvanceEnabled, handleAutoAdvance]); // 🔴 RÉTABLIR les dépendances
+  }, [questionTimer, autoAdvanceEnabled, handleAutoAdvance]);
 
   // Actions de session
   const handleStartSession = useCallback(() => {
@@ -535,20 +509,17 @@ const SessionHost = () => {
   }, [sessionId, executeAction]);
 
   const handleEndSession = useCallback(() => {
-    // Vérifier le statut avant de demander confirmation
     if (!session) {
       toast.error("Session non trouvée");
       return;
     }
 
-    // Si la session est déjà terminée, rediriger vers les résultats
     if (session.status === "finished") {
       toast.info("La session est déjà terminée");
       navigate(`/session/${sessionId}/results`);
       return;
     }
 
-    // Vérifier que la session peut être terminée
     if (!["active", "paused"].includes(session.status)) {
       toast.error(
         `Impossible de terminer une session avec le statut "${session.status}"`
@@ -565,14 +536,12 @@ const SessionHost = () => {
         await sessionService.endSession(sessionId);
         toast.success("Session terminée");
 
-        // Naviguer vers les résultats après un délai
         setTimeout(() => {
           if (componentMountedRef.current) {
             navigate(`/session/${sessionId}/results`);
           }
         }, 1500);
       } catch (error) {
-        // Gestion spécifique si la session est déjà terminée
         if (
           error.message?.includes("terminée") ||
           error.message?.includes("finished")
@@ -580,18 +549,16 @@ const SessionHost = () => {
           toast.info("La session était déjà terminée");
           navigate(`/session/${sessionId}/results`);
         } else {
-          throw error; // Re-lancer l'erreur pour qu'elle soit gérée par executeAction
+          throw error;
         }
       }
     });
   }, [sessionId, executeAction, navigate, session]);
 
-  // NOUVELLE FONCTION: Annuler/Supprimer la session
   const handleCancelSession = useCallback(() => {
     const sessionTitle = session?.title || "cette session";
     const isActive = session?.status === "active";
 
-    // Message de confirmation différent selon le statut
     let confirmMessage;
     if (isActive) {
       confirmMessage = `⚠️ Attention ! La session "${sessionTitle}" est actuellement active avec ${participants.length} participant(s).\n\nVoulez-vous vraiment l'annuler définitivement ?\n\n• Tous les participants seront déconnectés\n• Les données de cette session seront perdues\n• Cette action est irréversible`;
@@ -604,7 +571,6 @@ const SessionHost = () => {
     }
 
     executeAction("annulation", async () => {
-      // Si la session est active, la terminer d'abord (optionnel selon la logique métier)
       if (isActive) {
         try {
           await sessionService.endSession(sessionId);
@@ -613,11 +579,9 @@ const SessionHost = () => {
         }
       }
 
-      // Supprimer la session
       await sessionService.deleteSession(sessionId);
       toast.success("Session supprimée avec succès");
 
-      // Naviguer vers la liste des sessions
       setTimeout(() => {
         if (componentMountedRef.current) {
           navigate("/sessions");
@@ -626,7 +590,6 @@ const SessionHost = () => {
     });
   }, [sessionId, executeAction, navigate, session, participants.length]);
 
-  // Formatage des données
   const formatDuration = (start, end = null) => {
     if (!start) return "N/A";
 
@@ -678,7 +641,6 @@ const SessionHost = () => {
   };
 
   const handleNextQuestion = useCallback(() => {
-    // ENLEVER le check isAutoAdvancing car on ne le fait plus côté frontend
     executeAction("passage manuel", async () => {
       if (socket && isConnected) {
         socket.emit("next_question", { sessionId: session.id });
@@ -688,12 +650,10 @@ const SessionHost = () => {
 
   const handlePreviousQuestion = useCallback(() => {
     executeAction("retour", async () => {
-      // Implémenter previousQuestion si disponible
       toast.info("Question précédente");
     });
   }, [executeAction]);
 
-  // Fonction pour formater le temps restant
   const formatTimeWithProgress = (seconds) => {
     if (seconds === null || seconds === undefined) return "--";
 
@@ -711,7 +671,6 @@ const SessionHost = () => {
     return { timeString, percentage };
   };
 
-  // Affichage du timer avec indicateur d'avancement automatique
   const renderQuestionTimer = () => {
     if (questionTimer === null || questionTimer <= 0) return null;
 
@@ -729,7 +688,6 @@ const SessionHost = () => {
             : "bg-blue-50 dark:bg-blue-900"
         }`}
       >
-        {/* Barre de progression */}
         <div
           className={`absolute inset-0 transition-all duration-1000 ease-linear ${
             isCriticalTime
@@ -779,7 +737,6 @@ const SessionHost = () => {
             </div>
           </div>
 
-          {/* 🔴 RÉTABLIR le toggle pour activer/désactiver l'auto-advance */}
           <div className="flex items-center space-x-2">
             <label
               className={`text-xs ${
@@ -813,7 +770,6 @@ const SessionHost = () => {
           </div>
         </div>
 
-        {/* Messages selon le temps restant */}
         {isCriticalTime && (
           <div className="mt-2 text-xs text-red-700 dark:text-red-300 animate-pulse">
             🚨{" "}
@@ -835,7 +791,6 @@ const SessionHost = () => {
     );
   };
 
-  // Contrôles de navigation avec état
   const renderNavigationControls = () => {
     const currentIndex = session?.currentQuestionIndex || 0;
     const totalQuestions = session?.quiz?.questions?.length || 0;
@@ -846,7 +801,7 @@ const SessionHost = () => {
       <div className="flex items-center justify-between mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
         <button
           onClick={handlePreviousQuestion}
-          disabled={isFirstQuestion || actionLoading || isAutoAdvancing} // 🔴 RÉTABLIR isAutoAdvancing
+          disabled={isFirstQuestion || actionLoading || isAutoAdvancing}
           className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <ArrowLeftIcon className="w-4 h-4 mr-2" />
@@ -869,7 +824,7 @@ const SessionHost = () => {
 
         <button
           onClick={handleNextQuestion}
-          disabled={isLastQuestion || actionLoading || isAutoAdvancing} // 🔴 RÉTABLIR isAutoAdvancing
+          disabled={isLastQuestion || actionLoading || isAutoAdvancing}
           className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Suivante
@@ -877,6 +832,796 @@ const SessionHost = () => {
         </button>
       </div>
     );
+  };
+
+  // NOUVEAU: Fonction pour rendre les résultats de la question
+  const renderQuestionResults = () => {
+    if (!currentQuestion) return null;
+
+    const currentResponses = responses[currentQuestion.id] || [];
+    const responseCount = currentResponses.length;
+    const participantCount = participants.length;
+
+    // NOUVEAU: Cas spécial pour nuage de mots
+    if (currentQuestion.type === "nuage_mots") {
+      const questionId =
+        currentQuestion.id || `q_${session?.currentQuestionIndex}`;
+
+      // Récupération des réponses
+      let questionResponses = responses[questionId] || [];
+
+      if (questionResponses.length === 0) {
+        const alternativeIds = [
+          currentQuestion.id,
+          `q_${session?.currentQuestionIndex}`,
+          `q${session?.currentQuestionIndex}`,
+          session?.currentQuestionIndex?.toString(),
+        ];
+
+        for (const altId of alternativeIds) {
+          if (responses[altId] && responses[altId].length > 0) {
+            questionResponses = responses[altId];
+            break;
+          }
+        }
+      }
+
+      const responseCount = questionResponses.length;
+      const participantCount = participants.length;
+
+      // Agréger tous les mots
+      const wordFrequency = {};
+      questionResponses.forEach((response) => {
+        if (Array.isArray(response.answer)) {
+          response.answer.forEach((word) => {
+            const normalizedWord = word.toLowerCase().trim();
+            wordFrequency[normalizedWord] =
+              (wordFrequency[normalizedWord] || 0) + 1;
+          });
+        }
+      });
+
+      // Trier par fréquence
+      const sortedWords = Object.entries(wordFrequency)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 50); // Top 50 mots
+
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+              Nuage de mots
+            </h3>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              {responseCount} / {participantCount} participants
+            </div>
+          </div>
+
+          {/* Nuage de mots visuel */}
+          {sortedWords.length > 0 ? (
+            <div className="bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-xl p-6 border-2 border-purple-200 dark:border-purple-800">
+              <div className="flex flex-wrap gap-3 justify-center">
+                {sortedWords.map(([word, count], index) => {
+                  const maxCount = sortedWords[0][1];
+                  const fontSize = Math.max(
+                    12,
+                    Math.min(32, (count / maxCount) * 28 + 14)
+                  );
+                  const opacity = 0.5 + (count / maxCount) * 0.5;
+
+                  return (
+                    <div
+                      key={word}
+                      className="inline-flex items-center gap-2 px-4 py-2 
+                        bg-gradient-to-r from-purple-100 to-blue-100 
+                        dark:from-purple-800 dark:to-blue-800 
+                        rounded-full border border-purple-300 dark:border-purple-700
+                        hover:scale-110 transition-transform cursor-default"
+                      style={{
+                        fontSize: `${fontSize}px`,
+                        opacity: opacity,
+                      }}
+                      title={`${count} mention${count > 1 ? "s" : ""}`}
+                    >
+                      <span className="font-bold text-purple-800 dark:text-purple-200">
+                        {word}
+                      </span>
+                      <span className="text-xs bg-purple-200 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-2 py-1 rounded-full font-medium">
+                        {count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+              <p>Aucun mot-clé reçu pour le moment...</p>
+            </div>
+          )}
+
+          {/* Progression */}
+          {participantCount > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Progression
+                </span>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {Math.round((responseCount / participantCount) * 100)}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div
+                  className="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.round(
+                      (responseCount / participantCount) * 100
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Bouton passer à la suite */}
+          {responseCount === participantCount && responseCount > 0 && (
+            <div className="flex justify-center">
+              <button
+                onClick={handleNextQuestion}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 
+                  text-white font-semibold py-3 px-6 rounded-xl 
+                  shadow-lg hover:shadow-xl transition-all
+                  flex items-center gap-2"
+              >
+                <CheckCircleIcon className="w-5 h-5" />
+                Tous ont répondu - Question suivante
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Cas pour QCM
+    if (currentQuestion.type === "qcm") {
+      const questionId =
+        currentQuestion.id || `q_${session?.currentQuestionIndex}`;
+
+      console.log("📊 Debug QCM Stats:", {
+        questionId,
+        currentQuestionId: currentQuestion.id,
+        responsesKeys: Object.keys(responses),
+        currentResponses: responses[questionId],
+        allResponses: responses,
+      });
+
+      // Essayer plusieurs formats d'ID
+      let questionResponses = responses[questionId] || [];
+
+      if (questionResponses.length === 0) {
+        const alternativeIds = [
+          currentQuestion.id,
+          `q_${session?.currentQuestionIndex}`,
+          `q${session?.currentQuestionIndex}`,
+          session?.currentQuestionIndex?.toString(),
+          currentQuestion.order?.toString(),
+        ];
+
+        for (const altId of alternativeIds) {
+          if (responses[altId] && responses[altId].length > 0) {
+            questionResponses = responses[altId];
+            console.log(`✅ Réponses trouvées avec ID: ${altId}`);
+            break;
+          }
+        }
+      }
+
+      const responseCount = questionResponses.length;
+      const participantCount = participants.length;
+
+      console.log(
+        `📈 Stats finales: ${responseCount} réponses sur ${participantCount} participants`
+      );
+
+      // 🔴 CORRECTION: Détecter si QCM multiple
+      const correctOptions = (currentQuestion.options || []).filter(
+        (opt) => opt.isCorrect
+      );
+      const isMultipleChoice = correctOptions.length > 1;
+
+      console.log(
+        `🎯 Type QCM: ${isMultipleChoice ? "Multiple" : "Simple"} (${
+          correctOptions.length
+        } bonnes réponses)`
+      );
+
+      // 🔴 CORRECTION: Calculer les stats selon le type
+      const optionStats = (currentQuestion.options || []).map(
+        (option, index) => {
+          let count = 0;
+
+          if (isMultipleChoice) {
+            // ✅ QCM MULTIPLE: Compter combien de participants ont sélectionné cette option
+            count = questionResponses.filter((r) => {
+              // La réponse peut être un tableau d'indices
+              if (Array.isArray(r.answer)) {
+                return (
+                  r.answer.includes(index) ||
+                  r.answer.includes(index.toString()) ||
+                  r.answer.map((a) => parseInt(a)).includes(index)
+                );
+              }
+              // Ou un seul index (rare mais possible)
+              return r.answer === index || r.answer === index.toString();
+            }).length;
+
+            console.log(
+              `Option ${index} "${option.text}": ${count} sélections (QCM multiple)`
+            );
+          } else {
+            // ✅ QCM SIMPLE: Compter normalement
+            count = questionResponses.filter((r) => {
+              return (
+                r.answer === index ||
+                r.answer === index.toString() ||
+                r.answer === option.text ||
+                (typeof r.answer === "string" &&
+                  r.answer.toLowerCase() === option.text.toLowerCase())
+              );
+            }).length;
+
+            console.log(
+              `Option ${index} "${option.text}": ${count} réponses (QCM simple)`
+            );
+          }
+
+          const percentage =
+            responseCount > 0 ? Math.round((count / responseCount) * 100) : 0;
+
+          return {
+            ...option,
+            count,
+            percentage,
+            index,
+          };
+        }
+      );
+
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              Résultats{" "}
+              {isMultipleChoice && (
+                <span className="text-sm font-normal text-blue-600 dark:text-blue-400">
+                  (Choix multiples)
+                </span>
+              )}
+            </h3>
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {responseCount} / {participantCount} réponses
+            </span>
+          </div>
+
+          {/* 🔴 NOUVEAU: Indicateur QCM multiple */}
+          {isMultipleChoice && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm text-blue-800 dark:text-blue-200 flex items-center">
+                <svg
+                  className="w-4 h-4 mr-2"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span>
+                  <strong>QCM à choix multiples</strong> -{" "}
+                  {correctOptions.length} bonnes réponses attendues. Les
+                  statistiques montrent le nombre de participants ayant
+                  sélectionné chaque option.
+                </span>
+              </p>
+            </div>
+          )}
+
+          {/* Options avec statistiques */}
+          {optionStats.map((option) => (
+            <div
+              key={option.index}
+              className={`p-4 rounded-lg border-2 transition-all ${
+                option.isCorrect
+                  ? "border-success-500 bg-success-50 dark:bg-success-900/20"
+                  : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center flex-1">
+                  {/* Badge lettre */}
+                  <span
+                    className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold mr-3 ${
+                      option.isCorrect
+                        ? "bg-success-500 text-white"
+                        : "bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200"
+                    }`}
+                  >
+                    {String.fromCharCode(65 + option.index)}
+                  </span>
+
+                  {/* Texte de l'option */}
+                  <span className="font-medium text-gray-900 dark:text-white flex-1">
+                    {option.text}
+                  </span>
+
+                  {/* Indicateur correct */}
+                  {option.isCorrect && (
+                    <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-success-100 dark:bg-success-900/50 text-success-800 dark:text-success-200">
+                      ✓ Correct
+                    </span>
+                  )}
+                </div>
+
+                {/* Stats */}
+                <span className="text-sm font-bold ml-4 whitespace-nowrap">
+                  {option.count} ({option.percentage}%)
+                </span>
+              </div>
+
+              {/* Barre de progression */}
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full transition-all duration-500 ${
+                    option.isCorrect ? "bg-success-600" : "bg-primary-600"
+                  }`}
+                  style={{ width: `${option.percentage}%` }}
+                />
+              </div>
+
+              {/* 🔴 NOUVEAU: Détail pour QCM multiple */}
+              {isMultipleChoice && option.count > 0 && (
+                <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                  {option.count} participant{option.count > 1 ? "s ont" : " a"}{" "}
+                  sélectionné cette option
+                  {option.isCorrect && " (parmi les bonnes réponses)"}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Message si aucune réponse */}
+          {responseCount === 0 && (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <p>Aucune réponse reçue pour le moment...</p>
+            </div>
+          )}
+
+          {/* 🔴 NOUVEAU: Statistiques globales pour QCM multiple */}
+          {isMultipleChoice && responseCount > 0 && (
+            <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <h4 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                <svg
+                  className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                </svg>
+                Analyse des réponses complètes
+              </h4>
+
+              {(() => {
+                // Compter les réponses 100% correctes
+                const perfectAnswers = questionResponses.filter((r) => {
+                  if (!Array.isArray(r.answer)) return false;
+
+                  const correctIndices = correctOptions
+                    .map((_, idx) =>
+                      currentQuestion.options.findIndex(
+                        (opt) => opt === correctOptions[idx]
+                      )
+                    )
+                    .sort();
+
+                  const answerIndices = r.answer.map((a) => parseInt(a)).sort();
+
+                  return (
+                    JSON.stringify(answerIndices) ===
+                    JSON.stringify(correctIndices)
+                  );
+                }).length;
+
+                const perfectPercentage =
+                  responseCount > 0
+                    ? Math.round((perfectAnswers / responseCount) * 100)
+                    : 0;
+
+                return (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
+                      <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+                        {perfectAnswers}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Réponses parfaites
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                        {perfectPercentage}% du total
+                      </div>
+                    </div>
+
+                    <div className="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
+                      <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                        {responseCount - perfectAnswers}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Réponses partielles
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                        {100 - perfectPercentage}% du total
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="mt-3 text-xs text-gray-600 dark:text-gray-400 italic">
+                💡 Une réponse est "parfaite" quand le participant a sélectionné
+                toutes les bonnes options et aucune mauvaise.
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Cas pour Vrai/Faux
+    if (currentQuestion.type === "vrai_faux") {
+      // 🔴 FIX: ID de question cohérent
+      const questionId =
+        currentQuestion.id || `q_${session?.currentQuestionIndex}`;
+
+      console.log("🔍 Debug Vrai/Faux Stats:", {
+        questionId,
+        responsesKeys: Object.keys(responses),
+        currentResponses: responses[questionId],
+      });
+
+      // 🔴 FIX: Essayer plusieurs formats d'ID
+      let questionResponses = responses[questionId] || [];
+
+      if (questionResponses.length === 0) {
+        const alternativeIds = [
+          currentQuestion.id,
+          `q_${session?.currentQuestionIndex}`,
+          `q${session?.currentQuestionIndex}`,
+          session?.currentQuestionIndex?.toString(),
+        ];
+
+        for (const altId of alternativeIds) {
+          if (responses[altId] && responses[altId].length > 0) {
+            questionResponses = responses[altId];
+            console.log(`✅ Réponses trouvées avec ID: ${altId}`);
+            break;
+          }
+        }
+      }
+
+      const responseCount = questionResponses.length;
+      const participantCount = participants.length;
+
+      console.log(
+        `📊 Stats Vrai/Faux: ${responseCount} réponses sur ${participantCount}`
+      );
+
+      // 🔴 FIX: Compter TOUTES les variations possibles
+      const vraiCount = questionResponses.filter((r) => {
+        const answer = String(r.answer).toLowerCase().trim();
+        // Accepter: 0, "0", "vrai", "true", true
+        return (
+          r.answer === 0 ||
+          answer === "0" ||
+          answer === "vrai" ||
+          answer === "true" ||
+          r.answer === true
+        );
+      }).length;
+
+      const fauxCount = questionResponses.filter((r) => {
+        const answer = String(r.answer).toLowerCase().trim();
+        // Accepter: 1, "1", "faux", "false", false
+        return (
+          r.answer === 1 ||
+          answer === "1" ||
+          answer === "faux" ||
+          answer === "false" ||
+          r.answer === false
+        );
+      }).length;
+
+      console.log(`📊 Comptage: Vrai=${vraiCount}, Faux=${fauxCount}`);
+
+      // 🔴 FIX: Détecter quelle est la bonne réponse
+      let correctAnswer = "vrai"; // Par défaut
+
+      if (currentQuestion.correctAnswer !== undefined) {
+        const correctValue = String(currentQuestion.correctAnswer)
+          .toLowerCase()
+          .trim();
+
+        if (
+          currentQuestion.correctAnswer === false ||
+          currentQuestion.correctAnswer === 1 ||
+          correctValue === "faux" ||
+          correctValue === "false" ||
+          correctValue === "1"
+        ) {
+          correctAnswer = "faux";
+        }
+      }
+
+      console.log(`✅ Bonne réponse: ${correctAnswer}`);
+
+      return (
+        <div className="space-y-4">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            Résultats ({responseCount} / {participantCount})
+          </h3>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Carte VRAI */}
+            <div
+              className={`p-6 rounded-lg border-2 text-center ${
+                correctAnswer === "vrai"
+                  ? "border-success-500 bg-success-50 dark:bg-success-900/20"
+                  : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+              }`}
+            >
+              <div className="text-4xl mb-2">✓</div>
+              <div className="font-bold text-gray-900 dark:text-white mb-2">
+                Vrai
+              </div>
+              <div className="text-2xl font-bold text-primary-600">
+                {vraiCount}
+              </div>
+              <div className="text-sm text-gray-500">
+                {responseCount > 0
+                  ? Math.round((vraiCount / responseCount) * 100)
+                  : 0}
+                %
+              </div>
+
+              {/* Barre de progression */}
+              <div className="mt-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div
+                  className="bg-green-500 h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${
+                      responseCount > 0 ? (vraiCount / responseCount) * 100 : 0
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Carte FAUX */}
+            <div
+              className={`p-6 rounded-lg border-2 text-center ${
+                correctAnswer === "faux"
+                  ? "border-success-500 bg-success-50 dark:bg-success-900/20"
+                  : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+              }`}
+            >
+              <div className="text-4xl mb-2">✗</div>
+              <div className="font-bold text-gray-900 dark:text-white mb-2">
+                Faux
+              </div>
+              <div className="text-2xl font-bold text-primary-600">
+                {fauxCount}
+              </div>
+              <div className="text-sm text-gray-500">
+                {responseCount > 0
+                  ? Math.round((fauxCount / responseCount) * 100)
+                  : 0}
+                %
+              </div>
+
+              {/* Barre de progression */}
+              <div className="mt-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div
+                  className="bg-red-500 h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${
+                      responseCount > 0 ? (fauxCount / responseCount) * 100 : 0
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Message si aucune réponse */}
+          {responseCount === 0 && (
+            <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+              Aucune réponse reçue pour le moment...
+            </div>
+          )}
+
+          {/* Debug info (à retirer en production) */}
+          {process.env.NODE_ENV === "development" && (
+            <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded text-xs">
+              <p>Debug: questionId={questionId}</p>
+              <p>
+                Réponses brutes:{" "}
+                {JSON.stringify(questionResponses.map((r) => r.answer))}
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Cas pour Réponse libre
+    if (currentQuestion.type === "reponse_libre") {
+      // 🔴 FIX: Récupération cohérente de l'ID
+      const questionId =
+        currentQuestion.id || `q_${session?.currentQuestionIndex}`;
+
+      console.log("🔍 Debug Réponse Libre Stats:", {
+        questionId,
+        responsesKeys: Object.keys(responses),
+        currentResponses: responses[questionId],
+      });
+
+      // 🔴 FIX: Essayer plusieurs formats d'ID
+      let questionResponses = responses[questionId] || [];
+
+      if (questionResponses.length === 0) {
+        const alternativeIds = [
+          currentQuestion.id,
+          `q_${session?.currentQuestionIndex}`,
+          `q${session?.currentQuestionIndex}`,
+          session?.currentQuestionIndex?.toString(),
+        ];
+
+        for (const altId of alternativeIds) {
+          if (responses[altId] && responses[altId].length > 0) {
+            questionResponses = responses[altId];
+            console.log(`✅ Réponses trouvées avec ID: ${altId}`);
+            break;
+          }
+        }
+      }
+
+      const responseCount = questionResponses.length;
+      const participantCount = participants.length;
+
+      console.log(
+        `📊 Stats Réponse Libre: ${responseCount} réponses sur ${participantCount}`
+      );
+
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              Réponses reçues
+            </h3>
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              {responseCount} / {participantCount}
+            </span>
+          </div>
+
+          {/* Liste des réponses */}
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {questionResponses.length > 0 ? (
+              questionResponses.map((response, index) => {
+                const participant = participants.find(
+                  (p) => p.id === response.participantId
+                );
+
+                return (
+                  <div
+                    key={index}
+                    className={`p-4 rounded-lg border-2 ${
+                      response.isCorrect
+                        ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                        : response.isCorrect === false
+                        ? "border-red-500 bg-red-50 dark:bg-red-900/20"
+                        : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {participant?.name || "Participant anonyme"}
+                          </span>
+                          {response.timeSpent !== undefined && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              ({response.timeSpent}s)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-gray-900 dark:text-white font-medium">
+                          {response.answer}
+                        </p>
+                      </div>
+
+                      {/* Indicateur correct/incorrect */}
+                      {response.isCorrect !== undefined && (
+                        <div className="flex-shrink-0">
+                          {response.isCorrect ? (
+                            <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                              <CheckCircleIcon className="w-5 h-5" />
+                              <span className="text-sm font-medium">
+                                +{response.points || 0} pts
+                              </span>
+                            </div>
+                          ) : (
+                            <XCircleIcon className="w-5 h-5 text-red-600 dark:text-red-400" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                <InformationCircleIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Aucune réponse reçue pour le moment...</p>
+              </div>
+            )}
+          </div>
+
+          {/* Réponse correcte attendue */}
+          {currentQuestion.correctAnswer && (
+            <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-start gap-2">
+                <InformationCircleIcon className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1">
+                    Réponse attendue :
+                  </p>
+                  <p className="text-blue-900 dark:text-blue-100 font-medium">
+                    {currentQuestion.correctAnswer}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Barre de progression */}
+          {participantCount > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Progression
+                </span>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {Math.round((responseCount / participantCount) * 100)}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div
+                  className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.round(
+                      (responseCount / participantCount) * 100
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return null;
   };
 
   // Rendu des erreurs
@@ -959,7 +1704,6 @@ const SessionHost = () => {
               </div>
 
               <div className="flex space-x-3">
-                {/* Bouton Annuler/Supprimer - toujours visible */}
                 <button
                   onClick={handleCancelSession}
                   disabled={actionLoading}
@@ -974,7 +1718,6 @@ const SessionHost = () => {
                   {session?.status === "active" ? "Annuler" : "Supprimer"}
                 </button>
 
-                {/* Bouton Voir résultats - toujours visible */}
                 <button
                   onClick={() => navigate(`/session/${sessionId}/results`)}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
@@ -983,7 +1726,6 @@ const SessionHost = () => {
                   Voir résultats
                 </button>
 
-                {/* Boutons conditionnels selon le statut */}
                 {session?.status === "waiting" && (
                   <button
                     onClick={handleStartSession}
@@ -1067,7 +1809,6 @@ const SessionHost = () => {
             </div>
           </div>
 
-          {/* Informations de la session */}
           <div className="px-6 py-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-blue-50 dark:bg-blue-900 rounded-lg p-4">
@@ -1133,141 +1874,155 @@ const SessionHost = () => {
                     {currentQuestion.question}
                   </p>
 
-                  <div className="space-y-2">
-                    {currentQuestion.answers?.map((answer, index) => (
-                      <div
-                        key={index}
-                        className={`p-3 rounded-lg border ${
-                          answer.isCorrect
-                            ? "bg-green-50 border-green-200 dark:bg-green-900 dark:border-green-800"
-                            : "bg-gray-50 border-gray-200 dark:bg-gray-700 dark:border-gray-600"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-900 dark:text-white">
-                            {String.fromCharCode(65 + index)}. {answer.text}
-                          </span>
-                          {answer.isCorrect && (
-                            <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-                          )}
-                        </div>
-
-                        {/* Barre de progression des réponses */}
-                        {responses[currentQuestion.id] && (
-                          <div className="mt-2">
-                            <div className="bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                              <div
-                                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                                style={{
-                                  width: `${
-                                    ((responses[currentQuestion.id]?.filter(
-                                      (r) => r.answer === index
-                                    ).length || 0) /
-                                      Math.max(participants.length, 1)) *
-                                    100
-                                  }%`,
-                                }}
-                              />
-                            </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              {responses[currentQuestion.id]?.filter(
-                                (r) => r.answer === index
-                              ).length || 0}{" "}
-                              réponse(s)
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  {/* Affichage conditionnel selon le type */}
+                  {renderQuestionResults()}
                 </div>
 
-                {/* Contrôles de navigation */}
                 {session?.status === "active" && renderNavigationControls()}
               </div>
             </div>
           )}
 
-          {/* Liste des participants */}
+          {/* Sidebar Participants avec QR Code */}
           <div className={currentQuestion ? "lg:col-span-1" : "lg:col-span-3"}>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                  Participants ({participants.length})
-                </h2>
+            <div className="space-y-6">
+              {/* NOUVEAU: Section QR Code */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+                <div className="p-4 bg-gradient-to-br from-primary-50 to-primary-100 dark:from-primary-900/20 dark:to-primary-800/20 rounded-lg border border-primary-200 dark:border-primary-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-primary-900 dark:text-primary-100">
+                      Code de session
+                    </h3>
+                    <button
+                      onClick={() => setShowQRCode(!showQRCode)}
+                      className="p-2 hover:bg-primary-200 dark:hover:bg-primary-900/40 rounded-lg transition-colors"
+                      title={
+                        showQRCode
+                          ? "Masquer le QR Code"
+                          : "Afficher le QR Code"
+                      }
+                    >
+                      <QrCodeIcon className="h-5 w-5 text-primary-700 dark:text-primary-300" />
+                    </button>
+                  </div>
+
+                  <div className="text-center mb-3">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow">
+                      <span className="font-mono text-3xl font-bold text-primary-600 dark:text-primary-400">
+                        {session.code}
+                      </span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(session.code);
+                          toast.success("Code copié !");
+                        }}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      >
+                        <DocumentDuplicateIcon className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {showQRCode && (
+                    <div className="mt-4">
+                      <QRCodeGenerator
+                        sessionCode={session.code}
+                        size={200}
+                        showDownload={true}
+                        showCopy={false}
+                      />
+                    </div>
+                  )}
+
+                  <p className="text-xs text-center text-primary-700 dark:text-primary-300 mt-2">
+                    Les participants peuvent rejoindre avec ce code sur <br />
+                    <span className="font-mono font-semibold">
+                      {/* {window.location.origin}/join */}
+                      {process.env.REACT_APP_URL}/join
+                    </span>
+                  </p>
+                </div>
               </div>
 
-              <div className="max-h-96 overflow-y-auto">
-                {participants.length === 0 ? (
-                  <div className="px-6 py-8 text-center">
-                    <UserGroupIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500 dark:text-gray-400">
-                      Aucun participant pour le moment
-                    </p>
-                    <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-                      Partagez le code{" "}
-                      <span className="font-mono font-semibold">
-                        {session?.code}
-                      </span>
-                    </p>
-                  </div>
-                ) : (
-                  <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {participants.map((participant) => (
-                      <li key={participant.id} className="px-6 py-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <div className="flex-shrink-0">
-                              <div
-                                className={`h-8 w-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${
-                                  participant.isAnonymous
-                                    ? "bg-gray-500"
-                                    : "bg-primary-500"
-                                }`}
-                              >
-                                {participant.name.charAt(0).toUpperCase()}
-                              </div>
-                            </div>
-                            <div className="ml-3">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                {participant.name}
-                              </p>
-                              <div className="flex items-center space-x-2">
-                                {participant.isAnonymous && (
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    Anonyme
-                                  </span>
-                                )}
-                                <span className="text-xs text-gray-500 dark:text-gray-400">
-                                  Score: {participant.score || 0}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
+              {/* Liste des participants */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                  <h2 className="text-lg font-medium text-gray-900 dark:text-white">
+                    Participants ({participants.length})
+                  </h2>
+                </div>
 
-                          {/* Indicateur de réponse */}
-                          {currentQuestion && responses[currentQuestion.id] && (
-                            <div className="flex-shrink-0">
-                              {responses[currentQuestion.id].find(
-                                (r) => r.participantId === participant.id
-                              ) ? (
-                                <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                              ) : (
-                                <div className="h-5 w-5 rounded-full border-2 border-gray-300 dark:border-gray-600" />
-                              )}
+                <div className="max-h-96 overflow-y-auto">
+                  {participants.length === 0 ? (
+                    <div className="px-6 py-8 text-center">
+                      <UserGroupIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-500 dark:text-gray-400">
+                        Aucun participant pour le moment
+                      </p>
+                      <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
+                        Partagez le code{" "}
+                        <span className="font-mono font-semibold">
+                          {session?.code}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {participants.map((participant) => (
+                        <li key={participant.id} className="px-6 py-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center">
+                              <div className="flex-shrink-0">
+                                <div
+                                  className={`h-8 w-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${
+                                    participant.isAnonymous
+                                      ? "bg-gray-500"
+                                      : "bg-primary-500"
+                                  }`}
+                                >
+                                  {participant.name.charAt(0).toUpperCase()}
+                                </div>
+                              </div>
+                              <div className="ml-3">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                  {participant.name}
+                                </p>
+                                <div className="flex items-center space-x-2">
+                                  {participant.isAnonymous && (
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                                      Anonyme
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    Score: {participant.score || 0}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+
+                            {currentQuestion &&
+                              responses[currentQuestion.id] && (
+                                <div className="flex-shrink-0">
+                                  {responses[currentQuestion.id].find(
+                                    (r) => r.participantId === participant.id
+                                  ) ? (
+                                    <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                                  ) : (
+                                    <div className="h-5 w-5 rounded-full border-2 border-gray-300 dark:border-gray-600" />
+                                  )}
+                                </div>
+                              )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Message d'aide si session en attente */}
         {session?.status === "waiting" && participants.length === 0 && (
           <div className="mt-6 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
             <div className="flex">

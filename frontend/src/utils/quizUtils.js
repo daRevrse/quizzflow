@@ -90,14 +90,22 @@ export const validateQuestion = (question, index) => {
       break;
 
     case "vrai_faux":
+      // ✅ CORRECTION : Validation améliorée
       if (
-        !question.correctAnswer ||
-        (question.correctAnswer !== "true" &&
-          question.correctAnswer !== "false")
+        !question.correctAnswer &&
+        question.correctAnswer !== false &&
+        question.correctAnswer !== 0
       ) {
         errors.push(
           `Question ${questionNumber}: Réponse correcte requise pour Vrai/Faux`
         );
+      } else {
+        const normalized = normalizeVraiFauxValue(question.correctAnswer);
+        if (normalized !== "true" && normalized !== "false") {
+          errors.push(
+            `Question ${questionNumber}: Réponse Vrai/Faux invalide (doit être true ou false)`
+          );
+        }
       }
       break;
 
@@ -144,10 +152,32 @@ export const cleanQuestionData = (question, order) => {
       };
 
     case "vrai_faux":
+      // ✅ CORRECTION : Normaliser correctAnswer
+      let normalizedCorrectAnswer;
+
+      if (typeof question.correctAnswer === "boolean") {
+        normalizedCorrectAnswer = question.correctAnswer ? "true" : "false";
+      } else if (typeof question.correctAnswer === "string") {
+        const lower = question.correctAnswer.toLowerCase().trim();
+        // Accepter "vrai", "true", "1", "oui"
+        if (["vrai", "true", "1", "oui", "yes"].includes(lower)) {
+          normalizedCorrectAnswer = "true";
+        } else if (["faux", "false", "0", "non", "no"].includes(lower)) {
+          normalizedCorrectAnswer = "false";
+        } else {
+          normalizedCorrectAnswer = question.correctAnswer;
+        }
+      } else if (typeof question.correctAnswer === "number") {
+        normalizedCorrectAnswer =
+          question.correctAnswer === 0 ? "true" : "false";
+      } else {
+        normalizedCorrectAnswer = "true"; // Valeur par défaut
+      }
+
       return {
         ...baseQuestion,
         options: [], // Pas d'options pour vrai/faux
-        correctAnswer: question.correctAnswer, // Garder "true" ou "false"
+        correctAnswer: normalizedCorrectAnswer,
       };
 
     case "reponse_libre":
@@ -167,6 +197,28 @@ export const cleanQuestionData = (question, order) => {
     default:
       return baseQuestion;
   }
+};
+
+export const normalizeVraiFauxValue = (value) => {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (typeof value === "number") {
+    return value === 0 ? "true" : "false";
+  }
+
+  if (typeof value === "string") {
+    const lower = value.toLowerCase().trim();
+    if (["vrai", "true", "1", "oui", "yes"].includes(lower)) {
+      return "true";
+    }
+    if (["faux", "false", "0", "non", "no"].includes(lower)) {
+      return "false";
+    }
+  }
+
+  return "true"; // Défaut
 };
 
 /**
