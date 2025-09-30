@@ -256,7 +256,7 @@ const Home = () => {
         <div className="container mx-auto px-6 lg:px-12 text-center">
           <h1 className="text-4xl lg:text-6xl font-bold mb-6">
             Rendez vos cours interactifs avec{" "}
-            <span className="text-yellow-300">QuizLive</span>
+            <span className="text-yellow-300">QuizzFlow</span>
           </h1>
           <p className="text-lg lg:text-xl mb-8">
             Créez des quiz en temps réel, engagez vos étudiants et suivez leurs
@@ -264,13 +264,13 @@ const Home = () => {
           </p>
           <div className="flex justify-center space-x-4">
             <Link
-              to="/signup"
+              to="/register"
               className="px-6 py-3 bg-yellow-400 text-gray-900 font-semibold rounded-md shadow hover:bg-yellow-300 transition"
             >
               Commencer gratuitement
             </Link>
             <Link
-              to="/demo"
+              to="/"
               className="px-6 py-3 bg-transparent border border-white rounded-md hover:bg-white hover:text-indigo-600 transition"
             >
               Voir la démo
@@ -349,11 +349,11 @@ const Home = () => {
           Prêt à dynamiser vos cours ?
         </h2>
         <p className="mb-8 text-lg">
-          Essayez QuizLive gratuitement et engagez vos étudiants dès
+          Essayez QuizzFlow gratuitement et engagez vos étudiants dès
           aujourd’hui.
         </p>
         <Link
-          to="/signup"
+          to="/register"
           className="px-8 py-4 bg-yellow-400 text-gray-900 font-semibold rounded-md shadow hover:bg-yellow-300 transition"
         >
           Créer un compte
@@ -363,7 +363,7 @@ const Home = () => {
       {/* Footer */}
       <footer className="py-10 bg-gray-100 dark:bg-gray-900 text-center">
         <p className="text-gray-600 dark:text-gray-400">
-          © {new Date().getFullYear()} QuizLive. Tous droits réservés.
+          © {new Date().getFullYear()} QuizzFlow. Tous droits réservés.
         </p>
       </footer>
     </div>

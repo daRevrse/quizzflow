@@ -1,0 +1,118 @@
+-- ============================================================================
+-- SCRIPT SQL D'INITIALISATION DE LA BASE DE DONNÉES QUIZ_APP (corrigé)
+-- ============================================================================
+
+DROP DATABASE IF EXISTS quiz_app;
+CREATE DATABASE quiz_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE quiz_app;
+
+-- ============================================================================
+-- TABLE users
+-- ============================================================================
+CREATE TABLE `users` (
+  `id` VARCHAR(36) NOT NULL,
+  `username` VARCHAR(50) NOT NULL UNIQUE,
+  `email` VARCHAR(255) NOT NULL UNIQUE,
+  `password` VARCHAR(255) NOT NULL,
+  `role` ENUM('formateur','etudiant','admin') NOT NULL DEFAULT 'formateur',
+  `firstName` VARCHAR(50) DEFAULT NULL,
+  `lastName` VARCHAR(50) DEFAULT NULL,
+  `avatar` TEXT DEFAULT NULL,
+  `isActive` TINYINT(1) NOT NULL DEFAULT 1,
+  `lastLogin` DATETIME DEFAULT NULL,
+  `preferences` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin
+     CHECK (json_valid(`preferences`)),
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_users_email` (`email`),
+  INDEX `idx_users_username` (`username`),
+  INDEX `idx_users_role` (`role`),
+  INDEX `idx_users_isActive` (`isActive`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DELIMITER $$
+CREATE TRIGGER `users_before_insert_uuid`
+BEFORE INSERT ON `users`
+FOR EACH ROW
+BEGIN
+  IF NEW.id IS NULL OR NEW.id = '' THEN
+    SET NEW.id = UUID();
+  END IF;
+END$$
+DELIMITER ;
+
+-- ============================================================================
+-- TABLE quizzes
+-- ============================================================================
+CREATE TABLE `quizzes` (
+  `id` VARCHAR(36) NOT NULL,
+  `title` VARCHAR(200) NOT NULL,
+  `description` TEXT DEFAULT NULL,
+  `creatorId` VARCHAR(36) NOT NULL,
+  `questions` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin 
+    CHECK (json_valid(`questions`)),
+  `settings` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin
+    CHECK (json_valid(`settings`)),
+  `category` VARCHAR(50) DEFAULT NULL,
+  `tags` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin 
+    CHECK (json_valid(`tags`)),
+  `difficulty` ENUM('facile','moyen','difficile') NOT NULL DEFAULT 'moyen',
+  `estimatedDuration` INT DEFAULT 0,
+  `isActive` TINYINT(1) NOT NULL DEFAULT 1,
+  `stats` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin
+    CHECK (json_valid(`stats`)),
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_quizzes_creatorId` (`creatorId`),
+  INDEX `idx_quizzes_isActive` (`isActive`),
+  FOREIGN KEY (`creatorId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DELIMITER $$
+CREATE TRIGGER `quizzes_before_insert_uuid`
+BEFORE INSERT ON `quizzes`
+FOR EACH ROW
+BEGIN
+  IF NEW.id IS NULL OR NEW.id = '' THEN
+    SET NEW.id = UUID();
+  END IF;
+END$$
+DELIMITER ;
+
+-- ============================================================================
+-- TABLE sessions
+-- ============================================================================
+CREATE TABLE `sessions` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `code` VARCHAR(6) NOT NULL UNIQUE,
+  `title` VARCHAR(255) NOT NULL,
+  `description` TEXT DEFAULT NULL,
+  `hostId` VARCHAR(36) NOT NULL,
+  `quizId` VARCHAR(36) NOT NULL,
+  `status` ENUM('waiting','active','paused','finished','cancelled') NOT NULL DEFAULT 'waiting',
+  `participants` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin 
+    CHECK (json_valid(`participants`)),
+  `responses` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin 
+    CHECK (json_valid(`responses`)),
+  `settings` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin
+    CHECK (json_valid(`settings`)),
+  `stats` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin
+    CHECK (json_valid(`stats`)),
+  `currentQuestionIndex` INT DEFAULT NULL,
+  `startedAt` DATETIME DEFAULT NULL,
+  `endedAt` DATETIME DEFAULT NULL,
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_sessions_status` (`status`),
+  FOREIGN KEY (`quizId`) REFERENCES `quizzes`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (`hostId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- Tu pourras ensuite ajouter les tables `participants`, `responses`, `results`
+-- en suivant la même logique que ton fichier `quiz_app.sql`
+-- ============================================================================
+
