@@ -65,6 +65,29 @@ const loadSession = async (req, res, next) => {
       });
     }
 
+    if (session.quiz) {
+      // Forcer le parsing des questions JSON
+      const rawQuestions = session.quiz.getDataValue('questions');
+      
+      if (typeof rawQuestions === 'string') {
+        try {
+          session.quiz.questions = JSON.parse(rawQuestions);
+          console.log(`✅ Questions parsées depuis JSON string`);
+        } catch (e) {
+          console.error(`❌ Erreur parsing questions quiz ${session.quizId}:`, e);
+          session.quiz.questions = [];
+        }
+      } else if (!Array.isArray(rawQuestions)) {
+        console.warn(`⚠️ Session ${session.id}: quiz.questions n'est ni string ni array`);
+        session.quiz.questions = [];
+      } else {
+        // Déjà un tableau, tout va bien
+        session.quiz.questions = rawQuestions;
+      }
+      
+      console.log(`✅ Quiz ${session.quizId} chargé avec ${session.quiz.questions.length} questions`);
+    }
+
     // Validation et nettoyage des données
     if (!Array.isArray(session.participants)) {
       console.warn(
@@ -281,7 +304,118 @@ function calculateSessionStats(sessionData) {
 // Routes
 
 // GET /api/session - Récupérer la liste des sessions
-router.get("/", authenticateToken, async (req, res) => {
+// router.get("/", authenticateToken, async (req, res) => {
+//   try {
+//     const {
+//       page = 1,
+//       limit = 20,
+//       search,
+//       status,
+//       quizId,
+//       hostId,
+//       my = false,
+//     } = req.query;
+
+//     const user = req.user;
+//     const offset = (parseInt(page) - 1) * parseInt(limit);
+
+//     // Construction des filtres
+//     const where = {};
+//     const include = [
+//       {
+//         model: Quiz,
+//         as: "quiz",
+//         attributes: ["id", "title", "category", "difficulty"],
+//         include: [
+//           {
+//             model: User,
+//             as: "creator",
+//             attributes: ["id", "username", "firstName", "lastName"],
+//           },
+//         ],
+//       },
+//       {
+//         model: User,
+//         as: "host",
+//         attributes: ["id", "username", "firstName", "lastName"],
+//       },
+//     ];
+
+//     // Filtrer par utilisateur si demandé
+//     if (my === "true" && user) {
+//       where[Op.or] = [{ hostId: user.id }, { "$quiz.creatorId$": user.id }];
+//     }
+
+//     // Autres filtres
+//     if (search) {
+//       where[Op.or] = [
+//         { title: { [Op.like]: `%${search}%` } },
+//         { code: { [Op.like]: `%${search.toUpperCase()}%` } },
+//       ];
+//     }
+
+//     if (status && status !== "all") {
+//       where.status = status;
+//     }
+
+//     if (quizId) {
+//       where.quizId = parseInt(quizId);
+//     }
+
+//     if (hostId) {
+//       where.hostId = parseInt(hostId);
+//     }
+
+//     // Requête avec pagination
+//     const { count, rows: sessions } = await Session.findAndCountAll({
+//       where,
+//       include,
+//       order: [["createdAt", "DESC"]],
+//       limit: parseInt(limit),
+//       offset,
+//       distinct: true,
+//     });
+
+//     // Formatage des résultats
+//     const formattedSessions = sessions.map((session) => ({
+//       id: session.id,
+//       code: session.code,
+//       title: session.title,
+//       description: session.description,
+//       status: session.status,
+//       participantCount: getParticipantCount(session), // ← UTILISER LA FONCTION CORRIGÉE
+//       currentQuestionIndex: session.currentQuestionIndex,
+//       startedAt: session.startedAt,
+//       endedAt: session.endedAt,
+//       createdAt: session.createdAt,
+//       updatedAt: session.updatedAt,
+//       quiz: session.quiz,
+//       host: session.host,
+//       settings: session.settings,
+//     }));
+
+//     const totalPages = Math.ceil(count / parseInt(limit));
+
+//     res.json({
+//       sessions: formattedSessions,
+//       pagination: {
+//         currentPage: parseInt(page),
+//         totalPages,
+//         totalItems: count,
+//         itemsPerPage: parseInt(limit),
+//         hasNext: parseInt(page) < totalPages,
+//         hasPrev: parseInt(page) > 1,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("❌ Erreur lors de la récupération des sessions:", error);
+//     res.status(500).json({
+//       error: "Erreur lors de la récupération des sessions",
+//       code: "GET_SESSIONS_ERROR",
+//     });
+//   }
+// });
+router.get("/", optionalAuth, async (req, res) => {
   try {
     const {
       page = 1,
@@ -290,102 +424,120 @@ router.get("/", authenticateToken, async (req, res) => {
       status,
       quizId,
       hostId,
-      my = false,
+      my,
     } = req.query;
 
-    const user = req.user;
     const offset = (parseInt(page) - 1) * parseInt(limit);
-
-    // Construction des filtres
     const where = {};
-    const include = [
-      {
-        model: Quiz,
-        as: "quiz",
-        attributes: ["id", "title", "category", "difficulty"],
-        include: [
-          {
-            model: User,
-            as: "creator",
-            attributes: ["id", "username", "firstName", "lastName"],
-          },
-        ],
-      },
-      {
-        model: User,
-        as: "host",
-        attributes: ["id", "username", "firstName", "lastName"],
-      },
-    ];
+    const user = req.user;
 
-    // Filtrer par utilisateur si demandé
-    if (my === "true" && user) {
-      where[Op.or] = [{ hostId: user.id }, { "$quiz.creatorId$": user.id }];
-    }
-
-    // Autres filtres
-    if (search) {
-      where[Op.or] = [
-        { title: { [Op.like]: `%${search}%` } },
-        { code: { [Op.like]: `%${search.toUpperCase()}%` } },
-      ];
-    }
-
+    // Filtres
     if (status && status !== "all") {
       where.status = status;
     }
 
     if (quizId) {
-      where.quizId = parseInt(quizId);
+      where.quizId = quizId;
     }
 
     if (hostId) {
-      where.hostId = parseInt(hostId);
+      where.hostId = hostId;
     }
 
-    // Requête avec pagination
+    // Filtre "my" = mes sessions (où je suis hôte)
+    if (my === "true" && user) {
+      where.hostId = user.id;
+    }
+
+    // Recherche textuelle
+    if (search && search.trim()) {
+      where[Op.or] = [
+        { title: { [Op.like]: `%${search.trim()}%` } },
+        { code: { [Op.like]: `%${search.trim()}%` } },
+      ];
+    }
+
     const { count, rows: sessions } = await Session.findAndCountAll({
       where,
-      include,
-      order: [["createdAt", "DESC"]],
       limit: parseInt(limit),
       offset,
-      distinct: true,
+      order: [["createdAt", "DESC"]],
+      include: [
+        {
+          model: Quiz,
+          as: "quiz",
+          attributes: ["id", "title", "difficulty", "estimatedDuration", "questions"],
+        },
+        {
+          model: User,
+          as: "host",
+          attributes: ["id", "username", "firstName", "lastName"],
+        },
+      ],
     });
 
-    // Formatage des résultats
-    const formattedSessions = sessions.map((session) => ({
-      id: session.id,
-      code: session.code,
-      title: session.title,
-      description: session.description,
-      status: session.status,
-      participantCount: getParticipantCount(session), // ← UTILISER LA FONCTION CORRIGÉE
-      currentQuestionIndex: session.currentQuestionIndex,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
-      quiz: session.quiz,
-      host: session.host,
-      settings: session.settings,
-    }));
+    // 🔴 CORRECTION: Inclure responses pour chaque session
+    const sessionsData = sessions.map((session) => {
+      const sessionData = {
+        id: session.id,
+        code: session.code,
+        title: session.title,
+        description: session.description,
+        status: session.status,
+        participantCount: getParticipantCount(session),
+        currentQuestionIndex: session.currentQuestionIndex,
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        settings: session.settings,
+        stats: session.stats,
+        quiz: session.quiz
+          ? {
+              id: session.quiz.id,
+              title: session.quiz.title,
+              difficulty: session.quiz.difficulty,
+              estimatedDuration: session.quiz.estimatedDuration,
+              questions: session.quiz.questions || [], // 🔴 NOUVEAU
+            }
+          : null,
+        host: session.host
+          ? {
+              id: session.host.id,
+              username: session.host.username,
+              firstName: session.host.firstName,
+              lastName: session.host.lastName,
+            }
+          : null,
+      };
 
-    const totalPages = Math.ceil(count / parseInt(limit));
+      // 🔴 CORRECTION CRITIQUE: Inclure responses pour toutes les sessions terminées
+      // Cela permet à ParticipantHistory de calculer les stats
+      if (session.status === "finished") {
+        sessionData.responses = session.responses || {};
+        sessionData.participants = session.participants || [];
+      }
+
+      // Pour les sessions actives, inclure participants si l'utilisateur est hôte
+      if (user && session.hostId === user.id) {
+        sessionData.responses = session.responses || {};
+        sessionData.participants = session.participants || [];
+      }
+
+      return sessionData;
+    });
 
     res.json({
-      sessions: formattedSessions,
+      sessions: sessionsData,
       pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalItems: count,
-        itemsPerPage: parseInt(limit),
-        hasNext: parseInt(page) < totalPages,
-        hasPrev: parseInt(page) > 1,
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / parseInt(limit)),
       },
     });
   } catch (error) {
-    console.error("❌ Erreur lors de la récupération des sessions:", error);
+    console.error("Erreur lors de la récupération des sessions:", error);
     res.status(500).json({
       error: "Erreur lors de la récupération des sessions",
       code: "GET_SESSIONS_ERROR",
@@ -494,94 +646,6 @@ router.get("/code/:code", optionalAuth, async (req, res) => {
   }
 });
 
-// router.get("/:id", optionalAuth, loadSession, async (req, res) => {
-//   try {
-//     const session = req.session;
-//     const user = req.user;
-
-//     // Déterminer les permissions
-//     const isHost = user && session.hostId === user.id;
-//     const isQuizOwner = user && session.quiz?.creatorId === user.id;
-//     const isAdmin = user && user.role === "admin";
-//     const isParticipant =
-//       user &&
-//       Array.isArray(session.participants) &&
-//       session.participants.some((p) => p.userId === user.id);
-
-//     const participantCount = getParticipantCount(session);
-
-//     const responseData = {
-//       session: {
-//         id: session.id,
-//         code: session.code,
-//         title: session.title,
-//         description: session.description,
-//         status: session.status,
-//         participantCount,
-//         currentQuestionIndex: session.currentQuestionIndex,
-//         currentQuestionStartedAt: session.currentQuestionStartedAt,
-//         startedAt: session.startedAt,
-//         endedAt: session.endedAt,
-//         createdAt: session.createdAt,
-//         updatedAt: session.updatedAt,
-//         settings: session.settings,
-//         quiz: session.quiz,
-//         host: session.host,
-//         stats: session.stats,
-//       },
-//       permissions: {
-//         canControl: isHost || isQuizOwner || isAdmin,
-//         canParticipate: ["waiting", "active"].includes(session.status),
-//         isHost,
-//         isParticipant,
-//       },
-//     };
-
-//     if (isHost || isQuizOwner || isAdmin || isParticipant) {
-//       const cleanParticipants = getCleanParticipants(session); // ← UTILISER LA FONCTION CORRIGÉE
-
-//       responseData.session.participants = cleanParticipants.map((p) => ({
-//         id: p.id,
-//         name: p.name,
-//         isAnonymous: p.isAnonymous,
-//         joinedAt: p.joinedAt,
-//         score: p.score || 0,
-//         // Infos détaillées seulement pour les hôtes
-//         ...(isHost || isQuizOwner || isAdmin
-//           ? {
-//               userId: p.userId,
-//               socketId: p.socketId,
-//               isConnected: p.isConnected,
-//               stats: p.stats,
-//               responses: p.responses,
-//             }
-//           : {}),
-//       }));
-
-//       // Données complètes seulement pour les hôtes
-//       if (isHost || isQuizOwner || isAdmin) {
-//         responseData.session.responses = session.responses || {};
-//         responseData.session.detailedStats = session.stats || {};
-//       }
-//     }
-
-//     console.log(
-//       `✅ Session détails envoyés avec ${participantCount} participants`
-//     );
-//     res.json(responseData);
-//   } catch (error) {
-//     console.error("❌ Erreur lors de la récupération de la session:", error);
-//     res.status(500).json({
-//       error: "Erreur lors de la récupération de la session",
-//       code: "GET_SESSION_ERROR",
-//       details:
-//         process.env.NODE_ENV === "development" ? error.message : undefined,
-//     });
-//   }
-// });
-
-// POST /api/session - Créer une nouvelle session
-
 router.get("/:id", optionalAuth, loadSession, async (req, res) => {
   try {
     const session = req.session;
@@ -639,6 +703,8 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
       },
     };
 
+    responseData.session.responses = session.responses || {};
+
     // ✅ CORRECTION: Retourner les participants pour les participants aussi
     if (isHost || isQuizOwner || isAdmin || isParticipant) {
       const cleanParticipants = getCleanParticipants(session);
@@ -661,8 +727,10 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
           : {}),
       }));
 
+        // responseData.session.responses = session.responses || {};
+
       if (isHost || isQuizOwner || isAdmin) {
-        responseData.session.responses = session.responses || {};
+        
         responseData.session.detailedStats = session.stats || {};
       }
     }

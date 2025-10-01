@@ -68,11 +68,24 @@ const ParticipantResults = () => {
 
       console.log("✅ Participant trouvé:", participant);
 
+      // 🔴 CORRECTION: Récupérer les questions du quiz pour les points max
+      const quizQuestions = session.quiz?.questions || [];
+      console.log("📚 Questions du quiz:", quizQuestions.length);
+
       // Analyser les réponses
       const responses = session.responses || {};
       const participantResponses = [];
       let correctAnswers = 0;
       let totalTimeSpent = 0;
+      let totalMaxPoints = 0; // 🔴 NOUVEAU
+
+      // 🔴 DEBUG: Voir les réponses disponibles
+      console.log("🔍 DEBUG responses:", {
+        hasResponses: Object.keys(responses).length > 0,
+        questionIds: Object.keys(responses),
+        participantIdSearched: participant.id,
+        responsesSample: responses,
+      });
 
       Object.keys(responses).forEach((questionId) => {
         const questionResponses = responses[questionId] || [];
@@ -81,14 +94,24 @@ const ParticipantResults = () => {
         );
 
         if (participantResponse) {
+          // 🔴 CORRECTION: Extraire l'index de la question depuis l'ID
+          const questionIndex = parseInt(questionId.replace(/\D/g, "")) || 0;
+          const question = quizQuestions[questionIndex];
+
+          // 🔴 CORRECTION: Utiliser les points de la question, pas les points obtenus
+          const maxPoints = question?.points || 1;
+          totalMaxPoints += maxPoints;
+
           participantResponses.push({
             questionId,
-            questionText: `Question ${participantResponses.length + 1}`,
+            questionText:
+              question?.question ||
+              `Question ${participantResponses.length + 1}`,
             answer: participantResponse.answer,
             isCorrect: participantResponse.isCorrect,
-            points: participantResponse.points || 0,
+            points: participantResponse.points || 0, // Points obtenus
             timeSpent: participantResponse.timeSpent || 0,
-            maxPoints: participantResponse.points || 1, // Fallback
+            maxPoints: maxPoints, // 🔴 CORRECTION: Points maximum de la question
           });
 
           if (participantResponse.isCorrect) {
@@ -100,16 +123,24 @@ const ParticipantResults = () => {
       });
 
       const totalQuestions = participantResponses.length;
+
+      // 🔴 CORRECTION: Calculer l'accuracyRate basé sur les bonnes réponses
       const accuracyRate =
         totalQuestions > 0
           ? Math.round((correctAnswers / totalQuestions) * 100)
           : 0;
 
-      // Calculer le score maximum
-      const maxPossibleScore = participantResponses.reduce(
-        (sum, r) => sum + (r.maxPoints || 1),
-        0
-      );
+      console.log("📊 Calculs corrects:", {
+        totalQuestions,
+        correctAnswers,
+        accuracyRate,
+        scoreObtenu: participant.score,
+        totalMaxPoints,
+        pourcentageScore:
+          totalMaxPoints > 0
+            ? Math.round((participant.score / totalMaxPoints) * 100)
+            : 0,
+      });
 
       // Calculer le rang
       const sortedParticipants = (session.participants || [])
@@ -125,7 +156,7 @@ const ParticipantResults = () => {
           id: participant.id,
           name: participant.name,
           score: participant.score || 0,
-          maxPossibleScore: maxPossibleScore || participant.score || 0,
+          maxPossibleScore: totalMaxPoints, // 🔴 CORRECTION
           correctAnswers,
           totalQuestions,
           accuracyRate,
@@ -158,7 +189,7 @@ const ParticipantResults = () => {
                   ) / sortedParticipants.length
                 )
               : 0,
-          maxPossibleScore: maxPossibleScore || 0,
+          maxPossibleScore: totalMaxPoints, // 🔴 CORRECTION
         },
       };
 
@@ -185,7 +216,6 @@ const ParticipantResults = () => {
       if (navigator.share) {
         await navigator.share(shareData);
       } else {
-        // Fallback: copier dans le presse-papier
         await navigator.clipboard.writeText(
           `${shareData.text}\n${shareData.url}`
         );
@@ -259,12 +289,6 @@ const ParticipantResults = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between py-6">
             <div className="flex items-center">
-              {/* <button
-                onClick={() => navigate(-1)}
-                className="mr-4 p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                <ArrowLeftIcon className="w-5 h-5" />
-              </button> */}
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                   Mes Résultats
