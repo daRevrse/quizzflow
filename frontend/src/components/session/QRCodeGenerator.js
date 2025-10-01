@@ -21,14 +21,12 @@ const QRCodeGenerator = ({
   const qrCodeRef = useRef(null);
   const qrCodeInstance = useRef(null);
 
-  // 🔴 CORRECTION: URL directe vers /join avec le code (pas de login requis)
-  //   const joinUrl = sessionUrl || `${window.location.origin}/join?code=${sessionCode}`;
   const joinUrl = `${process.env.REACT_APP_URL}/join?code=${sessionCode}`;
 
   useEffect(() => {
     if (!sessionCode) return;
 
-    // Configuration du QR Code avec style personnalisé
+    // Configuration du QR Code avec style personnalisé - ROUGE BORDEAUX
     qrCodeInstance.current = new QRCodeStyling({
       width: size,
       height: size,
@@ -46,13 +44,13 @@ const QRCodeGenerator = ({
       },
       dotsOptions: {
         type: "rounded",
-        color: "#4f46e5",
+        color: "#A51F2E",
         gradient: {
           type: "linear",
           rotation: 0,
           colorStops: [
-            { offset: 0, color: "#4f46e5" },
-            { offset: 1, color: "#7c3aed" },
+            { offset: 0, color: "#A51F2E" },
+            { offset: 1, color: "#8B1A26" },
           ],
         },
       },
@@ -106,88 +104,88 @@ const QRCodeGenerator = ({
 
   if (!sessionCode) {
     return (
-      <div className="flex items-center justify-center p-8 bg-gray-50 dark:bg-gray-800 rounded-lg">
+      <div className="flex items-center justify-center p-8 bg-gray-50 dark:bg-gray-900 rounded-lg">
         <p className="text-gray-500 dark:text-gray-400">
-          Code de session non disponible
+          Code de session manquant
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col items-center space-y-4">
       {/* QR Code */}
-      <div className="flex justify-center p-6 bg-white dark:bg-gray-800 rounded-lg border-2 border-gray-200 dark:border-gray-700">
-        <div ref={qrCodeRef} />
+      <div className="bg-white p-6 rounded-lg shadow-md border-2 border-primary-200 dark:border-primary-800">
+        <div ref={qrCodeRef} className="flex items-center justify-center" />
       </div>
 
       {/* Informations */}
       <div className="text-center space-y-2">
-        <div className="flex items-center justify-center gap-2">
-          <QrCodeIcon className="h-5 w-5 text-gray-500" />
+        <div className="flex items-center justify-center space-x-2">
+          <QrCodeIcon className="h-5 w-5 text-primary-600 dark:text-primary-400" />
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Scannez ce QR code pour rejoindre la session
+            Scannez ce QR code pour rejoindre
           </p>
         </div>
-
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-          <span className="font-mono text-2xl font-bold text-primary-600 dark:text-primary-400">
-            {sessionCode}
+        <div className="flex items-center justify-center space-x-2">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Code:
           </span>
-          {showCopy && (
-            <button
-              onClick={handleCopyCode}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-              title="Copier le code"
-            >
-              <DocumentDuplicateIcon className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-            </button>
-          )}
+          <code className="px-3 py-1 text-lg font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded border border-primary-200 dark:border-primary-800">
+            {sessionCode}
+          </code>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        {showDownload && (
-          <>
-            <button
-              onClick={() => handleDownload("png")}
-              className="flex-1 btn-secondary flex items-center justify-center gap-2"
-            >
-              <ArrowDownTrayIcon className="h-4 w-4" />
-              Télécharger PNG
-            </button>
-            <button
-              onClick={() => handleDownload("svg")}
-              className="flex-1 btn-secondary flex items-center justify-center gap-2"
-            >
-              <ArrowDownTrayIcon className="h-4 w-4" />
-              Télécharger SVG
-            </button>
-          </>
-        )}
-        {showCopy && (
-          <button
-            onClick={handleCopyUrl}
-            className="flex-1 btn-secondary flex items-center justify-center gap-2"
-          >
-            <DocumentDuplicateIcon className="h-4 w-4" />
-            Copier le lien
-          </button>
-        )}
-      </div>
+      {(showDownload || showCopy) && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {showCopy && (
+            <>
+              <button
+                onClick={handleCopyUrl}
+                className="inline-flex items-center px-3 py-2 text-sm font-medium text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors border border-primary-200 dark:border-primary-800"
+              >
+                <DocumentDuplicateIcon className="h-4 w-4 mr-2" />
+                Copier le lien
+              </button>
+              <button
+                onClick={handleCopyCode}
+                className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors border border-gray-300 dark:border-gray-600"
+              >
+                <DocumentDuplicateIcon className="h-4 w-4 mr-2" />
+                Copier le code
+              </button>
+            </>
+          )}
 
-      {/* URL complète */}
-      <details className="text-sm">
-        <summary className="cursor-pointer text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
-          Afficher l'URL complète
-        </summary>
-        <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-          <code className="text-xs break-all text-gray-700 dark:text-gray-300">
-            {joinUrl}
-          </code>
+          {showDownload && (
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handleDownload("png")}
+                className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+              >
+                <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                PNG
+              </button>
+              <button
+                onClick={() => handleDownload("svg")}
+                className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+              >
+                <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                SVG
+              </button>
+            </div>
+          )}
         </div>
-      </details>
+      )}
+
+      {/* URL affichée */}
+      <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 max-w-md w-full">
+        <p className="text-xs text-gray-500 dark:text-gray-400 text-center break-all">
+          {joinUrl}
+        </p>
+      </div>
     </div>
   );
 };

@@ -5,18 +5,18 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Couleurs principales de l'application
+        // Couleurs principales de l'application - ROUGE BORDEAUX
         primary: {
-          50: "#eff6ff",
-          100: "#dbeafe",
-          200: "#bfdbfe",
-          300: "#93c5fd",
-          400: "#60a5fa",
-          500: "#3b82f6",
-          600: "#2563eb",
-          700: "#1d4ed8",
-          800: "#1e40af",
-          900: "#1e3a8a",
+          50: "#fef2f2",
+          100: "#fee2e2",
+          200: "#fecaca",
+          300: "#fca5a5",
+          400: "#f87171",
+          500: "#ef4444",
+          600: "#A51F2E", // Couleur principale - Rouge bordeaux
+          700: "#8B1A26",
+          800: "#71151E",
+          900: "#571016",
         },
         secondary: {
           50: "#f0f9ff",
@@ -119,7 +119,7 @@ module.exports = {
           "0 4px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
         large:
           "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
-        quiz: "0 0 0 1px rgba(59, 130, 246, 0.1), 0 4px 25px -5px rgba(59, 130, 246, 0.1)",
+        quiz: "0 0 0 1px rgba(165, 31, 46, 0.1), 0 4px 25px -5px rgba(165, 31, 46, 0.1)",
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",

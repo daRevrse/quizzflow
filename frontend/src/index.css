@@ -8,13 +8,13 @@
 
 /* Variables CSS personnalisées */
 :root {
-  --color-primary: #3b82f6;
-  --color-primary-dark: #1d4ed8;
+  --color-primary: #a51f2e;
+  --color-primary-dark: #8b1a26;
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
-  --shadow-quiz: 0 0 0 1px rgba(59, 130, 246, 0.1),
-    0 4px 25px -5px rgba(59, 130, 246, 0.1);
+  --shadow-quiz: 0 0 0 1px rgba(165, 31, 46, 0.1),
+    0 4px 25px -5px rgba(165, 31, 46, 0.1);
 }
 
 /* Styles de base */
