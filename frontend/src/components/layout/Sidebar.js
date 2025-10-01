@@ -115,8 +115,8 @@ const Sidebar = () => {
       {/* Header de la sidebar */}
       <div className="flex items-center justify-center h-16 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">Q</span>
+          <div className="w-12 h-12 bg-gradient-to-r bg-white rounded-xl flex items-center justify-center shadow-lg">
+            <img src="/images/logo.png" alt="Logo" className="w-12 h-12" />
           </div>
           <span className="text-lg font-semibold text-gray-900 dark:text-white">
             QuizFlow

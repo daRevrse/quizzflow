@@ -64,8 +64,8 @@ const Login = () => {
         <div className="text-center">
           {/* Logo */}
           <div className="flex justify-center">
-            <div className="w-16 h-16 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-xl flex items-center justify-center shadow-lg">
-              <span className="text-white font-bold text-2xl">Q</span>
+            <div className="w-16 h-16 bg-gradient-to-r bg-white rounded-xl flex items-center justify-center shadow-lg">
+              <img src="/images/logo.png" alt="Logo" className="w-16 h-16" />
             </div>
           </div>
 
@@ -73,7 +73,7 @@ const Login = () => {
             Connexion
           </h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Accédez à votre compte QuizApp
+            Accédez à votre compte QuizFlow
           </p>
         </div>
 

@@ -186,7 +186,7 @@ const Home = () => {
       company: "TechEdu Corp",
       image: "/api/placeholder/64/64",
       content:
-        "QuizzFlow a révolutionné mes formations. L'engagement des apprenants a augmenté de 85% depuis que j'utilise cette plateforme.",
+        "QuizFlow a révolutionné mes formations. L'engagement des apprenants a augmenté de 85% depuis que j'utilise cette plateforme.",
       rating: 5,
     },
     {
@@ -231,9 +231,9 @@ const Home = () => {
         "Oui, vous pouvez exporter les résultats au format CSV ou PDF avec des graphiques détaillés sur les performances de chaque participant.",
     },
     {
-      question: "Est-ce que QuizzFlow fonctionne sur mobile ?",
+      question: "Est-ce que QuizFlow fonctionne sur mobile ?",
       answer:
-        "Absolument ! QuizzFlow est entièrement responsive et fonctionne parfaitement sur smartphones, tablettes et ordinateurs.",
+        "Absolument ! QuizFlow est entièrement responsive et fonctionne parfaitement sur smartphones, tablettes et ordinateurs.",
     },
     {
       question: "Y a-t-il une limite au nombre de quiz que je peux créer ?",
@@ -247,7 +247,7 @@ const Home = () => {
       name: "Gratuit",
       price: "0€",
       period: "/mois",
-      description: "Parfait pour découvrir QuizzFlow",
+      description: "Parfait pour découvrir QuizFlow",
       features: [
         "3 quiz actifs",
         "25 participants max/session",
@@ -597,7 +597,7 @@ const Home = () => {
               Ils nous font confiance
             </h2>
             <p className="text-xl text-gray-600 dark:text-gray-300">
-              Découvrez ce que nos utilisateurs pensent de QuizzFlow
+              Découvrez ce que nos utilisateurs pensent de QuizFlow
             </p>
           </div>
 
@@ -836,7 +836,7 @@ const Home = () => {
             </h2>
 
             <p className="text-xl lg:text-2xl mb-10 text-blue-100">
-              Rejoignez plus de 8,000 formateurs qui utilisent QuizzFlow pour
+              Rejoignez plus de 8,000 formateurs qui utilisent QuizFlow pour
               créer des expériences d'apprentissage mémorables.
             </p>
 
@@ -881,11 +881,15 @@ const Home = () => {
             {/* Logo & Description */}
             <div className="md:col-span-1">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-lg">Q</span>
+                <div className="w-16 h-16 bg-gradient-to-r bg-white rounded-xl flex items-center justify-center shadow-lg">
+                  <img
+                    src="/images/logo.png"
+                    alt="Logo"
+                    className="w-16 h-16"
+                  />
                 </div>
                 <span className="text-xl font-semibold text-white">
-                  QuizzFlow
+                  QuizFlow
                 </span>
               </div>
               <p className="text-sm">
@@ -1014,7 +1018,7 @@ const Home = () => {
           {/* Bottom Footer */}
           <div className="pt-8 border-t border-gray-800 flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-sm">
-              © {new Date().getFullYear()} QuizzFlow. Tous droits réservés.
+              © {new Date().getFullYear()} QuizFlow. Tous droits réservés.
             </p>
             <div className="flex items-center gap-6 text-sm">
               <a href="#" className="hover:text-white transition-colors">
