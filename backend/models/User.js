@@ -2,130 +2,6 @@ const { DataTypes } = require("sequelize");
 const bcrypt = require("bcryptjs");
 const { sequelize } = require("../config/database");
 
-// const User = sequelize.define(
-//   "User",
-//   {
-//     id: {
-//       type: DataTypes.UUID,
-//       defaultValue: DataTypes.UUIDV4,
-//       primaryKey: true,
-//     },
-//     username: {
-//       type: DataTypes.STRING(50),
-//       allowNull: false,
-//       unique: true,
-//       validate: {
-//         len: [3, 50],
-//         notEmpty: true,
-//       },
-//     },
-//     email: {
-//       type: DataTypes.STRING(100),
-//       allowNull: false,
-//       unique: true,
-//       validate: {
-//         isEmail: true,
-//         notEmpty: true,
-//       },
-//       set(value) {
-//         this.setDataValue("email", value.toLowerCase().trim());
-//       },
-//     },
-//     password: {
-//       type: DataTypes.STRING(255),
-//       allowNull: false,
-//       validate: {
-//         len: [6, 255],
-//         notEmpty: true,
-//       },
-//     },
-//     role: {
-//       type: DataTypes.ENUM("formateur", "etudiant", "admin"),
-//       defaultValue: "formateur",
-//       allowNull: false,
-//     },
-//     firstName: {
-//       type: DataTypes.STRING(50),
-//       allowNull: true,
-//       validate: {
-//         len: [0, 50],
-//       },
-//     },
-//     lastName: {
-//       type: DataTypes.STRING(50),
-//       allowNull: true,
-//       validate: {
-//         len: [0, 50],
-//       },
-//     },
-//     avatar: {
-//       type: DataTypes.TEXT,
-//       allowNull: true,
-//     },
-//     isActive: {
-//       type: DataTypes.BOOLEAN,
-//       defaultValue: true,
-//     },
-//     lastLogin: {
-//       type: DataTypes.DATE,
-//       allowNull: true,
-//     },
-//     preferences: {
-//       type: DataTypes.JSON,
-//       defaultValue: {
-//         theme: "light",
-//         language: "fr",
-//         notifications: true,
-//       },
-//       validate: {
-//         isValidPreferences(value) {
-//           if (value && typeof value === "object") {
-//             const { theme, language } = value;
-//             if (theme && !["light", "dark"].includes(theme)) {
-//               throw new Error("Theme invalide");
-//             }
-//             if (language && !["fr", "en"].includes(language)) {
-//               throw new Error("Langue invalide");
-//             }
-//           }
-//         },
-//       },
-//     },
-//   },
-//   {
-//     tableName: "users",
-//     indexes: [
-//       {
-//         unique: true,
-//         fields: ["email"],
-//       },
-//       {
-//         unique: true,
-//         fields: ["username"],
-//       },
-//       {
-//         fields: ["role"],
-//       },
-//       {
-//         fields: ["isActive"],
-//       },
-//     ],
-//     hooks: {
-//       beforeCreate: async (user) => {
-//         if (user.password) {
-//           const salt = await bcrypt.genSalt(12);
-//           user.password = await bcrypt.hash(user.password, salt);
-//         }
-//       },
-//       beforeUpdate: async (user) => {
-//         if (user.changed("password")) {
-//           const salt = await bcrypt.genSalt(12);
-//           user.password = await bcrypt.hash(user.password, salt);
-//         }
-//       },
-//     },
-//   }
-// );
 const User = sequelize.define(
   "User",
   {
@@ -238,11 +114,6 @@ const User = sequelize.define(
   }
 );
 
-// Méthodes d'instance
-// User.prototype.comparePassword = async function (candidatePassword) {
-//   return bcrypt.compare(candidatePassword, this.password);
-// };
-
 User.prototype.toPublicJSON = function () {
   const values = { ...this.get() };
   delete values.password;
@@ -254,15 +125,12 @@ User.prototype.toPublicJSON = function () {
     firstName: values.firstName,
     lastName: values.lastName,
     avatar: values.avatar,
+    isActive: values.isActive,
     preferences: values.preferences,
     createdAt: values.createdAt,
     lastLogin: values.lastLogin,
   };
 };
-
-// User.prototype.updateLastLogin = function () {
-//   return this.update({ lastLogin: new Date() });
-// };
 
 // Méthodes statiques/de classe
 User.findByEmailOrUsername = function (identifier) {
@@ -275,19 +143,6 @@ User.findByEmailOrUsername = function (identifier) {
     },
   });
 };
-
-// User.findActiveUsers = function (options = {}) {
-//   return this.findAll({
-//     where: {
-//       isActive: true,
-//       ...options.where,
-//     },
-//     attributes: { exclude: ["password"] },
-//     order: options.order || [["createdAt", "DESC"]],
-//     limit: options.limit || 50,
-//     offset: options.offset || 0,
-//   });
-// };
 
 User.countByRole = async function () {
   const result = await this.findAll({
@@ -330,11 +185,26 @@ User.prototype.getFullName = function () {
   return this.username;
 };
 
+// User.prototype.toJSON = function () {
+//   const values = Object.assign({}, this.get());
+//   delete values.password; // Ne jamais exposer le mot de passe
+//   return values;
+// };
 User.prototype.toJSON = function () {
   const values = Object.assign({}, this.get());
-  delete values.password; // Ne jamais exposer le mot de passe
+
+  delete values.password;
+  delete values.refreshToken;
+
+  if (Object.prototype.hasOwnProperty.call(values, "isActive")) {
+    values.isActive = Boolean(values.isActive);
+  } else if (this.isActive !== undefined) {
+    values.isActive = Boolean(this.isActive);
+  }
+
   return values;
 };
+
 
 // Méthodes statiques
 User.findByEmail = function (email) {
@@ -358,14 +228,6 @@ User.findActiveUsers = function (options = {}) {
     offset: options.offset || 0,
   });
 };
-
-// Vérifier que le modèle est bien une classe Sequelize
-console.log("🔍 Vérification modèle User:");
-console.log("   Type:", typeof User);
-console.log("   Name:", User.name);
-console.log("   hasMany method:", typeof User.hasMany);
-console.log("   sequelize instance:", !!User.sequelize);
-console.log("   prototype:", !!User.prototype);
 
 // Scopes
 User.addScope("withoutPassword", {

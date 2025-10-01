@@ -64,9 +64,11 @@ const Login = () => {
         <div className="text-center">
           {/* Logo */}
           <div className="flex justify-center">
-            <div className="w-16 h-16 bg-gradient-to-r bg-white rounded-xl flex items-center justify-center shadow-lg">
-              <img src="/images/logo.png" alt="Logo" className="w-16 h-16" />
-            </div>
+            <Link to="/" className="flex items-center space-x-2 ml-2 lg:ml-0">
+              <div className="w-16 h-16 bg-gradient-to-r bg-white rounded-xl flex items-center justify-center shadow-lg">
+                <img src="/images/logo.png" alt="Logo" className="w-16 h-16" />
+              </div>
+            </Link>
           </div>
 
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900 dark:text-white">

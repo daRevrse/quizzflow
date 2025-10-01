@@ -1,7 +1,11 @@
+// frontend/src/pages/AdminDashboard.js
 import { useState, useEffect } from "react";
 import { useAuthStore } from "../stores/authStore";
 import LoadingSpinner from "../components/common/LoadingSpinner";
+import UserCreateModal from "../components/admin/UserCreateModal";
+import UserDetailModal from "../components/admin/UserDetailModal";
 import toast from "react-hot-toast";
+import apiClient from "../services/api";
 import {
   UserGroupIcon,
   PuzzlePieceIcon,
@@ -11,11 +15,12 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ClockIcon,
-  TrophyIcon,
   EyeIcon,
   TrashIcon,
   UserPlusIcon,
   Cog6ToothIcon,
+  ArrowUpIcon,
+  MagnifyingGlassIcon,
 } from "@heroicons/react/24/outline";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -24,24 +29,28 @@ const AdminDashboard = () => {
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Modals
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState(null);
 
   // États pour les données admin
-  const [stats, setStats] = useState({
-    totalUsers: 0,
-    totalQuizzes: 0,
-    totalSessions: 0,
-    activeUsers: 0,
-    activeSessions: 0,
-  });
+  const [stats, setStats] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [activities, setActivities] = useState([]);
 
-  const [recentUsers, setRecentUsers] = useState([]);
-  const [systemHealth, setSystemHealth] = useState({
-    status: "healthy",
-    uptime: 0,
-    memoryUsage: 0,
-    diskUsage: 0,
+  // États pour les filtres et pagination
+  const [userFilters, setUserFilters] = useState({
+    page: 1,
+    limit: 10,
+    search: "",
+    role: "",
+    status: "",
   });
-  const [recentActivity, setRecentActivity] = useState([]);
+  const [usersPagination, setUsersPagination] = useState(null);
 
   // Vérifier si l'utilisateur est admin
   useEffect(() => {
@@ -49,127 +58,159 @@ const AdminDashboard = () => {
       toast.error("Accès refusé - Droits administrateur requis");
       return;
     }
-    loadAdminData();
+    loadAllData();
   }, [user]);
 
-  const loadAdminData = async () => {
+  const loadAllData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      // Simuler le chargement des données admin
-      // En réalité, on ferait des appels API vers des endpoints admin
-
-      // Statistiques générales
-      setStats({
-        totalUsers: 1247,
-        totalQuizzes: 3891,
-        totalSessions: 15672,
-        activeUsers: 89,
-        activeSessions: 12,
-      });
-
-      // Utilisateurs récents
-      setRecentUsers([
-        {
-          id: 1,
-          name: "Marie Dubois",
-          email: "marie@exemple.com",
-          role: "etudiant",
-          createdAt: new Date(),
-          status: "active",
-        },
-        {
-          id: 2,
-          name: "Pierre Martin",
-          email: "pierre@exemple.com",
-          role: "formateur",
-          createdAt: new Date(),
-          status: "active",
-        },
-        {
-          id: 3,
-          name: "Sophie Laurent",
-          email: "sophie@exemple.com",
-          role: "etudiant",
-          createdAt: new Date(),
-          status: "pending",
-        },
-      ]);
-
-      // État du système
-      setSystemHealth({
-        status: "healthy",
-        uptime: 15.2, // jours
-        memoryUsage: 68, // %
-        diskUsage: 45, // %
-      });
-
-      // Activité récente
-      setRecentActivity([
-        {
-          id: 1,
-          type: "user_created",
-          user: "Marie Dubois",
-          description: "Nouvel utilisateur inscrit",
-          timestamp: new Date(),
-        },
-        {
-          id: 2,
-          type: "quiz_created",
-          user: "Pierre Martin",
-          description: "Nouveau quiz créé: Histoire de France",
-          timestamp: new Date(),
-        },
-        {
-          id: 3,
-          type: "session_started",
-          user: "Sophie Laurent",
-          description: "Session démarrée: Quiz de mathématiques",
-          timestamp: new Date(),
-        },
-      ]);
+      await loadStats();
+      if (activeTab === "users") await loadUsers();
+      if (activeTab === "system") await loadSystemHealth();
+      if (activeTab === "activity") await loadActivities();
     } catch (error) {
-      console.error("Erreur lors du chargement des données admin:", error);
+      console.error("Erreur lors du chargement:", error);
       toast.error("Erreur lors du chargement des données");
     } finally {
       setLoading(false);
     }
   };
 
+  const loadStats = async () => {
+    try {
+      const response = await apiClient.get("/admin/stats");
+      setStats(response.data);
+    } catch (error) {
+      console.error("Erreur stats:", error);
+      throw error;
+    }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const response = await apiClient.get("/admin/users", {
+        params: userFilters,
+      });
+      console.log("response", response);
+      setUsers(response.data.users);
+      setUsersPagination(response.data.pagination);
+    } catch (error) {
+      console.error("Erreur utilisateurs:", error);
+      throw error;
+    }
+  };
+
+  const loadSystemHealth = async () => {
+    try {
+      const response = await apiClient.get("/admin/health");
+      setSystemHealth(response.data);
+    } catch (error) {
+      console.error("Erreur santé système:", error);
+      throw error;
+    }
+  };
+
+  const loadActivities = async () => {
+    try {
+      const response = await apiClient.get("/admin/activity");
+      setActivities(response.data.activities);
+    } catch (error) {
+      console.error("Erreur activités:", error);
+      throw error;
+    }
+  };
+
+  // Recharger les données selon l'onglet actif
+  useEffect(() => {
+    if (user?.role === "admin" && !loading) {
+      if (activeTab === "users") loadUsers();
+      if (activeTab === "system") loadSystemHealth();
+      if (activeTab === "activity") loadActivities();
+    }
+  }, [activeTab, userFilters]);
+
   const handleUserAction = async (userId, action) => {
     try {
-      // Simuler action sur utilisateur
-      toast.success(`Action ${action} effectuée sur l'utilisateur`);
-      // Recharger les données
-      loadAdminData();
+      if (action === "view") {
+        setSelectedUserId(userId);
+        setShowDetailModal(true);
+        return;
+      }
+
+      if (action === "delete") {
+        if (
+          !window.confirm(
+            "Êtes-vous sûr de vouloir supprimer cet utilisateur ?"
+          )
+        ) {
+          return;
+        }
+        await apiClient.delete(`/admin/users/${userId}`);
+        toast.success("Utilisateur supprimé avec succès");
+      } else if (action === "toggle") {
+        const targetUser = users.find((u) => u.id === userId);
+        await apiClient.put(`/admin/users/${userId}`, {
+          isActive: !targetUser.isActive,
+        });
+        toast.success(
+          `Utilisateur ${
+            targetUser.isActive ? "désactivé" : "activé"
+          } avec succès`
+        );
+      }
+      await loadUsers();
     } catch (error) {
-      toast.error(`Erreur lors de l'action ${action}`);
+      console.error("Erreur action utilisateur:", error);
+      toast.error(error.response?.data?.error || "Erreur lors de l'action");
+    }
+  };
+
+  const handleSystemCleanup = async () => {
+    if (!window.confirm("Nettoyer les sessions inactives ?")) return;
+
+    try {
+      setRefreshing(true);
+      const response = await apiClient.post("/admin/system/cleanup");
+      const total =
+        response.data.deleted.completedSessions +
+        response.data.deleted.abandonedSessions;
+      toast.success(`Nettoyage effectué : ${total} sessions supprimées`);
+      await loadStats();
+    } catch (error) {
+      console.error("Erreur nettoyage:", error);
+      toast.error("Erreur lors du nettoyage");
+    } finally {
+      setRefreshing(false);
     }
   };
 
   const getStatusColor = (status) => {
-    switch (status) {
-      case "active":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-      case "suspended":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
-    }
+    return status
+      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+      : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+  };
+
+  const getRoleBadge = (role) => {
+    const badges = {
+      admin: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+      formateur:
+        "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+      etudiant:
+        "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+    };
+    return (
+      badges[role] ||
+      "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+    );
   };
 
   const getActivityIcon = (type) => {
-    switch (type) {
-      case "user_created":
-        return UserPlusIcon;
-      case "quiz_created":
-        return PuzzlePieceIcon;
-      case "session_started":
-        return ChartBarIcon;
-      default:
-        return ExclamationTriangleIcon;
-    }
+    const icons = {
+      user_created: UserPlusIcon,
+      quiz_created: PuzzlePieceIcon,
+      session_created: ChartBarIcon,
+    };
+    return icons[type] || ClockIcon;
   };
 
   if (user?.role !== "admin") {
@@ -196,19 +237,46 @@ const AdminDashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Modals */}
+      <UserCreateModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onUserCreated={() => {
+          loadUsers();
+          loadStats();
+        }}
+      />
+      <UserDetailModal
+        isOpen={showDetailModal}
+        onClose={() => {
+          setShowDetailModal(false);
+          setSelectedUserId(null);
+        }}
+        userId={selectedUserId}
+      />
+
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div className="px-6 py-4">
-          <div className="flex items-center space-x-3">
-            <Cog6ToothIcon className="h-8 w-8 text-red-600" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Administration
-              </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Gestion et surveillance de la plateforme
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Cog6ToothIcon className="h-8 w-8 text-red-600" />
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  Administration
+                </h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Gestion et surveillance de la plateforme
+                </p>
+              </div>
             </div>
+            <button
+              onClick={loadAllData}
+              disabled={refreshing}
+              className="inline-flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-md disabled:opacity-50"
+            >
+              {refreshing ? "Actualisation..." : "Actualiser"}
+            </button>
           </div>
         </div>
 
@@ -226,177 +294,290 @@ const AdminDashboard = () => {
                 onClick={() => setActiveTab(tab.id)}
                 className={`group relative min-w-0 flex-1 overflow-hidden py-4 px-4 text-sm font-medium text-center hover:bg-gray-50 dark:hover:bg-gray-700 focus:z-10 whitespace-nowrap ${
                   activeTab === tab.id
-                    ? "text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20"
-                    : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                    ? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400"
+                    : "text-gray-500 dark:text-gray-400 border-b-2 border-transparent"
                 }`}
               >
                 <tab.icon className="h-5 w-5 mx-auto mb-1" />
                 {tab.name}
-                {activeTab === tab.id && (
-                  <span
-                    aria-hidden="true"
-                    className="bg-primary-500 absolute inset-x-0 bottom-0 h-0.5"
-                  />
-                )}
               </button>
             ))}
           </nav>
         </div>
       </div>
 
-      {/* Contenu */}
-      {activeTab === "overview" && (
+      {/* Vue d'ensemble */}
+      {activeTab === "overview" && stats && (
         <div className="space-y-6">
           {/* Statistiques principales */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-blue-100 text-sm font-medium">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <UserGroupIcon className="h-8 w-8 text-blue-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
                     Utilisateurs
                   </p>
-                  <p className="text-3xl font-bold">{stats.totalUsers}</p>
-                  <p className="text-blue-200 text-xs">
-                    {stats.activeUsers} actifs
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.overview.totalUsers}
                   </p>
+                  {stats.today.newUsers > 0 && (
+                    <p className="text-xs text-green-600 flex items-center mt-1">
+                      <ArrowUpIcon className="h-3 w-3 mr-1" />+
+                      {stats.today.newUsers} aujourd'hui
+                    </p>
+                  )}
                 </div>
-                <UserGroupIcon className="h-8 w-8 text-blue-200" />
               </div>
             </div>
 
-            <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-100 text-sm font-medium">Quiz</p>
-                  <p className="text-3xl font-bold">{stats.totalQuizzes}</p>
-                  <p className="text-green-200 text-xs">Total créés</p>
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <PuzzlePieceIcon className="h-8 w-8 text-green-600" />
                 </div>
-                <PuzzlePieceIcon className="h-8 w-8 text-green-200" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Quiz
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.overview.totalQuizzes}
+                  </p>
+                  {stats.today.newQuizzes > 0 && (
+                    <p className="text-xs text-green-600 flex items-center mt-1">
+                      <ArrowUpIcon className="h-3 w-3 mr-1" />+
+                      {stats.today.newQuizzes} aujourd'hui
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-yellow-100 text-sm font-medium">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <ChartBarIcon className="h-8 w-8 text-purple-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
                     Sessions
                   </p>
-                  <p className="text-3xl font-bold">{stats.totalSessions}</p>
-                  <p className="text-yellow-200 text-xs">
-                    {stats.activeSessions} actives
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.overview.totalSessions}
+                  </p>
+                  {stats.today.newSessions > 0 && (
+                    <p className="text-xs text-green-600 flex items-center mt-1">
+                      <ArrowUpIcon className="h-3 w-3 mr-1" />+
+                      {stats.today.newSessions} aujourd'hui
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <CheckCircleIcon className="h-8 w-8 text-green-500" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Actifs (30j)
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.overview.activeUsers}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {Math.round(
+                      (stats.overview.activeUsers / stats.overview.totalUsers) *
+                        100
+                    )}
+                    % du total
                   </p>
                 </div>
-                <ChartBarIcon className="h-8 w-8 text-yellow-200" />
               </div>
             </div>
 
-            <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-purple-100 text-sm font-medium">Système</p>
-                  <p className="text-3xl font-bold">{systemHealth.uptime}j</p>
-                  <p className="text-purple-200 text-xs">Uptime</p>
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <ClockIcon className="h-8 w-8 text-yellow-600" />
                 </div>
-                <ServerStackIcon className="h-8 w-8 text-purple-200" />
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-red-100 text-sm font-medium">État</p>
-                  <p className="text-2xl font-bold">Sain</p>
-                  <p className="text-red-200 text-xs">Système opérationnel</p>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Sessions actives
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {stats.overview.activeSessions}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    En cours maintenant
+                  </p>
                 </div>
-                <CheckCircleIcon className="h-8 w-8 text-red-200" />
               </div>
             </div>
           </div>
 
-          {/* Graphiques et métriques */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Répartition */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                Utilisation système
+                Utilisateurs par rôle
               </h3>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                      Mémoire
-                    </span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {systemHealth.memoryUsage}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div className="space-y-3">
+                {Object.entries(stats.breakdown.usersByRole).map(
+                  ([role, count]) => (
                     <div
-                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${systemHealth.memoryUsage}%` }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                      Disque
-                    </span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {systemHealth.diskUsage}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div
-                      className="bg-green-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${systemHealth.diskUsage}%` }}
-                    />
-                  </div>
-                </div>
+                      key={role}
+                      className="flex items-center justify-between"
+                    >
+                      <span className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                        {role === "admin"
+                          ? "Administrateurs"
+                          : role === "formateur"
+                          ? "Formateurs"
+                          : "Étudiants"}
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${
+                              role === "admin"
+                                ? "bg-red-600"
+                                : role === "formateur"
+                                ? "bg-blue-600"
+                                : "bg-green-600"
+                            }`}
+                            style={{
+                              width: `${
+                                (count / stats.overview.totalUsers) * 100
+                              }%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white w-12 text-right">
+                          {count}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
             </div>
 
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                Activité récente
+                Quiz par difficulté
               </h3>
               <div className="space-y-3">
-                {recentActivity.slice(0, 5).map((activity) => {
-                  const IconComponent = getActivityIcon(activity.type);
-                  return (
+                {Object.entries(stats.breakdown.quizzesByDifficulty).map(
+                  ([difficulty, count]) => (
                     <div
-                      key={activity.id}
-                      className="flex items-center space-x-3"
+                      key={difficulty}
+                      className="flex items-center justify-between"
                     >
-                      <IconComponent className="h-5 w-5 text-gray-400" />
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-900 dark:text-white">
-                          {activity.description}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          par {activity.user} •{" "}
-                          {format(activity.timestamp, "HH:mm")}
-                        </p>
+                      <span className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                        {difficulty}
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${
+                              difficulty === "facile"
+                                ? "bg-green-600"
+                                : difficulty === "moyen"
+                                ? "bg-yellow-600"
+                                : "bg-red-600"
+                            }`}
+                            style={{
+                              width: `${
+                                (count / stats.overview.totalQuizzes) * 100
+                              }%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white w-12 text-right">
+                          {count}
+                        </span>
                       </div>
                     </div>
-                  );
-                })}
+                  )
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* Gestion des utilisateurs */}
       {activeTab === "users" && (
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                 Gestion des utilisateurs
               </h3>
-              <button className="inline-flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-md">
+
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="inline-flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-md"
+              >
                 <UserPlusIcon className="h-4 w-4 mr-2" />
                 Nouvel utilisateur
               </button>
+            </div>
+
+            {/* Filtres */}
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="relative">
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Rechercher..."
+                  value={userFilters.search}
+                  onChange={(e) =>
+                    setUserFilters({
+                      ...userFilters,
+                      search: e.target.value,
+                      page: 1,
+                    })
+                  }
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <select
+                value={userFilters.role}
+                onChange={(e) =>
+                  setUserFilters({
+                    ...userFilters,
+                    role: e.target.value,
+                    page: 1,
+                  })
+                }
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="">Tous les rôles</option>
+                <option value="admin">Admin</option>
+                <option value="formateur">Formateur</option>
+                <option value="etudiant">Étudiant</option>
+              </select>
+              <select
+                value={userFilters.status}
+                onChange={(e) =>
+                  setUserFilters({
+                    ...userFilters,
+                    status: e.target.value,
+                    page: 1,
+                  })
+                }
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="">Tous les statuts</option>
+                <option value="active">Actifs</option>
+                <option value="inactive">Inactifs</option>
+              </select>
             </div>
           </div>
 
@@ -414,49 +595,48 @@ const AdminDashboard = () => {
                     Statut
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Inscription
+                    Inscrit le
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {recentUsers.map((user) => (
+                {users.map((userItem) => (
                   <tr
-                    key={user.id}
+                    key={userItem.id}
                     className="hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900 rounded-full flex items-center justify-center">
-                          <span className="text-sm font-medium text-primary-600 dark:text-primary-400">
-                            {user.name.charAt(0).toUpperCase()}
+                        <div className="flex-shrink-0 h-10 w-10 bg-primary-100 dark:bg-primary-900 rounded-full flex items-center justify-center">
+                          <span className="text-primary-600 dark:text-primary-400 font-medium text-sm">
+                            {userItem.firstName?.[0] ||
+                              userItem.username?.[0]?.toUpperCase()}
                           </span>
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {user.name}
+                            {userItem.firstName && userItem.lastName
+                              ? `${userItem.firstName} ${userItem.lastName}`
+                              : userItem.username}
                           </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {user.email}
+                            {userItem.email}
                           </div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          user.role === "admin"
-                            ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                            : user.role === "formateur"
-                            ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                            : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                        }`}
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleBadge(
+                          userItem.role
+                        )}`}
                       >
-                        {user.role === "admin"
+                        {userItem.role === "admin"
                           ? "Admin"
-                          : user.role === "formateur"
+                          : userItem.role === "formateur"
                           ? "Formateur"
                           : "Étudiant"}
                       </span>
@@ -464,38 +644,52 @@ const AdminDashboard = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
-                          user.status
+                          userItem.isActive
                         )}`}
                       >
-                        {user.status === "active"
-                          ? "Actif"
-                          : user.status === "pending"
-                          ? "En attente"
-                          : "Suspendu"}
+                        {userItem.isActive ? "Actif" : "Inactif"}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {format(user.createdAt, "dd/MM/yyyy", { locale: fr })}
+                      {format(new Date(userItem.createdAt), "dd/MM/yyyy", {
+                        locale: fr,
+                      })}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center justify-end space-x-2">
                         <button
-                          onClick={() => handleUserAction(user.id, "view")}
+                          onClick={() => handleUserAction(userItem.id, "view")}
                           className="text-primary-600 hover:text-primary-500 dark:text-primary-400"
+                          title="Voir détails"
                         >
-                          <EyeIcon className="h-4 w-4" />
+                          <EyeIcon className="h-5 w-5" />
                         </button>
                         <button
-                          onClick={() => handleUserAction(user.id, "suspend")}
-                          className="text-yellow-600 hover:text-yellow-500 dark:text-yellow-400"
+                          onClick={() =>
+                            handleUserAction(userItem.id, "toggle")
+                          }
+                          className={`${
+                            userItem.isActive
+                              ? "text-yellow-600 hover:text-yellow-500"
+                              : "text-green-600 hover:text-green-500"
+                          } dark:text-yellow-400`}
+                          title={userItem.isActive ? "Désactiver" : "Activer"}
                         >
-                          <ExclamationTriangleIcon className="h-4 w-4" />
+                          {userItem.isActive ? (
+                            <XCircleIcon className="h-5 w-5" />
+                          ) : (
+                            <CheckCircleIcon className="h-5 w-5" />
+                          )}
                         </button>
                         <button
-                          onClick={() => handleUserAction(user.id, "delete")}
+                          onClick={() =>
+                            handleUserAction(userItem.id, "delete")
+                          }
                           className="text-red-600 hover:text-red-500 dark:text-red-400"
+                          title="Supprimer"
+                          disabled={userItem.id === user.id}
                         >
-                          <TrashIcon className="h-4 w-4" />
+                          <TrashIcon className="h-5 w-5" />
                         </button>
                       </div>
                     </td>
@@ -504,10 +698,49 @@ const AdminDashboard = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {usersPagination && usersPagination.totalPages > 1 && (
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  Page {usersPagination.page} sur {usersPagination.totalPages} (
+                  {usersPagination.total} utilisateurs)
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() =>
+                      setUserFilters({
+                        ...userFilters,
+                        page: userFilters.page - 1,
+                      })
+                    }
+                    disabled={userFilters.page === 1}
+                    className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    Précédent
+                  </button>
+                  <button
+                    onClick={() =>
+                      setUserFilters({
+                        ...userFilters,
+                        page: userFilters.page + 1,
+                      })
+                    }
+                    disabled={userFilters.page >= usersPagination.totalPages}
+                    className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    Suivant
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {activeTab === "system" && (
+      {/* Santé du système */}
+      {activeTab === "system" && systemHealth && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
@@ -529,81 +762,75 @@ const AdminDashboard = () => {
                     <XCircleIcon className="h-8 w-8 text-red-600 dark:text-red-400" />
                   )}
                 </div>
-                <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  État général
+                </p>
+                <p className="text-lg font-bold text-gray-900 dark:text-white capitalize">
                   {systemHealth.status === "healthy"
-                    ? "Système sain"
-                    : "Problèmes détectés"}
-                </h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Uptime: {systemHealth.uptime} jours
+                    ? "Opérationnel"
+                    : "Problème"}
                 </p>
               </div>
 
               <div className="text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900 mb-4">
-                  <ServerStackIcon className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 bg-blue-100 dark:bg-blue-900">
+                  <ClockIcon className="h-8 w-8 text-blue-600 dark:text-blue-400" />
                 </div>
-                <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  Mémoire
-                </h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {systemHealth.memoryUsage}% utilisée
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Temps de fonctionnement
+                </p>
+                <p className="text-lg font-bold text-gray-900 dark:text-white">
+                  {systemHealth.uptime.formatted}
                 </p>
               </div>
 
               <div className="text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-yellow-100 dark:bg-yellow-900 mb-4">
-                  <ChartBarIcon className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 bg-purple-100 dark:bg-purple-900">
+                  <ServerStackIcon className="h-8 w-8 text-purple-600 dark:text-purple-400" />
                 </div>
-                <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  Stockage
-                </h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {systemHealth.diskUsage}% utilisé
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Mémoire utilisée
+                </p>
+                <p className="text-lg font-bold text-gray-900 dark:text-white">
+                  {systemHealth.memory.percentage}%
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {systemHealth.memory.heapUsed}MB /{" "}
+                  {systemHealth.memory.heapTotal}MB
                 </p>
               </div>
             </div>
           </div>
 
+          {/* Actions système */}
           <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
               Actions système
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button className="p-4 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-left">
+              <button
+                onClick={handleSystemCleanup}
+                disabled={refreshing}
+                className="p-4 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-left disabled:opacity-50"
+              >
                 <h4 className="font-medium text-gray-900 dark:text-white mb-2">
-                  Sauvegarder la base de données
+                  Nettoyer les sessions
                 </h4>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Créer une sauvegarde complète des données
+                  Supprimer les sessions inactives et terminées
                 </p>
               </button>
 
-              <button className="p-4 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-left">
+              <button
+                onClick={() => loadSystemHealth()}
+                className="p-4 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-left"
+              >
                 <h4 className="font-medium text-gray-900 dark:text-white mb-2">
-                  Nettoyer le cache
+                  Actualiser l'état
                 </h4>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Vider le cache système et des sessions
-                </p>
-              </button>
-
-              <button className="p-4 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-left">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-2">
-                  Exporter les logs
-                </h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Télécharger les journaux système
-                </p>
-              </button>
-
-              <button className="p-4 border border-red-300 dark:border-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-left">
-                <h4 className="font-medium text-red-600 dark:text-red-400 mb-2">
-                  Mode maintenance
-                </h4>
-                <p className="text-sm text-red-500 dark:text-red-400">
-                  Activer le mode maintenance
+                  Recharger les métriques système
                 </p>
               </button>
             </div>
@@ -611,85 +838,79 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      {/* Journal d'activité */}
       {activeTab === "activity" && (
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">
               Journal d'activité
             </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Activités récentes sur la plateforme
+            </p>
           </div>
 
           <div className="p-6">
-            <div className="space-y-4">
-              {recentActivity.map((activity) => {
-                const IconComponent = getActivityIcon(activity.type);
-                return (
-                  <div
-                    key={activity.id}
-                    className="flex items-start space-x-4 p-4 border border-gray-200 dark:border-gray-600 rounded-lg"
-                  >
-                    <div
-                      className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                        activity.type === "user_created"
-                          ? "bg-blue-100 dark:bg-blue-900"
-                          : activity.type === "quiz_created"
-                          ? "bg-green-100 dark:bg-green-900"
-                          : "bg-yellow-100 dark:bg-yellow-900"
-                      }`}
-                    >
-                      <IconComponent
-                        className={`h-5 w-5 ${
-                          activity.type === "user_created"
-                            ? "text-blue-600 dark:text-blue-400"
-                            : activity.type === "quiz_created"
-                            ? "text-green-600 dark:text-green-400"
-                            : "text-yellow-600 dark:text-yellow-400"
-                        }`}
-                      />
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">
-                          {activity.description}
-                        </h4>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {format(activity.timestamp, "dd/MM/yyyy HH:mm", {
-                            locale: fr,
-                          })}
-                        </span>
+            <div className="flow-root">
+              <ul className="-mb-8">
+                {activities.map((activity, index) => {
+                  const IconComponent = getActivityIcon(activity.type);
+                  return (
+                    <li key={activity.id}>
+                      <div className="relative pb-8">
+                        {index !== activities.length - 1 && (
+                          <span
+                            className="absolute top-5 left-5 -ml-px h-full w-0.5 bg-gray-200 dark:bg-gray-700"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <div className="relative flex items-start space-x-3">
+                          <div>
+                            <div
+                              className={`h-10 w-10 rounded-full flex items-center justify-center ring-8 ring-white dark:ring-gray-800 ${
+                                activity.type === "user_created"
+                                  ? "bg-blue-500"
+                                  : activity.type === "quiz_created"
+                                  ? "bg-green-500"
+                                  : "bg-purple-500"
+                              }`}
+                            >
+                              <IconComponent className="h-5 w-5 text-white" />
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {activity.description}
+                              </p>
+                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                par {activity.user} •{" "}
+                                {format(
+                                  new Date(activity.timestamp),
+                                  "dd/MM/yyyy à HH:mm",
+                                  {
+                                    locale: fr,
+                                  }
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Par: {activity.user}
-                      </p>
-                      <div className="flex items-center mt-2 space-x-2">
-                        <span
-                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            activity.type === "user_created"
-                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                              : activity.type === "quiz_created"
-                              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                              : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-                          }`}
-                        >
-                          {activity.type === "user_created"
-                            ? "Utilisateur"
-                            : activity.type === "quiz_created"
-                            ? "Quiz"
-                            : "Session"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
 
-            <div className="mt-6 text-center">
-              <button className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md">
-                Charger plus d'activités
-              </button>
-            </div>
+            {activities.length === 0 && (
+              <div className="text-center py-12">
+                <ClockIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500 dark:text-gray-400">
+                  Aucune activité récente
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

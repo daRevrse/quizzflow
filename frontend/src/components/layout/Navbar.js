@@ -92,6 +92,21 @@ const Navbar = () => {
                 QuizApp
               </span>
             </Link> */}
+
+            {!isAuthenticated && (
+              <Link to="/" className="flex items-center space-x-2 ml-2 lg:ml-0">
+                <div className="w-12 h-12 bg-gradient-to-r bg-white rounded-xl flex items-center justify-center shadow-lg">
+                  <img
+                    src="/images/logo.png"
+                    alt="Logo"
+                    className="w-12 h-12"
+                  />
+                </div>
+                <span className="text-xl font-bold text-gray-900 dark:text-white">
+                  QuizFlow
+                </span>
+              </Link>
+            )}
           </div>
 
           {/* Actions de droite */}

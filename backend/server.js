@@ -228,6 +228,7 @@ app.use((req, res, next) => {
 app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/quiz", quizRoutes);
 app.use("/api/session", sessionRoutes);
+app.use("/api/admin", require("./routes/admin"));
 
 // Route de santé détaillée
 app.get("/api/health", (req, res) => {

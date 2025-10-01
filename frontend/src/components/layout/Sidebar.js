@@ -27,6 +27,12 @@ const Sidebar = () => {
 
   const navigation = [
     {
+      name: "Administration",
+      href: "/admin",
+      icon: Cog6ToothIcon,
+      show: user?.role === "admin",
+    },
+    {
       name: "Dashboard",
       href: "/dashboard",
       icon: HomeIcon,
