@@ -205,21 +205,6 @@ const Login = () => {
             Rejoindre un quiz sans compte
           </Link>
         </div>
-
-        {/* Comptes de démonstration */}
-        <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900 rounded-lg border border-blue-200 dark:border-blue-700">
-          <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
-            Comptes de démonstration
-          </h3>
-          <div className="space-y-1 text-xs text-blue-600 dark:text-blue-300">
-            <p>
-              <strong>Admin:</strong> admin@quiz-app.local / password123
-            </p>
-            <p>
-              <strong>Formateur:</strong> formateur@quiz-app.local / password123
-            </p>
-          </div>
-        </div>
       </div>
 
       {/* Bouton de thème en position fixe */}
