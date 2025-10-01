@@ -43,6 +43,7 @@ import ParticipantHistory from "./pages/participant/ParticipantHistory";
 import Statistics from "./pages/Statistics";
 import QuizPublicView from "./pages/quiz/QuizPublicView";
 import Help from "./pages/Help";
+import Contact from "./pages/Contact";
 
 function App() {
   const { user, isLoading, initializeAuth } = useAuthStore();
@@ -329,6 +330,7 @@ function MainLayout() {
               />
 
               <Route path="/help" element={<Help />} />
+              <Route path="/contact" element={<Contact />} />
 
               {/* Page 404 */}
               <Route path="*" element={<NotFound />} />

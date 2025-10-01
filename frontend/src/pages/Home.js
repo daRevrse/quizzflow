@@ -52,7 +52,7 @@ const Home = () => {
       description:
         "Créez des quiz engageants avec différents types de questions : QCM, Vrai/Faux, réponses libres, nuages de mots.",
       icon: PuzzlePieceIcon,
-      color: "from-blue-500 to-blue-600",
+      color: "from-primary-500 to-primary-600",
       benefits: ["Interface intuitive", "Média intégrés", "Questions variées"],
     },
     {
@@ -151,7 +151,7 @@ const Home = () => {
       description:
         "Utilisez notre éditeur intuitif pour créer des questions variées en quelques minutes.",
       icon: PuzzlePieceIcon,
-      color: "from-blue-500 to-blue-600",
+      color: "from-primary-500 to-primary-600",
     },
     {
       step: "2",
@@ -320,7 +320,7 @@ const Home = () => {
       </button>
 
       {/* Hero Section - Enhanced */}
-      <header className="relative bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white overflow-hidden">
+      <header className="relative bg-gradient-to-r from-primary-600 via-primary-700 to-primary-800 text-white overflow-hidden">
         {/* Animated Background Elements */}
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute top-20 left-10 w-72 h-72 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
@@ -345,7 +345,7 @@ const Home = () => {
                 </span>
               </h1>
 
-              <p className="text-xl lg:text-2xl mb-8 text-blue-100">
+              <p className="text-xl lg:text-2xl mb-8 text-primary-100">
                 Créez des quiz en temps réel, engagez vos étudiants et suivez
                 leurs progrès instantanément.
               </p>
@@ -368,7 +368,7 @@ const Home = () => {
               </div>
 
               {/* Trust Badges */}
-              <div className="flex items-center gap-6 justify-center lg:justify-start text-sm text-blue-100">
+              <div className="flex items-center gap-6 justify-center lg:justify-start text-sm text-primary-100">
                 <div className="flex items-center gap-1">
                   <CheckIcon className="h-5 w-5 text-green-400" />
                   <span>Sans carte bancaire</span>
@@ -384,7 +384,7 @@ const Home = () => {
             <div className="lg:pl-12">
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
                 <div className="text-center mb-6">
-                  <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full mb-4">
+                  <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-purple-600 rounded-full mb-4">
                     <PlayIcon className="h-8 w-8 text-white" />
                   </div>
                   <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
@@ -404,7 +404,7 @@ const Home = () => {
                         setJoinCode(e.target.value.toUpperCase())
                       }
                       placeholder="Entrez le code (ex: ABC123)"
-                      className="w-full px-6 py-4 text-center text-2xl font-mono font-bold tracking-widest border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white uppercase"
+                      className="w-full px-6 py-4 text-center text-2xl font-mono font-bold tracking-widest border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white uppercase"
                       maxLength={6}
                     />
                   </div>
@@ -412,7 +412,7 @@ const Home = () => {
                   <button
                     type="submit"
                     disabled={!joinCode.trim()}
-                    className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    className="w-full px-6 py-4 bg-gradient-to-r from-primary-600 to-purple-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   >
                     Rejoindre Maintenant
                   </button>
@@ -423,7 +423,7 @@ const Home = () => {
                     Vous êtes formateur ?{" "}
                     <Link
                       to="/register"
-                      className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                      className="text-primary-600 dark:text-primary-400 hover:underline font-medium"
                     >
                       Créez votre compte
                     </Link>
@@ -457,10 +457,10 @@ const Home = () => {
                   key={index}
                   className="text-center p-6 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
                 >
-                  <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full mb-3">
-                    <IconComponent className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  <div className="inline-flex items-center justify-center w-12 h-12 bg-primary-100 dark:bg-primary-900 rounded-full mb-3">
+                    <IconComponent className="h-6 w-6 text-primary-600 dark:text-primary-400" />
                   </div>
-                  <h3 className="text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">
+                  <h3 className="text-4xl font-bold text-primary-600 dark:text-primary-400 mb-2">
                     {stat.value}
                   </h3>
                   <p className="text-gray-600 dark:text-gray-300 font-medium mb-1">
@@ -513,8 +513,8 @@ const Home = () => {
                         >
                           <IconComponent className="h-20 w-20 text-white" />
                         </div>
-                        <div className="absolute -top-2 -right-2 w-12 h-12 bg-white dark:bg-gray-800 rounded-full border-4 border-blue-500 flex items-center justify-center shadow-lg">
-                          <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                        <div className="absolute -top-2 -right-2 w-12 h-12 bg-white dark:bg-gray-800 rounded-full border-4 border-primary-500 flex items-center justify-center shadow-lg">
+                          <span className="text-xl font-bold text-primary-600 dark:text-primary-400">
                             {step.step}
                           </span>
                         </div>
@@ -590,7 +590,7 @@ const Home = () => {
       </section>
 
       {/* Testimonials Section - Carousel */}
-      <section className="py-20 bg-gradient-to-br from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-900">
+      <section className="py-20 bg-gradient-to-br from-primary-50 to-purple-50 dark:from-gray-800 dark:to-gray-900">
         <div className="container mx-auto px-6 lg:px-12">
           <div className="text-center mb-16">
             <h2 className="text-4xl lg:text-5xl font-bold mb-4 text-gray-900 dark:text-white">
@@ -623,7 +623,7 @@ const Home = () => {
                 <img
                   src={testimonials[currentTestimonial].image}
                   alt={testimonials[currentTestimonial].name}
-                  className="w-16 h-16 rounded-full border-4 border-blue-500"
+                  className="w-16 h-16 rounded-full border-4 border-primary-500"
                 />
                 <div className="text-left">
                   <p className="font-bold text-gray-900 dark:text-white">
@@ -672,7 +672,7 @@ const Home = () => {
                   onClick={() => setCurrentTestimonial(index)}
                   className={`h-2 rounded-full transition-all duration-300 ${
                     index === currentTestimonial
-                      ? "w-8 bg-blue-600"
+                      ? "w-8 bg-primary-600"
                       : "w-2 bg-gray-300 dark:bg-gray-600"
                   }`}
                 />
@@ -700,13 +700,13 @@ const Home = () => {
                 key={index}
                 className={`relative rounded-2xl p-8 border-2 transition-all duration-300 ${
                   plan.popular
-                    ? "border-blue-500 shadow-2xl scale-105 bg-gradient-to-br from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-900"
+                    ? "border-primary-500 shadow-2xl scale-105 bg-gradient-to-br from-primary-50 to-purple-50 dark:from-gray-800 dark:to-gray-900"
                     : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:shadow-xl hover:scale-105"
                 }`}
               >
                 {plan.popular && (
                   <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                    <span className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
+                    <span className="bg-gradient-to-r from-primary-600 to-purple-600 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
                       🔥 Plus Populaire
                     </span>
                   </div>
@@ -719,7 +719,7 @@ const Home = () => {
                   <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
                     {plan.description}
                   </p>
-                  <div className="flex items-baseline justify-center gap-2">
+                  {/* <div className="flex items-baseline justify-center gap-2">
                     <span className="text-5xl font-bold text-gray-900 dark:text-white">
                       {plan.price}
                     </span>
@@ -728,7 +728,7 @@ const Home = () => {
                         {plan.period}
                       </span>
                     )}
-                  </div>
+                  </div> */}
                 </div>
 
                 <ul className="space-y-3 mb-8">
@@ -746,7 +746,7 @@ const Home = () => {
                   to={plan.name === "Gratuit" ? "/register" : "#"}
                   className={`block w-full text-center px-6 py-4 rounded-lg font-semibold transition-all duration-200 ${
                     plan.popular
-                      ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl transform hover:scale-105"
+                      ? "bg-gradient-to-r from-primary-600 to-purple-600 text-white shadow-lg hover:shadow-xl transform hover:scale-105"
                       : "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
                   }`}
                 >
@@ -805,7 +805,7 @@ const Home = () => {
             </p>
             <Link
               to="/contact"
-              className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+              className="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:underline font-semibold"
             >
               Contactez notre équipe
               <ArrowRightIcon className="h-4 w-4" />
@@ -815,7 +815,7 @@ const Home = () => {
       </section>
 
       {/* Final CTA Section - Enhanced */}
-      <section className="py-20 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white relative overflow-hidden">
+      <section className="py-20 bg-gradient-to-r from-primary-600 via-primary-700 to-primary-800 text-white relative overflow-hidden">
         {/* Background Animation */}
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute top-10 left-10 w-64 h-64 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
@@ -835,7 +835,7 @@ const Home = () => {
               Prêt à transformer vos formations ?
             </h2>
 
-            <p className="text-xl lg:text-2xl mb-10 text-blue-100">
+            <p className="text-xl lg:text-2xl mb-10 text-primary-100">
               Rejoignez plus de 8,000 formateurs qui utilisent QuizFlow pour
               créer des expériences d'apprentissage mémorables.
             </p>
@@ -856,7 +856,7 @@ const Home = () => {
               </Link>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-8 text-sm text-blue-100">
+            <div className="flex flex-wrap items-center justify-center gap-8 text-sm text-primary-100">
               <div className="flex items-center gap-2">
                 <CheckIcon className="h-5 w-5 text-green-400" />
                 <span>Installation en 2 minutes</span>
