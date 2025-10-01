@@ -870,9 +870,7 @@ const SessionPlay = () => {
         setIsAnswered(true);
         setIsSubmitting(false);
         if (data.success !== false) {
-          const message = `Réponse enregistrée ! ${
-            data.isCorrect ? "✅ Correct" : "❌ Incorrect"
-          } (${data.points || 0} pts)`;
+          const message = `Réponse enregistrée !`;
           toast.success(message, { duration: 3000 });
         }
         socket.off("response_submitted", handleResponseConfirmation);
