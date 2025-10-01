@@ -107,6 +107,7 @@ const requireRole = (...roles) => {
 
 //   next();
 // };
+// Remplacer la fonction optionalAuth existante (lignes ~73-102) par :
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -116,27 +117,31 @@ const optionalAuth = async (req, res, next) => {
       
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findByPk(decoded.userId);
+        const user = await User.findByPk(decoded.userId, {
+          attributes: { exclude: ["password"] },
+        });
         
-        if (user) {
+        if (user && user.isActive) {
           req.user = user;
           req.isAuthenticated = true;
         }
       } catch (jwtError) {
-        // Token invalide, mais on continue quand même
-        console.log("Token invalide ou expiré, mode anonyme");
+        // Token invalide, mode anonyme
+        console.log("Token invalide ou expiré, mode anonyme activé");
       }
     }
     
-    // 🔴 CRITIQUE: Continuer même sans authentification
+    // ✅ CRITIQUE: Toujours initialiser ces propriétés
     req.isAuthenticated = req.isAuthenticated || false;
     req.user = req.user || null;
+    req.isAnonymous = !req.user; // Indicateur explicite
     next();
     
   } catch (error) {
     console.error("Erreur optionalAuth:", error);
     req.isAuthenticated = false;
     req.user = null;
+    req.isAnonymous = true;
     next();
   }
 };

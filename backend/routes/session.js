@@ -494,7 +494,6 @@ router.get("/code/:code", optionalAuth, async (req, res) => {
   }
 });
 
-// GET /api/session/:id - Récupérer les détails d'une session
 // router.get("/:id", optionalAuth, loadSession, async (req, res) => {
 //   try {
 //     const session = req.session;
@@ -538,20 +537,36 @@ router.get("/code/:code", optionalAuth, async (req, res) => {
 //       },
 //     };
 
-//     // Ajouter les détails pour les hôtes
-//     if (isHost || isQuizOwner || isAdmin) {
-//       // Nettoyer les participants pour l'affichage
-//       const cleanParticipants = Array.isArray(session.participants)
-//         ? session.participants.filter((p) => p && typeof p === "object" && p.id)
-//         : [];
+//     if (isHost || isQuizOwner || isAdmin || isParticipant) {
+//       const cleanParticipants = getCleanParticipants(session); // ← UTILISER LA FONCTION CORRIGÉE
 
-//       responseData.session.participants = cleanParticipants;
-//       responseData.session.responses = session.responses || {};
-//       responseData.session.detailedStats = session.stats || {};
+//       responseData.session.participants = cleanParticipants.map((p) => ({
+//         id: p.id,
+//         name: p.name,
+//         isAnonymous: p.isAnonymous,
+//         joinedAt: p.joinedAt,
+//         score: p.score || 0,
+//         // Infos détaillées seulement pour les hôtes
+//         ...(isHost || isQuizOwner || isAdmin
+//           ? {
+//               userId: p.userId,
+//               socketId: p.socketId,
+//               isConnected: p.isConnected,
+//               stats: p.stats,
+//               responses: p.responses,
+//             }
+//           : {}),
+//       }));
+
+//       // Données complètes seulement pour les hôtes
+//       if (isHost || isQuizOwner || isAdmin) {
+//         responseData.session.responses = session.responses || {};
+//         responseData.session.detailedStats = session.stats || {};
+//       }
 //     }
 
 //     console.log(
-//       `✅ Session détails envoyés avec participantCount: ${participantCount}`
+//       `✅ Session détails envoyés avec ${participantCount} participants`
 //     );
 //     res.json(responseData);
 //   } catch (error) {
@@ -564,19 +579,36 @@ router.get("/code/:code", optionalAuth, async (req, res) => {
 //     });
 //   }
 // });
+
+// POST /api/session - Créer une nouvelle session
+
 router.get("/:id", optionalAuth, loadSession, async (req, res) => {
   try {
     const session = req.session;
     const user = req.user;
 
-    // Déterminer les permissions
     const isHost = user && session.hostId === user.id;
     const isQuizOwner = user && session.quiz?.creatorId === user.id;
     const isAdmin = user && user.role === "admin";
-    const isParticipant =
-      user &&
-      Array.isArray(session.participants) &&
-      session.participants.some((p) => p.userId === user.id);
+    
+    let isParticipant = false;
+    let myParticipantId = null;
+    
+    if (user) {
+      const participant = Array.isArray(session.participants) &&
+        session.participants.find((p) => p.userId === user.id);
+      isParticipant = !!participant;
+      myParticipantId = participant?.id;
+    } else {
+      // ✅ Récupérer depuis query parameter
+      const participantIdFromQuery = req.query.participantId;
+      if (participantIdFromQuery) {
+        const participant = Array.isArray(session.participants) &&
+          session.participants.find((p) => p.id === participantIdFromQuery);
+        isParticipant = !!participant;
+        myParticipantId = participant?.id;
+      }
+    }
 
     const participantCount = getParticipantCount(session);
 
@@ -607,8 +639,9 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
       },
     };
 
+    // ✅ CORRECTION: Retourner les participants pour les participants aussi
     if (isHost || isQuizOwner || isAdmin || isParticipant) {
-      const cleanParticipants = getCleanParticipants(session); // ← UTILISER LA FONCTION CORRIGÉE
+      const cleanParticipants = getCleanParticipants(session);
 
       responseData.session.participants = cleanParticipants.map((p) => ({
         id: p.id,
@@ -628,7 +661,6 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
           : {}),
       }));
 
-      // Données complètes seulement pour les hôtes
       if (isHost || isQuizOwner || isAdmin) {
         responseData.session.responses = session.responses || {};
         responseData.session.detailedStats = session.stats || {};
@@ -650,7 +682,6 @@ router.get("/:id", optionalAuth, loadSession, async (req, res) => {
   }
 });
 
-// POST /api/session - Créer une nouvelle session
 router.post("/", authenticateToken, async (req, res) => {
   try {
     const { quizId, title, description, settings = {} } = req.body;
@@ -869,6 +900,14 @@ router.post("/:id/join", optionalAuth, loadSession, async (req, res) => {
     console.log(`   Participant Name: ${participantName}`);
     console.log(`   Is Anonymous: ${isAnonymous}`);
     console.log(`   User ID: ${user?.id || "null"}`);
+
+    if (!user && !session.settings?.allowAnonymous) {
+      console.log("❌ Mode anonyme désactivé pour cette session");
+      return res.status(401).json({
+        error: "Authentification requise ou mode anonyme désactivé",
+        code: "AUTH_REQUIRED",
+      });
+    }
 
     // Validation du statut de la session
     if (!["waiting", "active"].includes(session.status)) {

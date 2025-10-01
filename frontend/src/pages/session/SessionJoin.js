@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { useAuthStore } from "../../stores/authStore";
@@ -27,6 +27,7 @@ const SessionJoin = () => {
   const [searchParams] = useSearchParams();
   const [sessionCodeFromUrl, setSessionCodeFromUrl] = useState("");
 
+  const componentMountedRef = useRef(true);
   // États principaux
   const [loading, setLoading] = useState(false);
   const [sessionInfo, setSessionInfo] = useState(null);
@@ -59,76 +60,6 @@ const SessionJoin = () => {
   // Validation en temps réel
   const isCodeValid = sessionCode && sessionCode.trim().length === 6;
   const isNameValid = participantName && participantName.trim().length >= 2;
-
-  // Charger les infos de la session si code fourni dans l'URL
-  // const loadSessionInfo = useCallback(
-  //   async (code) => {
-  //     if (!code || code.length !== 6) return;
-
-  //     try {
-  //       setLoading(true);
-  //       setError(null);
-  //       clearErrors();
-
-  //       console.log("🔍 Chargement des infos de session:", code);
-
-  //       const response = await sessionService.getSessionByCode(code);
-  //       const sessionData = response.session;
-
-  //       console.log("✅ Infos session chargées:", sessionData);
-
-  //       if (!sessionData) {
-  //         throw new Error("Session non trouvée");
-  //       }
-
-  //       // Vérifier si la session accepte de nouveaux participants
-  //       if (!sessionData.canJoin) {
-  //         let errorMessage =
-  //           "Cette session n'accepte plus de nouveaux participants";
-
-  //         if (sessionData.status === "finished") {
-  //           errorMessage = "Cette session est terminée";
-  //         } else if (sessionData.status === "cancelled") {
-  //           errorMessage = "Cette session a été annulée";
-  //         } else if (
-  //           sessionData.status === "active" &&
-  //           !sessionData.settings?.allowLateJoin
-  //         ) {
-  //           errorMessage =
-  //             "Cette session est en cours et n'autorise pas les arrivées tardives";
-  //         }
-
-  //         setError(errorMessage);
-  //         setStep("error");
-  //         return;
-  //       }
-
-  //       // Vérifier la limite de participants
-  //       if (
-  //         sessionData.participantCount >= sessionData.settings?.maxParticipants
-  //       ) {
-  //         setError(
-  //           `Session complète (${sessionData.settings.maxParticipants} participants maximum)`
-  //         );
-  //         setStep("error");
-  //         return;
-  //       }
-
-  //       setSessionInfo(sessionData);
-  //       setStep("enter-name");
-  //     } catch (error) {
-  //       console.error("❌ Erreur lors du chargement des infos:", error);
-
-  //       const errorMessage =
-  //         error.message || "Erreur lors du chargement de la session";
-  //       setError(errorMessage);
-  //       setStep("error");
-  //     } finally {
-  //       setLoading(false);
-  //     }
-  //   },
-  //   [clearErrors]
-  // );
 
   const loadSessionInfo = useCallback(
     async (code) => {
@@ -212,14 +143,6 @@ const SessionJoin = () => {
     [clearErrors, isAuthenticated, setValue, participantName]
   );
 
-  // Charger automatiquement si code dans URL
-  // useEffect(() => {
-  //   if (urlCode && urlCode.length === 6) {
-  //     setValue("sessionCode", urlCode.toUpperCase());
-  //     loadSessionInfo(urlCode);
-  //   }
-  // }, [urlCode, setValue, loadSessionInfo]);
-
   useEffect(() => {
     const codeFromUrl = searchParams.get("code");
     if (codeFromUrl && codeFromUrl.length === 6) {
@@ -229,61 +152,118 @@ const SessionJoin = () => {
       setValue("sessionCode", normalizedCode);
 
       loadSessionInfo(normalizedCode);
-
-      // Auto-recherche de la session
-      // const searchSession = async () => {
-      //   try {
-      //     setLoading(true);
-      //     const response = await sessionService.getSessionByCode(
-      //       normalizedCode
-      //     );
-      //     setSessionInfo(response.session);
-      //     setError(null);
-      //   } catch (error) {
-      //     console.error("Session non trouvée:", error);
-      //     // Ne pas afficher d'erreur ici, laisser l'utilisateur valider
-      //   } finally {
-      //     setLoading(false);
-      //   }
-      // };
-
-      // searchSession();
     }
   }, [searchParams, setValue, loadSessionInfo]);
 
   // Écouter les événements Socket.IO avec nettoyage automatique
-  useEffect(() => {
-    // if (!socket || !isConnected) return;
-    let isComponentMounted = true;
-    // SessionJoin.js - Ajouter au début du useEffect des sockets
-    if (!socket || !isConnected) {
-      console.warn("⚠️ Socket non connecté, tentative de reconnexion...");
+  // useEffect(() => {
+  //   // if (!socket || !isConnected) return;
+  //   let isComponentMounted = true;
+  //   // SessionJoin.js - Ajouter au début du useEffect des sockets
+  //   if (!socket || !isConnected) {
+  //     console.warn("⚠️ Socket non connecté, tentative de reconnexion...");
 
-      // Si le socket n'est pas connecté, attendre un peu et réessayer
-      setTimeout(() => {
-        if (isComponentMounted) {
-          loadSessionInfo(sessionCode);
-        }
-      }, 1000);
+  //     // Si le socket n'est pas connecté, attendre un peu et réessayer
+  //     // setTimeout(() => {
+  //     //   if (isComponentMounted) {
+  //     //     loadSessionInfo(sessionCode);
+  //     //   }
+  //     // }, 1000);
+  //     return;
+  //   }
+
+  //   const handleJoinError = (data) => {
+  //     if (!isComponentMounted) return;
+  //     console.error("❌ Erreur jointure:", data);
+
+  //     setJoining(false);
+  //     const errorMessage =
+  //       data.error || data.message || "Erreur lors de la jointure";
+  //     toast.error(errorMessage);
+  //     setError(errorMessage);
+  //   };
+
+  //   const handleSessionUpdated = (data) => {
+  //     if (!isComponentMounted) return;
+  //     console.log("📝 Session mise à jour:", data);
+
+  //     // Mettre à jour les infos si c'est la même session
+  //     if (data.sessionId === sessionInfo?.id) {
+  //       setSessionInfo((prev) =>
+  //         prev
+  //           ? {
+  //               ...prev,
+  //               ...data.updates,
+  //             }
+  //           : null
+  //       );
+  //     }
+  //   };
+
+  //   const handleSessionStatusChanged = (data) => {
+  //     if (!isComponentMounted) return;
+  //     console.log("🔄 Statut session changé:", data);
+
+  //     if (data.sessionId === sessionInfo?.id) {
+  //       if (data.status === "cancelled" || data.status === "finished") {
+  //         toast.error("La session a été fermée");
+  //         navigate("/join");
+  //       }
+  //     }
+  //   };
+
+  //   // SessionJoin.js - Ajouter dans le useEffect des sockets
+  //   const handleSessionJoined = (data) => {
+  //     if (!isComponentMounted) return;
+  //     console.log("🎉 Session rejointe via socket:", data);
+
+  //     // ✅ METTRE À JOUR L'ÉTAT AVEC LES DONNÉES REÇUES
+  //     if (data.session) {
+  //       setSessionInfo(data.session);
+  //     }
+
+  //     setJoining(false);
+  //     setStep("joined");
+  //     toast.success("Session rejointe avec succès !");
+
+  //     // ✅ NAVIGUER VERS LA PAGE DE JEU
+  //     setTimeout(() => {
+  //       if (isComponentMounted) {
+  //         navigate(`/session/${data.session?.id || sessionInfo?.id}/play`);
+  //       }
+  //     }, 1500);
+  //   };
+
+  //   // Écouter les événements
+  //   socket.on("session_joined", handleSessionJoined);
+  //   socket.on("join_error", handleJoinError);
+  //   socket.on("session_updated", handleSessionUpdated);
+  //   socket.on("session_ended", handleSessionStatusChanged);
+  //   socket.on("session_cancelled", handleSessionStatusChanged);
+
+  //   // Nettoyage
+  //   return () => {
+  //     isComponentMounted = false;
+  //     socket.off("session_joined", handleSessionJoined);
+  //     socket.off("join_error", handleJoinError);
+  //     socket.off("session_updated", handleSessionUpdated);
+  //     socket.off("session_ended", handleSessionStatusChanged);
+  //     socket.off("session_cancelled", handleSessionStatusChanged);
+  //   };
+  // }, [socket, isConnected, sessionInfo, navigate]);
+
+  // Écouter les événements Socket.IO uniquement pour les mises à jour
+  useEffect(() => {
+    if (!socket || !isConnected) {
       return;
     }
 
-    const handleJoinError = (data) => {
-      if (!isComponentMounted) return;
-      console.error("❌ Erreur jointure:", data);
-
-      setJoining(false);
-      const errorMessage =
-        data.error || data.message || "Erreur lors de la jointure";
-      toast.error(errorMessage);
-      setError(errorMessage);
-    };
+    let isSocketMounted = true;
 
     const handleSessionUpdated = (data) => {
-      if (!isComponentMounted) return;
-      console.log("📝 Session mise à jour:", data);
+      if (!isSocketMounted || !componentMountedRef.current) return;
+      console.log("🔄 Session mise à jour:", data);
 
-      // Mettre à jour les infos si c'est la même session
       if (data.sessionId === sessionInfo?.id) {
         setSessionInfo((prev) =>
           prev
@@ -297,7 +277,7 @@ const SessionJoin = () => {
     };
 
     const handleSessionStatusChanged = (data) => {
-      if (!isComponentMounted) return;
+      if (!isSocketMounted || !componentMountedRef.current) return;
       console.log("🔄 Statut session changé:", data);
 
       if (data.sessionId === sessionInfo?.id) {
@@ -308,45 +288,49 @@ const SessionJoin = () => {
       }
     };
 
-    // SessionJoin.js - Ajouter dans le useEffect des sockets
-    const handleSessionJoined = (data) => {
-      if (!isComponentMounted) return;
-      console.log("🎉 Session rejointe via socket:", data);
+    const handleError = (data) => {
+      if (!isSocketMounted || !componentMountedRef.current) return;
+      console.error("❌ Erreur socket:", data);
 
-      // ✅ METTRE À JOUR L'ÉTAT AVEC LES DONNÉES REÇUES
-      if (data.session) {
-        setSessionInfo(data.session);
-      }
-
-      setJoining(false);
-      setStep("joined");
-      toast.success("Session rejointe avec succès !");
-
-      // ✅ NAVIGUER VERS LA PAGE DE JEU
-      setTimeout(() => {
-        if (isComponentMounted) {
-          navigate(`/session/${data.session?.id || sessionInfo?.id}/play`);
-        }
-      }, 1500);
+      // Ne pas gérer les erreurs de jointure ici
+      // Elles sont gérées dans handleJoinSession
     };
 
-    // Écouter les événements
-    socket.on("session_joined", handleSessionJoined);
-    socket.on("join_error", handleJoinError);
+    // Écouter uniquement les événements de mise à jour
     socket.on("session_updated", handleSessionUpdated);
     socket.on("session_ended", handleSessionStatusChanged);
     socket.on("session_cancelled", handleSessionStatusChanged);
+    socket.on("error", handleError);
 
-    // Nettoyage
     return () => {
-      isComponentMounted = false;
-      socket.off("session_joined", handleSessionJoined);
-      socket.off("join_error", handleJoinError);
+      isSocketMounted = false;
       socket.off("session_updated", handleSessionUpdated);
       socket.off("session_ended", handleSessionStatusChanged);
       socket.off("session_cancelled", handleSessionStatusChanged);
+      socket.off("error", handleError);
     };
   }, [socket, isConnected, sessionInfo, navigate]);
+
+  useEffect(() => {
+    if (!sessionInfo) return;
+
+    // 🔴 FIX: Forcer mode anonyme si pas authentifié
+    if (!isAuthenticated) {
+      setValue("isAnonymous", true);
+
+      // Si pas de nom saisi, générer un nom par défaut
+      const currentName = watch("participantName");
+      if (!currentName || currentName.trim() === "") {
+        const defaultName = `Participant_${Math.random()
+          .toString(36)
+          .substring(2, 8)
+          .toUpperCase()}`;
+        setValue("participantName", defaultName);
+
+        console.log("🔧 Nom par défaut généré:", defaultName);
+      }
+    }
+  }, [sessionInfo, isAuthenticated, setValue, watch]);
 
   // Rechercher une session par code
   const handleSearchSession = async (data) => {
@@ -362,6 +346,64 @@ const SessionJoin = () => {
 
     await loadSessionInfo(code);
   };
+
+  // const handleJoinSession = async (data) => {
+  //   if (!sessionInfo) {
+  //     setError("Informations de session manquantes");
+  //     return;
+  //   }
+
+  //   try {
+  //     setJoining(true);
+  //     setError(null);
+  //     clearErrors();
+
+  //     const participantData = {
+  //       participantName: data.participantName.trim(),
+  //       isAnonymous: data.isAnonymous,
+  //     };
+
+  //     console.log("🚀 Tentative de jointure:", {
+  //       sessionId: sessionInfo.id,
+  //       participantData,
+  //     });
+
+  //     // ✅ NOUVEAU FLUX: Utiliser la méthode corrigée du context
+  //     const result = await joinSession(sessionInfo.id, participantData);
+
+  //     if (result.success) {
+  //       console.log("✅ Jointure réussie:", result);
+
+  //       // ✅ METTRE À JOUR L'ÉTAT LOCAL AVEC LES DONNÉES DE LA SESSION
+  //       setSessionInfo(result.session);
+  //       setStep("joined");
+
+  //       // ✅ NAVIGUER VERS LA PAGE DE JEU APRÈS UN COURT DÉLAI
+  //       setTimeout(() => {
+  //         navigate(`/session/${result.session.id}/play`);
+  //       }, 1500);
+  //     } else {
+  //       throw new Error(result.error || "Échec de la jointure");
+  //     }
+  //   } catch (error) {
+  //     console.error("❌ Erreur jointure session:", error);
+  //     setJoining(false);
+
+  //     const errorMessage = error.message || "Erreur lors de la jointure";
+  //     setError(errorMessage);
+  //     toast.error(errorMessage);
+
+  //     // Gérer les erreurs spécifiques
+  //     if (errorMessage.includes("nom") && errorMessage.includes("utilisé")) {
+  //       setFormError("participantName", {
+  //         type: "manual",
+  //         message: errorMessage,
+  //       });
+  //     }
+  //   }
+  // };
+
+  // Retourner à l'étape précédente
 
   const handleJoinSession = async (data) => {
     if (!sessionInfo) {
@@ -382,22 +424,36 @@ const SessionJoin = () => {
       console.log("🚀 Tentative de jointure:", {
         sessionId: sessionInfo.id,
         participantData,
+        isAuthenticated,
       });
 
-      // ✅ NOUVEAU FLUX: Utiliser la méthode corrigée du context
+      // ✅ Utiliser la méthode du context
       const result = await joinSession(sessionInfo.id, participantData);
 
       if (result.success) {
         console.log("✅ Jointure réussie:", result);
 
-        // ✅ METTRE À JOUR L'ÉTAT LOCAL AVEC LES DONNÉES DE LA SESSION
+        localStorage.setItem(
+          `session_${result.session.id}_participant`,
+          result.participant.id
+        );
+
+        // ✅ Mettre à jour l'état local
         setSessionInfo(result.session);
         setStep("joined");
 
-        // ✅ NAVIGUER VERS LA PAGE DE JEU APRÈS UN COURT DÉLAI
+        // ✅ CORRECTION: Navigation immédiate sans attendre le socket
+        console.log("🔀 Navigation vers SessionPlay...");
+
+        // Navigation immédiate pour tous (authentifiés et anonymes)
         setTimeout(() => {
-          navigate(`/session/${result.session.id}/play`);
-        }, 1500);
+          navigate(`/session/${result.session.id}/play`, {
+            state: {
+              participant: result.participant,
+              session: result.session,
+            },
+          });
+        }, 800); // Délai court pour afficher le message de succès
       } else {
         throw new Error(result.error || "Échec de la jointure");
       }
@@ -409,7 +465,6 @@ const SessionJoin = () => {
       setError(errorMessage);
       toast.error(errorMessage);
 
-      // Gérer les erreurs spécifiques
       if (errorMessage.includes("nom") && errorMessage.includes("utilisé")) {
         setFormError("participantName", {
           type: "manual",
@@ -419,7 +474,6 @@ const SessionJoin = () => {
     }
   };
 
-  // Retourner à l'étape précédente
   const handleBack = () => {
     setError(null);
     clearErrors();

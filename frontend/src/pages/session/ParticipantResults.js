@@ -1,5 +1,3 @@
-// frontend/src/pages/session/ParticipantResults.js
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { format } from "date-fns";
@@ -17,10 +15,12 @@ import {
 import toast from "react-hot-toast";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
 import { sessionService } from "../../services/api";
+import { useAuthStore } from "../../stores/authStore";
 
 const ParticipantResults = () => {
   const { sessionId, participantId } = useParams();
   const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuthStore();
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -34,208 +34,139 @@ const ParticipantResults = () => {
       setLoading(true);
       setError(null);
 
-      console.log("🔍 Récupération des résultats participant:", {
+      console.log("📊 Récupération résultats:", {
         sessionId,
         participantId,
       });
 
-      // Récupérer directement la session et extraire les données du participant
-      const sessionResponse = await sessionService.getSession(sessionId);
-      const sessionData = sessionResponse.session;
+      const response = await sessionService.getSession(
+        sessionId,
+        participantId
+      );
 
-      if (!sessionData) {
+      if (!response?.session) {
         throw new Error("Session non trouvée");
       }
 
-      console.log("📊 Session récupérée:", sessionData);
+      const session = response.session;
 
-      // Trouver le participant avec une recherche plus flexible
-      const participants = sessionData.participants || [];
-      const participant = participants.find(
-        (p) =>
-          p &&
-          (p.id === participantId ||
-            p.id.includes(participantId) ||
-            participantId.includes(p.id) ||
-            p.id.toString() === participantId.toString())
+      // Chercher le participant
+      const participant = session.participants?.find(
+        (p) => p.id === participantId
       );
 
       if (!participant) {
-        console.error("Participant non trouvé:", {
-          recherché: participantId,
-          participants: participants.map((p) => ({ id: p.id, name: p.name })),
+        console.error("❌ Participant non trouvé:", {
+          searchedId: participantId,
+          availableParticipants: session.participants?.map((p) => ({
+            id: p.id,
+            name: p.name,
+          })),
         });
         throw new Error("Participant non trouvé dans cette session");
       }
 
-      console.log("👤 Participant trouvé:", participant);
+      console.log("✅ Participant trouvé:", participant);
 
-      // CORRECTION PRINCIPALE: Calculer le score maximum possible du quiz
-      const quizQuestions = sessionData.quiz?.questions || [];
-      const maxPossibleScore = quizQuestions.reduce((total, question) => {
-        return total + (parseInt(question.points) || 1);
-      }, 0);
-
-      console.log("💯 Calcul score maximum:", {
-        nombreQuestions: quizQuestions.length,
-        scoreMaximum: maxPossibleScore,
-        scoreObtenu: participant.score || 0,
-      });
-
-      // CORRECTION: Récupérer les réponses détaillées pour calculer les vraies stats
-      const responses = sessionData.responses || {};
+      // Analyser les réponses
+      const responses = session.responses || {};
       const participantResponses = [];
-      let actualCorrectAnswers = 0;
-      let actualTotalTimeSpent = 0;
+      let correctAnswers = 0;
+      let totalTimeSpent = 0;
 
-      Object.keys(responses).forEach((questionId, questionIndex) => {
+      Object.keys(responses).forEach((questionId) => {
         const questionResponses = responses[questionId] || [];
         const participantResponse = questionResponses.find(
           (r) => r.participantId === participant.id
         );
 
         if (participantResponse) {
-          // Trouver la question correspondante
-          const question = quizQuestions.find(
-            (q) => q.id === questionId || q.order === questionIndex + 1
-          ) || {
-            question: `Question ${questionIndex + 1}`,
-            id: questionId,
-            points: 1,
-          };
-
           participantResponses.push({
-            questionId: questionId,
-            questionText:
-              question.question ||
-              question.text ||
-              `Question ${questionIndex + 1}`,
+            questionId,
+            questionText: `Question ${participantResponses.length + 1}`,
             answer: participantResponse.answer,
-            isCorrect: participantResponse.isCorrect || false,
+            isCorrect: participantResponse.isCorrect,
             points: participantResponse.points || 0,
             timeSpent: participantResponse.timeSpent || 0,
-            submittedAt: participantResponse.submittedAt,
-            maxPoints: parseInt(question.points) || 1,
+            maxPoints: participantResponse.points || 1, // Fallback
           });
 
-          // CORRECTION: Compter les bonnes réponses basées sur les points obtenus
-          if (participantResponse.isCorrect || participantResponse.points > 0) {
-            actualCorrectAnswers++;
+          if (participantResponse.isCorrect) {
+            correctAnswers++;
           }
-          actualTotalTimeSpent += participantResponse.timeSpent || 0;
+
+          totalTimeSpent += participantResponse.timeSpent || 0;
         }
       });
 
-      console.log("📝 Réponses analysées:", {
-        nombreRéponses: participantResponses.length,
-        bonnesRéponses: actualCorrectAnswers,
-        tempsTotal: actualTotalTimeSpent,
-      });
-
-      // CORRECTION: Calculer le taux de réussite basé sur le score ET sur les bonnes réponses
-      const scoreBasedAccuracyRate =
-        maxPossibleScore > 0
-          ? Math.round(((participant.score || 0) / maxPossibleScore) * 100)
+      const totalQuestions = participantResponses.length;
+      const accuracyRate =
+        totalQuestions > 0
+          ? Math.round((correctAnswers / totalQuestions) * 100)
           : 0;
 
-      const answerBasedAccuracyRate =
-        participantResponses.length > 0
-          ? Math.round(
-              (actualCorrectAnswers / participantResponses.length) * 100
-            )
-          : 0;
-
-      // Utiliser le taux le plus élevé (certains quiz donnent des points partiels)
-      const finalAccuracyRate = Math.max(
-        scoreBasedAccuracyRate,
-        answerBasedAccuracyRate
+      // Calculer le score maximum
+      const maxPossibleScore = participantResponses.reduce(
+        (sum, r) => sum + (r.maxPoints || 1),
+        0
       );
 
-      console.log("🎯 Calculs de taux de réussite:", {
-        scoreBasedAccuracyRate,
-        answerBasedAccuracyRate,
-        finalAccuracyRate,
-        scoreObtenu: participant.score,
-        scoreMaximum: maxPossibleScore,
-      });
-
-      // Structure des statistiques du participant
-      const participantStats = {
-        id: participant.id,
-        name: participant.name,
-        score: participant.score || 0,
-        maxPossibleScore: maxPossibleScore,
-        correctAnswers: actualCorrectAnswers,
-        totalQuestions: participantResponses.length,
-        totalTimeSpent: actualTotalTimeSpent,
-        // CORRECTION: Utiliser le calcul corrigé
-        accuracyRate: finalAccuracyRate,
-        // CORRECTION: Calculer le temps moyen par question basé sur les vraies réponses
-        averageTimePerQuestion:
-          participantResponses.length > 0
-            ? Math.round(actualTotalTimeSpent / participantResponses.length)
-            : 0,
-        // Ajouter des stats supplémentaires
-        scorePercentage:
-          maxPossibleScore > 0
-            ? Math.round(((participant.score || 0) / maxPossibleScore) * 100)
-            : 0,
-      };
-
-      // Calculer le rang basé sur les scores réels des participants
-      const validParticipants = participants.filter(
-        (p) => p && typeof p.score === "number" && !isNaN(p.score)
-      );
-
-      const sortedParticipants = validParticipants.sort(
-        (a, b) => (b.score || 0) - (a.score || 0)
-      );
+      // Calculer le rang
+      const sortedParticipants = (session.participants || [])
+        .filter((p) => typeof p.score === "number")
+        .sort((a, b) => (b.score || 0) - (a.score || 0));
 
       const rank =
         sortedParticipants.findIndex((p) => p.id === participant.id) + 1;
 
-      console.log("🏆 Calcul du rang:", {
-        totalParticipants: validParticipants.length,
-        participantScore: participant.score,
-        rank: rank > 0 ? rank : null,
-        classement: sortedParticipants
-          .slice(0, 5)
-          .map((p) => ({ name: p.name, score: p.score })),
-      });
-
-      // Structure finale des résultats
-      const resultData = {
-        participant: participantStats,
-        responses: participantResponses,
-        rank: rank > 0 ? rank : null,
-        session: {
-          id: sessionData.id,
-          code: sessionData.code,
-          title: sessionData.title,
-          status: sessionData.status,
-          quiz: sessionData.quiz,
+      // Construire les résultats
+      const resultsData = {
+        participant: {
+          id: participant.id,
+          name: participant.name,
+          score: participant.score || 0,
+          maxPossibleScore: maxPossibleScore || participant.score || 0,
+          correctAnswers,
+          totalQuestions,
+          accuracyRate,
+          totalTimeSpent,
+          averageTimePerQuestion:
+            participantResponses.length > 0
+              ? Math.round(totalTimeSpent / participantResponses.length)
+              : 0,
         },
-        // Ajouter les statistiques globales pour contexte
+        rank: rank > 0 ? rank : null,
+        totalParticipants: sortedParticipants.length,
+        responses: participantResponses,
+        session: {
+          id: session.id,
+          code: session.code,
+          title: session.title,
+          quiz: session.quiz,
+          status: session.status,
+          endedAt: session.endedAt,
+        },
         sessionStats: {
-          totalParticipants: participants.length,
-          totalActiveParticipants: validParticipants.length,
+          totalParticipants: session.participants?.length || 0,
+          totalActiveParticipants: sortedParticipants.length,
           averageScore:
-            validParticipants.length > 0
+            sortedParticipants.length > 0
               ? Math.round(
-                  validParticipants.reduce((sum, p) => sum + p.score, 0) /
-                    validParticipants.length
+                  sortedParticipants.reduce(
+                    (sum, p) => sum + (p.score || 0),
+                    0
+                  ) / sortedParticipants.length
                 )
               : 0,
-          maxPossibleScore: maxPossibleScore,
+          maxPossibleScore: maxPossibleScore || 0,
         },
       };
 
-      console.log("✅ Résultats finaux avec calculs corrigés:", resultData);
-      setResults(resultData);
+      console.log("✅ Résultats récupérés:", resultsData);
+      setResults(resultsData);
     } catch (error) {
       console.error("💥 Erreur lors de la récupération des résultats:", error);
-      setError(error.message);
-      toast.error("Erreur lors du chargement des résultats");
+      setError(error.message || "Erreur lors de la récupération des résultats");
     } finally {
       setLoading(false);
     }
@@ -635,12 +566,14 @@ const ParticipantResults = () => {
 
         {/* Actions */}
         <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
-          <button
-            onClick={() => navigate("/dashboard")}
-            className="inline-flex items-center justify-center px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-          >
-            Retour au tableau de bord
-          </button>
+          {isAuthenticated && (
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="inline-flex items-center justify-center px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              Retour au tableau de bord
+            </button>
+          )}
 
           <button
             onClick={handleShare}
@@ -649,6 +582,15 @@ const ParticipantResults = () => {
             <ShareIcon className="w-4 h-4 mr-2" />
             Partager mes résultats
           </button>
+
+          {!isAuthenticated && (
+            <button
+              onClick={() => navigate("/join")}
+              className="inline-flex items-center justify-center px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              Rejoindre une autre session
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -41,10 +41,23 @@ export const SocketProvider = ({ children }) => {
 
   // Initialiser la connexion Socket.IO
   useEffect(() => {
-    if (accessToken && user) {
+    // if (accessToken && user) {
+    //   const socketInstance = io(SOCKET_URL, {
+    //     auth: {
+    //       token: accessToken,
+    //     },
+    //     reconnection: true,
+    //     reconnectionAttempts: 5,
+    //     reconnectionDelay: 1000,
+    //     reconnectionDelayMax: 5000,
+    //     timeout: 20000,
+    //   });
+    const shouldConnect = user || !accessToken;
+
+    if (shouldConnect) {
       const socketInstance = io(SOCKET_URL, {
         auth: {
-          token: accessToken,
+          token: accessToken || undefined, // Token optionnel pour les anonymes
         },
         reconnection: true,
         reconnectionAttempts: 5,
@@ -114,13 +127,95 @@ export const SocketProvider = ({ children }) => {
         setIsConnected(false);
       }
     }
-  }, [accessToken, user?.id]);
+  }, [accessToken, user]);
 
+  // const joinSession = useCallback(
+  //   async (sessionId, participantData) => {
+  //     if (!sessionId || !participantData) {
+  //       toast.error("Informations de session manquantes");
+  //       return false;
+  //     }
+
+  //     // Validation côté client
+  //     if (
+  //       !participantData.participantName ||
+  //       participantData.participantName.trim().length < 2
+  //     ) {
+  //       toast.error("Nom de participant requis (minimum 2 caractères)");
+  //       return false;
+  //     }
+
+  //     try {
+  //       setSessionState((prev) => ({
+  //         ...prev,
+  //         status: "connecting",
+  //       }));
+
+  //       console.log("📡 Jointure session via API:", {
+  //         sessionId,
+  //         participantData,
+  //       });
+
+  //       // ✅ ÉTAPE 1: Appel API pour ajouter le participant en BDD
+  //       const apiResponse = await sessionService.joinSession(
+  //         sessionId,
+  //         participantData
+  //       );
+
+  //       console.log("✅ Participant ajouté en BDD:", apiResponse);
+
+  //       // ✅ ÉTAPE 2: Connexion Socket.IO avec les données du participant
+  //       if (socket && isConnected && apiResponse.participant) {
+  //         const socketData = {
+  //           sessionId: apiResponse.session.id,
+  //           participantId: apiResponse.participant.id,
+  //           participantName: apiResponse.participant.name,
+  //           role: "participant",
+  //         };
+
+  //         console.log("🔌 Connexion Socket.IO:", socketData);
+  //         socket.emit("join_session_socket", socketData);
+
+  //         // Mettre à jour l'état local
+  //         setSessionState((prev) => ({
+  //           ...prev,
+  //           sessionId: apiResponse.session.id,
+  //           participantId: apiResponse.participant.id,
+  //           participantName: apiResponse.participant.name,
+  //           status: "joined",
+  //           currentRoom: `session_${apiResponse.session.id}`,
+  //         }));
+
+  //         // ✅ RETOURNER LES DONNÉES POUR LA NAVIGATION
+  //         return {
+  //           success: true,
+  //           session: apiResponse.session,
+  //           participant: apiResponse.participant,
+  //         };
+  //       } else {
+  //         throw new Error("Connexion Socket.IO non disponible");
+  //       }
+  //     } catch (error) {
+  //       console.error("❌ Erreur jointure session:", error);
+
+  //       setSessionState((prev) => ({
+  //         ...prev,
+  //         status: "disconnected",
+  //       }));
+
+  //       const errorMessage =
+  //         error.message || "Erreur lors de la connexion à la session";
+  //       toast.error(errorMessage);
+  //       return { success: false, error: errorMessage };
+  //     }
+  //   },
+  //   [socket, isConnected, setSessionState]
+  // );
   const joinSession = useCallback(
     async (sessionId, participantData) => {
       if (!sessionId || !participantData) {
         toast.error("Informations de session manquantes");
-        return false;
+        return { success: false, error: "Informations manquantes" };
       }
 
       // Validation côté client
@@ -129,7 +224,7 @@ export const SocketProvider = ({ children }) => {
         participantData.participantName.trim().length < 2
       ) {
         toast.error("Nom de participant requis (minimum 2 caractères)");
-        return false;
+        return { success: false, error: "Nom invalide" };
       }
 
       try {
@@ -138,7 +233,7 @@ export const SocketProvider = ({ children }) => {
           status: "connecting",
         }));
 
-        console.log("📡 Jointure session via API:", {
+        console.log("🔡 Jointure session via API:", {
           sessionId,
           participantData,
         });
@@ -151,7 +246,7 @@ export const SocketProvider = ({ children }) => {
 
         console.log("✅ Participant ajouté en BDD:", apiResponse);
 
-        // ✅ ÉTAPE 2: Connexion Socket.IO avec les données du participant
+        // ✅ ÉTAPE 2: Connexion Socket.IO (si disponible)
         if (socket && isConnected && apiResponse.participant) {
           const socketData = {
             sessionId: apiResponse.session.id,
@@ -163,7 +258,6 @@ export const SocketProvider = ({ children }) => {
           console.log("🔌 Connexion Socket.IO:", socketData);
           socket.emit("join_session_socket", socketData);
 
-          // Mettre à jour l'état local
           setSessionState((prev) => ({
             ...prev,
             sessionId: apiResponse.session.id,
@@ -172,16 +266,27 @@ export const SocketProvider = ({ children }) => {
             status: "joined",
             currentRoom: `session_${apiResponse.session.id}`,
           }));
-
-          // ✅ RETOURNER LES DONNÉES POUR LA NAVIGATION
-          return {
-            success: true,
-            session: apiResponse.session,
-            participant: apiResponse.participant,
-          };
         } else {
-          throw new Error("Connexion Socket.IO non disponible");
+          console.warn(
+            "⚠️ Socket non disponible, connexion en mode API uniquement"
+          );
+
+          // ✅ Même sans socket, on peut continuer
+          setSessionState((prev) => ({
+            ...prev,
+            sessionId: apiResponse.session.id,
+            participantId: apiResponse.participant.id,
+            participantName: apiResponse.participant.name,
+            status: "joined",
+          }));
         }
+
+        // ✅ RETOURNER LES DONNÉES dans tous les cas
+        return {
+          success: true,
+          session: apiResponse.session,
+          participant: apiResponse.participant,
+        };
       } catch (error) {
         console.error("❌ Erreur jointure session:", error);
 

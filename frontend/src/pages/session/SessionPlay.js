@@ -75,7 +75,21 @@ const SessionPlay = () => {
       setLoading(true);
       setError(null);
 
-      const response = await sessionService.getSession(sessionId);
+      const storedParticipantId = localStorage.getItem(
+        `session_${sessionId}_participant`
+      );
+      console.log("💾 Participant ID stocké:", storedParticipantId);
+
+      // const headers = {};
+      // if (storedParticipantId) {
+      //   headers["x-participant-id"] = storedParticipantId;
+      // }
+
+      // const response = await sessionService.getSession(sessionId);
+      const response = await sessionService.getSession(
+        sessionId,
+        storedParticipantId
+      );
       const sessionData = response.session;
       const permissions = response.permissions;
 
@@ -109,12 +123,35 @@ const SessionPlay = () => {
       setTotalQuestions(sessionData.quiz?.questions?.length || 0);
       setCurrentQuestionNumber((sessionData.currentQuestionIndex || 0) + 1);
 
-      const myParticipant = sessionData.participants?.find(
-        (p) =>
-          p.userId === user?.id ||
-          p.name === (user?.firstName || user?.username) ||
-          p.id?.includes(user?.id)
-      );
+      let myParticipant = null;
+
+      // Chercher d'abord par ID stocké
+      if (storedParticipantId) {
+        myParticipant = sessionData.participants?.find(
+          (p) => p.id === storedParticipantId
+        );
+        console.log("✅ Participant trouvé par ID stocké:", !!myParticipant);
+      }
+
+      // Fallback sur les autres méthodes si pas trouvé
+      if (!myParticipant && user?.id) {
+        myParticipant = sessionData.participants?.find(
+          (p) => p.userId === user.id
+        );
+      }
+
+      if (!myParticipant && user?.firstName) {
+        myParticipant = sessionData.participants?.find(
+          (p) => p.name === (user.firstName || user.username)
+        );
+      }
+
+      // const myParticipant = sessionData.participants?.find(
+      //   (p) =>
+      //     p.userId === user?.id ||
+      //     p.name === (user?.firstName || user?.username) ||
+      //     p.id?.includes(user?.id)
+      // );
 
       if (myParticipant) {
         setParticipantInfo(myParticipant);
@@ -225,163 +262,170 @@ const SessionPlay = () => {
 
   const fetchFinalResults = async () => {
     try {
-      if (!participantInfo?.id || !sessionId) {
-        console.warn(
-          "❌ Informations manquantes pour récupérer résultats finaux"
-        );
+      // ✅ CORRECTION: Récupérer l'ID depuis localStorage
+      const storedParticipantId = localStorage.getItem(
+        `session_${sessionId}_participant`
+      );
+
+      if (!storedParticipantId && !participantInfo?.id) {
+        console.warn("❌ Aucun ID de participant disponible");
+        toast.error("Impossible d'identifier votre participation");
         return;
       }
 
+      const participantId = storedParticipantId || participantInfo?.id;
+
       console.log("📊 Récupération résultats finaux:", {
         sessionId,
-        participantId: participantInfo.id,
+        participantId,
+        source: storedParticipantId ? "localStorage" : "participantInfo",
       });
 
-      const response = await sessionService.getSession(sessionId);
+      // ✅ Passer le participantId en query parameter
+      const response = await sessionService.getSession(
+        sessionId,
+        participantId
+      );
 
       if (response?.session) {
         const session = response.session;
 
-        // Trouver les données du participant
+        // ✅ CORRECTION: Chercher avec l'ID exact
         const participant = session.participants?.find(
-          (p) => p.id === participantInfo.id || p.name === participantInfo.name
+          (p) => p.id === participantId
         );
 
-        if (participant) {
-          console.log("👤 Participant trouvé:", participant);
-
-          // 🔴 CORRECTION: Analyser les réponses RÉELLES du participant
-          const responses = session.responses || {};
-          const participantResponses = [];
-          let correctAnswers = 0;
-          let totalTimeSpent = 0;
-
-          console.log("📝 Analyse des réponses:", {
-            questionsDisponibles: Object.keys(responses),
-            totalQuestions: session.quiz?.questions?.length || 0,
+        if (!participant) {
+          console.error("❌ Participant non trouvé:", {
+            searchedId: participantId,
+            availableIds: session.participants?.map((p) => p.id),
           });
+          toast.error("Impossible de trouver vos données dans cette session");
+          return;
+        }
 
-          // Analyser toutes les réponses du participant
-          Object.keys(responses).forEach((questionId) => {
-            const questionResponses = responses[questionId] || [];
-            const participantResponse = questionResponses.find(
-              (r) => r.participantId === participant.id
-            );
+        console.log("👤 Participant trouvé:", participant);
 
-            if (participantResponse) {
-              participantResponses.push(participantResponse);
+        // Analyser les réponses du participant
+        const responses = session.responses || {};
+        const participantResponses = [];
+        let correctAnswers = 0;
+        let totalTimeSpent = 0;
 
-              // 🔴 CORRECTION: Compter correctement les bonnes réponses
-              if (participantResponse.isCorrect) {
-                correctAnswers++;
-              }
+        console.log("🔍 Analyse des réponses:", {
+          questionsDisponibles: Object.keys(responses),
+          totalQuestions: session.quiz?.questions?.length || 0,
+        });
 
-              totalTimeSpent += participantResponse.timeSpent || 0;
+        Object.keys(responses).forEach((questionId) => {
+          const questionResponses = responses[questionId] || [];
+          const participantResponse = questionResponses.find(
+            (r) => r.participantId === participant.id
+          );
 
-              console.log(`   Question ${questionId}:`, {
-                isCorrect: participantResponse.isCorrect,
-                points: participantResponse.points,
-                timeSpent: participantResponse.timeSpent,
-              });
+          if (participantResponse) {
+            participantResponses.push(participantResponse);
+
+            if (participantResponse.isCorrect) {
+              correctAnswers++;
             }
-          });
 
-          // 🔴 CORRECTION CRITIQUE: Utiliser le nombre de questions RÉPONDUES
-          const totalQuestions = participantResponses.length;
+            totalTimeSpent += participantResponse.timeSpent || 0;
 
-          console.log("📊 Calcul stats participant:", {
-            totalQuestions: totalQuestions,
-            correctAnswers: correctAnswers,
-            participantResponses: participantResponses.length,
-            scoreParticipant: participant.score,
-          });
+            console.log(`   Question ${questionId}:`, {
+              isCorrect: participantResponse.isCorrect,
+              points: participantResponse.points,
+              timeSpent: participantResponse.timeSpent,
+            });
+          }
+        });
 
-          // 🔴 CORRECTION: Calculer le taux de réussite sur les questions RÉPONDUES
-          const accuracyRate =
-            totalQuestions > 0
-              ? Math.round((correctAnswers / totalQuestions) * 100)
-              : 0;
+        const totalQuestions = participantResponses.length;
 
-          console.log("🎯 Taux de réussite calculé:", {
+        console.log("📊 Calcul stats participant:", {
+          totalQuestions: totalQuestions,
+          correctAnswers: correctAnswers,
+          participantResponses: participantResponses.length,
+          scoreParticipant: participant.score,
+        });
+
+        const accuracyRate =
+          totalQuestions > 0
+            ? Math.round((correctAnswers / totalQuestions) * 100)
+            : 0;
+
+        console.log("🎯 Taux de réussite calculé:", {
+          correctAnswers,
+          totalQuestions,
+          accuracyRate,
+        });
+
+        let maxPossibleScore = 0;
+        participantResponses.forEach((response) => {
+          const questionIndex = parseInt(
+            response.questionId?.replace(/\D/g, "") || 0
+          );
+          const question = session.quiz?.questions?.[questionIndex];
+
+          if (question) {
+            maxPossibleScore += question.points || 1;
+          } else {
+            maxPossibleScore += response.points || 1;
+          }
+        });
+
+        console.log("💰 Score maximum calculé:", maxPossibleScore);
+
+        // Calculer le rang
+        const participants = session.participants || [];
+        const sortedParticipants = participants
+          .filter((p) => typeof p.score === "number")
+          .sort((a, b) => (b.score || 0) - (a.score || 0));
+
+        const rank =
+          sortedParticipants.findIndex((p) => p.id === participant.id) + 1;
+
+        console.log("🏆 Classement:", {
+          rank: rank > 0 ? rank : null,
+          totalParticipants: sortedParticipants.length,
+          topScores: sortedParticipants.slice(0, 3).map((p) => ({
+            name: p.name,
+            score: p.score,
+          })),
+        });
+
+        const finalResultsData = {
+          participant: {
+            id: participant.id,
+            name: participant.name,
+            score: participant.score || 0,
             correctAnswers,
             totalQuestions,
             accuracyRate,
-          });
+            totalTimeSpent,
+            averageTimePerQuestion:
+              participantResponses.length > 0
+                ? Math.round(totalTimeSpent / participantResponses.length)
+                : 0,
+            responses: participantResponses,
+            maxPossibleScore,
+          },
+          rank: rank > 0 ? rank : null,
+          session: {
+            id: session.id,
+            code: session.code,
+            title: session.title,
+            quiz: session.quiz,
+            status: session.status,
+            endedAt: session.endedAt,
+            autoEnded: session.autoEnded || false,
+          },
+        };
 
-          // 🔴 CORRECTION: Calculer le score maximum possible basé sur les réponses
-          let maxPossibleScore = 0;
-          participantResponses.forEach((response) => {
-            // Trouver la question correspondante
-            const questionIndex = parseInt(
-              response.questionId?.replace(/\D/g, "") || 0
-            );
-            const question = session.quiz?.questions?.[questionIndex];
+        console.log("✅ Résultats finaux calculés:", finalResultsData);
 
-            if (question) {
-              maxPossibleScore += question.points || 1;
-            } else {
-              // Fallback: utiliser les points de la réponse
-              maxPossibleScore += response.points || 1;
-            }
-          });
-
-          console.log("💰 Score maximum calculé:", maxPossibleScore);
-
-          // Calculer le rang
-          const participants = session.participants || [];
-          const sortedParticipants = participants
-            .filter((p) => typeof p.score === "number")
-            .sort((a, b) => (b.score || 0) - (a.score || 0));
-
-          const rank =
-            sortedParticipants.findIndex((p) => p.id === participant.id) + 1;
-
-          console.log("🏆 Classement:", {
-            rank: rank > 0 ? rank : null,
-            totalParticipants: sortedParticipants.length,
-            topScores: sortedParticipants.slice(0, 3).map((p) => ({
-              name: p.name,
-              score: p.score,
-            })),
-          });
-
-          // 🔴 CORRECTION: Structure finale avec calculs corrigés
-          const finalResultsData = {
-            participant: {
-              id: participant.id,
-              name: participant.name,
-              score: participant.score || 0,
-              correctAnswers, // Nombre réel de bonnes réponses
-              totalQuestions, // Nombre réel de questions répondues
-              accuracyRate, // Calculé sur les questions répondues
-              totalTimeSpent,
-              averageTimePerQuestion:
-                participantResponses.length > 0
-                  ? Math.round(totalTimeSpent / participantResponses.length)
-                  : 0,
-              responses: participantResponses,
-              maxPossibleScore, // Score max basé sur les questions répondues
-            },
-            rank: rank > 0 ? rank : null,
-            session: {
-              id: session.id,
-              code: session.code,
-              title: session.title,
-              quiz: session.quiz,
-              status: session.status,
-              endedAt: session.endedAt,
-              autoEnded: session.autoEnded || false,
-            },
-          };
-
-          console.log("✅ Résultats finaux calculés:", finalResultsData);
-
-          setFinalResults(finalResultsData);
-          setShowFinalResults(true);
-        } else {
-          console.error("❌ Participant non trouvé dans la session");
-          toast.error("Impossible de trouver vos données dans cette session");
-        }
+        setFinalResults(finalResultsData);
+        setShowFinalResults(true);
       } else {
         console.error("❌ Session non trouvée");
         toast.error("Session non trouvée");
@@ -436,11 +480,42 @@ const SessionPlay = () => {
   }, [timeRemaining, showResults]);
 
   useEffect(() => {
-    if (!socket || !isConnected || !sessionId || !participantInfo) return;
+    // if (!socket || !isConnected || !sessionId || !participantInfo) return;
+
+    // let isSocketMounted = true;
+
+    // if (!hasJoinedSessionRef.current) {
+    //   socket.emit("join_session", {
+    //     sessionId,
+    //     participantId: participantInfo.id,
+    //     role: "participant",
+    //   });
+
+    //   hasJoinedSessionRef.current = true;
+    // }
+    if (!socket) {
+      console.log("⏳ Attente de la connexion socket...");
+      return;
+    }
+
+    if (!isConnected) {
+      console.log("⏳ Socket pas encore connecté, en attente...");
+      return;
+    }
+
+    if (!sessionId || !participantInfo) {
+      console.log("⏳ Informations participant pas encore disponibles");
+      return;
+    }
 
     let isSocketMounted = true;
 
     if (!hasJoinedSessionRef.current) {
+      console.log("🔌 Connexion socket pour session play:", {
+        sessionId,
+        participantId: participantInfo.id,
+      });
+
       socket.emit("join_session", {
         sessionId,
         participantId: participantInfo.id,

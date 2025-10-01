@@ -42,6 +42,7 @@ import ParticipantResults from "./pages/session/ParticipantResults";
 import ParticipantHistory from "./pages/participant/ParticipantHistory";
 import Statistics from "./pages/Statistics";
 import QuizPublicView from "./pages/quiz/QuizPublicView";
+import Help from "./pages/Help";
 
 function App() {
   const { user, isLoading, initializeAuth } = useAuthStore();
@@ -256,7 +257,7 @@ function MainLayout() {
                   </ProtectedRoute>
                 }
               />
-              <Route
+              {/* <Route
                 path="/join/:code?"
                 element={
                   <ProtectedRoute>
@@ -271,16 +272,25 @@ function MainLayout() {
                     <SessionPlay />
                   </ProtectedRoute>
                 }
+              /> */}
+              <Route path="/join/:code?" element={<SessionJoin />} />
+              <Route
+                path="/session/:sessionId/play"
+                element={<SessionPlay />}
+              />
+              <Route
+                path="/session/:sessionId/participant/:participantId/results"
+                element={<ParticipantResults />}
               />
 
-              <Route
+              {/* <Route
                 path="/session/:sessionId/participant/:participantId/results"
                 element={
                   <ProtectedRoute>
                     <ParticipantResults />
                   </ProtectedRoute>
                 }
-              />
+              /> */}
 
               <Route
                 path="/results"
@@ -317,6 +327,8 @@ function MainLayout() {
                   </ProtectedRoute>
                 }
               />
+
+              <Route path="/help" element={<Help />} />
 
               {/* Page 404 */}
               <Route path="*" element={<NotFound />} />

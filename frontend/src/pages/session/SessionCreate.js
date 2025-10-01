@@ -224,15 +224,15 @@ const SessionCreate = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
+      <div>
         <div className="px-6 py-4">
           <div className="flex items-center space-x-4">
-            <button
+            {/* <button
               onClick={() => navigate("/dashboard")}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               <ArrowLeftIcon className="h-5 w-5" />
-            </button>
+            </button> */}
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                 Créer une session

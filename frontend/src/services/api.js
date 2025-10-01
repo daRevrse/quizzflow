@@ -262,30 +262,37 @@ export const sessionService = {
   },
 
   // Récupérer les détails d'une session par ID
-  getSession: async (sessionId) => {
-    if (!sessionId) {
-      throw new Error("ID de session requis");
-    }
+  // getSession: async (sessionId) => {
+  //   if (!sessionId) {
+  //     throw new Error("ID de session requis");
+  //   }
 
-    try {
-      console.log("📡 sessionService.getSession:", sessionId);
+  //   try {
+  //     console.log("📡 sessionService.getSession:", sessionId);
 
-      const response = await apiClient.get(`/session/${sessionId}`);
+  //     const response = await apiClient.get(`/session/${sessionId}`);
 
-      console.log("✅ getSession response:", response.data);
-      return response.data;
-    } catch (error) {
-      console.error("❌ getSession error:", error);
+  //     console.log("✅ getSession response:", response.data);
+  //     return response.data;
+  //   } catch (error) {
+  //     console.error("❌ getSession error:", error);
 
-      if (error.response?.status === 404) {
-        throw new Error("Session non trouvée");
-      }
+  //     if (error.response?.status === 404) {
+  //       throw new Error("Session non trouvée");
+  //     }
 
-      throw new Error(
-        error.response?.data?.error ||
-          "Erreur lors de la récupération de la session"
-      );
-    }
+  //     throw new Error(
+  //       error.response?.data?.error ||
+  //         "Erreur lors de la récupération de la session"
+  //     );
+  //   }
+  // },
+  getSession: async (sessionId, participantId = null) => {
+    const url = participantId
+      ? `/session/${sessionId}?participantId=${participantId}`
+      : `/session/${sessionId}`;
+    const response = await apiClient.get(url);
+    return response.data;
   },
 
   // Récupérer une session par son code

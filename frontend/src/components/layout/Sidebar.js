@@ -10,6 +10,7 @@ import {
   Cog6ToothIcon,
   QuestionMarkCircleIcon,
   TrophyIcon,
+  ListBulletIcon,
 } from "@heroicons/react/24/outline";
 import classNames from "classnames";
 
@@ -41,6 +42,12 @@ const Sidebar = () => {
       name: "Créer un Quiz",
       href: "/quiz/create",
       icon: PlusIcon,
+      show: user?.role === "formateur" || user?.role === "admin",
+    },
+    {
+      name: "Mes Sessions",
+      href: "/sessions",
+      icon: ListBulletIcon,
       show: user?.role === "formateur" || user?.role === "admin",
     },
     {
