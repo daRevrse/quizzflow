@@ -1496,24 +1496,59 @@ const SessionPlay = () => {
                 </span>
               </div>
             </div>
+            {/* 
+            <div className="text-right">
+              <div className="flex items-center justify-end space-x-2">
+                <div className="text-2xl font-bold text-primary-600 dark:text-primary-400">
+                  {playerScore}
+                </div>
+                {streak > 0 && (
+                  <div className="flex items-center text-orange-500">
+                    <span className="text-sm font-medium">{streak}</span>
+                    <span className="ml-1">{getStreakEmoji(streak)}</span>
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                Score {streak > 0 && `• Série ${streak}`}
+              </div>
+            </div> */}
 
             <div className="flex items-center space-x-4 ml-4">
-              <div className="text-right">
-                <div className="flex items-center justify-end space-x-2">
-                  <div className="text-2xl font-bold text-primary-600 dark:text-primary-400">
-                    {playerScore}
+              {timeRemaining !== null && timeRemaining >= 0 && (
+                <div className="text-center">
+                  <div
+                    className={`text-4xl font-mono font-bold ${getTimerColor(
+                      timeRemaining
+                    )} transition-colors duration-300`}
+                  >
+                    {formatTime(timeRemaining)}
                   </div>
-                  {streak > 0 && (
-                    <div className="flex items-center text-orange-500">
-                      <span className="text-sm font-medium">{streak}</span>
-                      <span className="ml-1">{getStreakEmoji(streak)}</span>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Temps restant
+                  </div>
+
+                  {currentQuestion?.timeLimit && (
+                    <div className="max-w-xs mx-auto mt-2 bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                      <div
+                        className={`h-1 rounded-full transition-all duration-1000 ${
+                          timeRemaining > 10
+                            ? "bg-green-500"
+                            : timeRemaining > 5
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
+                        }`}
+                        style={{
+                          width: `${Math.max(
+                            (timeRemaining / currentQuestion.timeLimit) * 100,
+                            0
+                          )}%`,
+                        }}
+                      />
                     </div>
                   )}
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Score {streak > 0 && `• Série ${streak}`}
-                </div>
-              </div>
+              )}
 
               {session.settings?.showLeaderboard && leaderboard.length > 0 && (
                 <button
@@ -1551,41 +1586,6 @@ const SessionPlay = () => {
                   }}
                 />
               </div>
-
-              {timeRemaining !== null && timeRemaining >= 0 && (
-                <div className="text-center">
-                  <div
-                    className={`text-4xl font-mono font-bold ${getTimerColor(
-                      timeRemaining
-                    )} transition-colors duration-300`}
-                  >
-                    {formatTime(timeRemaining)}
-                  </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Temps restant
-                  </div>
-
-                  {currentQuestion?.timeLimit && (
-                    <div className="max-w-xs mx-auto mt-2 bg-gray-200 dark:bg-gray-700 rounded-full h-1">
-                      <div
-                        className={`h-1 rounded-full transition-all duration-1000 ${
-                          timeRemaining > 10
-                            ? "bg-green-500"
-                            : timeRemaining > 5
-                            ? "bg-yellow-500"
-                            : "bg-red-500"
-                        }`}
-                        style={{
-                          width: `${Math.max(
-                            (timeRemaining / currentQuestion.timeLimit) * 100,
-                            0
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -1594,32 +1594,34 @@ const SessionPlay = () => {
       {/* Contenu principal */}
       <div className="max-w-4xl mx-auto px-4 py-6">
         {currentQuestion ? (
-          <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
-              <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
+          <div className="space-y-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
+              {/* Header de la question - ROUGE BORDEAUX + réduit */}
+              <div className="bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-3">
                 <div className="text-center">
-                  <div className="text-white/80 text-sm font-medium mb-1">
+                  <div className="text-white/80 text-xs font-medium mb-1">
                     Question {currentQuestionNumber}
                   </div>
-                  <h2 className="text-xl md:text-2xl font-bold text-white leading-tight">
-                    {currentQuestion.question}
+                  <h2 className="text-lg md:text-xl font-bold text-white leading-tight">
+                    {currentQuestion?.question}
                   </h2>
                 </div>
               </div>
 
-              {currentQuestion.image && (
-                <div className="px-6 pt-4">
+              {/* Image si présente */}
+              {currentQuestion?.image && (
+                <div className="px-4 pt-3">
                   <img
                     src={currentQuestion.image}
                     alt="Illustration de la question"
-                    className="w-full max-w-md mx-auto rounded-lg shadow-sm"
+                    className="w-full max-w-sm mx-auto rounded-lg shadow-sm"
                   />
                 </div>
               )}
 
-              <div className="p-6 space-y-3">
-                {/* 🔴 NOUVEAU: Nuage de mots */}
-                {currentQuestion.type === "nuage_mots" && (
+              <div className="p-4 space-y-3">
+                {/* Nuage de mots */}
+                {currentQuestion?.type === "nuage_mots" && (
                   <>
                     <WordCloudQuestion
                       question={currentQuestion}
@@ -1634,7 +1636,7 @@ const SessionPlay = () => {
 
                     {/* BOUTON CONFIRMER pour nuage de mots */}
                     {!isAnswered && !showResults && (
-                      <div className="mt-6 text-center">
+                      <div className="mt-4 text-center">
                         <button
                           onClick={handleSubmitAnswer}
                           disabled={
@@ -1642,7 +1644,7 @@ const SessionPlay = () => {
                             !Array.isArray(selectedAnswer) ||
                             selectedAnswer.length === 0
                           }
-                          className="inline-flex items-center px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:hover:transform-none"
+                          className="inline-flex items-center px-6 py-2.5 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-lg hover:from-primary-700 hover:to-primary-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
                         >
                           {isSubmitting ? (
                             <>
@@ -1660,7 +1662,7 @@ const SessionPlay = () => {
                               selectedAnswer.length > 1
                                 ? "s"
                                 : ""}
-                              <ArrowRightIcon className="ml-2 h-5 w-5" />
+                              <ArrowRightIcon className="ml-2 h-4 w-4" />
                             </>
                           )}
                         </button>
@@ -1669,11 +1671,11 @@ const SessionPlay = () => {
                   </>
                 )}
 
-                {/* 🔴 CORRECTION: Réponse libre */}
-                {currentQuestion.type === "reponse_libre" && (
-                  <div className="space-y-4">
+                {/* Réponse libre */}
+                {currentQuestion?.type === "reponse_libre" && (
+                  <div className="space-y-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Votre réponse :
                       </label>
                       <textarea
@@ -1689,25 +1691,25 @@ const SessionPlay = () => {
                         }}
                         placeholder="Saisissez votre réponse ici..."
                         disabled={isAnswered || showResults || isSubmitting}
-                        className={`w-full p-4 border-2 rounded-xl transition-all duration-200 resize-none ${
+                        className={`w-full p-3 border-2 rounded-lg transition-all duration-200 resize-none ${
                           isAnswered || showResults || isSubmitting
                             ? "bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 cursor-not-allowed"
-                            : "border-gray-300 dark:border-gray-600 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800"
+                            : "border-gray-300 dark:border-gray-600 focus:border-primary-500 dark:focus:border-primary-400 focus:ring-2 focus:ring-primary-200 dark:focus:ring-primary-800"
                         } text-gray-900 dark:text-white dark:bg-gray-800`}
-                        rows={4}
+                        rows={3}
                         maxLength={500}
                       />
                     </div>
 
                     {showResults &&
                       showCorrectAnswer &&
-                      currentQuestion.correctAnswer && (
-                        <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg">
-                          <h4 className="font-medium text-green-800 dark:text-green-200 mb-2 flex items-center">
+                      currentQuestion?.correctAnswer && (
+                        <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg">
+                          <h4 className="font-medium text-green-800 dark:text-green-200 mb-1 flex items-center text-sm">
                             <CheckCircleIcon className="h-4 w-4 mr-2" />
                             Réponse correcte :
                           </h4>
-                          <p className="text-green-700 dark:text-green-300 font-medium">
+                          <p className="text-green-700 dark:text-green-300 font-medium text-sm">
                             {currentQuestion.correctAnswer}
                           </p>
                         </div>
@@ -1715,8 +1717,8 @@ const SessionPlay = () => {
                   </div>
                 )}
 
-                {/* 🔴 CORRECTION: QCM et Vrai/Faux avec support multiple */}
-                {currentQuestion.type === "qcm" &&
+                {/* QCM avec support multiple */}
+                {currentQuestion?.type === "qcm" &&
                   (() => {
                     const answers =
                       currentQuestion.answers || currentQuestion.options || [];
@@ -1725,37 +1727,30 @@ const SessionPlay = () => {
                     );
                     const isMultipleChoice = correctOptions.length > 1;
 
-                    console.log("🔍 QCM Debug:", {
-                      totalOptions: answers.length,
-                      correctOptions: correctOptions.length,
-                      isMultipleChoice,
-                      selectedAnswer,
-                    });
-
                     return (
                       <>
-                        {/* Indicateur QCM multiple */}
+                        {/* Indicateur QCM multiple - ROUGE BORDEAUX */}
                         {isMultipleChoice && !isAnswered && (
-                          <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-                            <p className="text-sm text-blue-800 dark:text-blue-200 flex items-center">
-                              <InformationCircleIcon className="h-5 w-5 mr-2 flex-shrink-0" />
+                          <div className="mb-3 p-3 bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-800 rounded-lg">
+                            <p className="text-xs text-primary-800 dark:text-primary-200 flex items-center">
+                              <InformationCircleIcon className="h-4 w-4 mr-2 flex-shrink-0" />
                               <span>
                                 <span className="font-bold">
                                   Question à choix multiples
                                 </span>{" "}
                                 - Sélectionnez toutes les bonnes réponses (
-                                {correctOptions.length} réponses correctes)
+                                {correctOptions.length} attendues)
                               </span>
                             </p>
                           </div>
                         )}
 
-                        {/* Options de réponse */}
-                        <div className="space-y-3">
+                        {/* Options de réponse - dimensions réduites */}
+                        <div className="space-y-2">
                           {answers.map((answer, index) => {
                             const answerText = extractAnswerText(answer);
-
                             let isCorrectAnswer = false;
+
                             if (
                               typeof currentQuestion.correctAnswer === "number"
                             ) {
@@ -1769,7 +1764,6 @@ const SessionPlay = () => {
                               isCorrectAnswer = answer.isCorrect;
                             }
 
-                            // Gestion sélection simple vs multiple
                             const isSelected = isMultipleChoice
                               ? Array.isArray(selectedAnswer) &&
                                 selectedAnswer.includes(index)
@@ -1789,9 +1783,9 @@ const SessionPlay = () => {
                                   disabled={
                                     isAnswered || showResults || isSubmitting
                                   }
-                                  className={`w-full p-4 text-left border-2 rounded-xl transition-all duration-200 ${
+                                  className={`w-full p-3 text-left border-2 rounded-lg transition-all duration-200 ${
                                     isSelected && !showResults
-                                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400 transform scale-[1.02] shadow-lg"
+                                      ? "border-primary-500 bg-primary-50 dark:bg-primary-900/30 dark:border-primary-400 shadow-md"
                                       : showResults && isCorrect
                                       ? "border-green-500 bg-green-50 dark:bg-green-900/30 dark:border-green-400"
                                       : showResults && isWrong
@@ -1800,19 +1794,19 @@ const SessionPlay = () => {
                                   } ${
                                     isAnswered || showResults || isSubmitting
                                       ? "cursor-not-allowed opacity-75"
-                                      : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:shadow-sm"
+                                      : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
                                   }`}
                                 >
                                   <div className="flex items-center">
-                                    {/* Indicateur visuel */}
+                                    {/* Indicateur visuel - plus petit */}
                                     <div
                                       className={`flex-shrink-0 ${
                                         isMultipleChoice
-                                          ? "w-6 h-6 rounded"
-                                          : "w-8 h-8 rounded-full"
-                                      } border-2 flex items-center justify-center text-sm font-bold transition-colors ${
+                                          ? "w-5 h-5 rounded"
+                                          : "w-7 h-7 rounded-full"
+                                      } border-2 flex items-center justify-center text-xs font-bold transition-colors ${
                                         isSelected && !showResults
-                                          ? "border-blue-500 bg-blue-500 text-white"
+                                          ? "border-primary-500 bg-primary-500 text-white"
                                           : showResults && isCorrect
                                           ? "border-green-500 bg-green-500 text-white"
                                           : showResults && isWrong
@@ -1827,9 +1821,9 @@ const SessionPlay = () => {
                                         : String.fromCharCode(65 + index)}
                                     </div>
 
-                                    <div className="flex-1 ml-4">
+                                    <div className="flex-1 ml-3">
                                       <div
-                                        className={`font-medium transition-colors ${
+                                        className={`font-medium text-sm transition-colors ${
                                           showResults && isCorrect
                                             ? "text-green-800 dark:text-green-200"
                                             : showResults && isWrong
@@ -1837,9 +1831,8 @@ const SessionPlay = () => {
                                             : "text-gray-900 dark:text-white"
                                         }`}
                                       >
-                                        {/* Lettre pour QCM multiple */}
                                         {isMultipleChoice && !showResults && (
-                                          <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 mr-2">
+                                          <span className="text-xs font-semibold text-primary-600 dark:text-primary-400 mr-1">
                                             {String.fromCharCode(65 + index)}.
                                           </span>
                                         )}
@@ -1851,9 +1844,9 @@ const SessionPlay = () => {
                                     {showResults && (isCorrect || isWrong) && (
                                       <div className="ml-2">
                                         {isCorrect ? (
-                                          <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                                          <CheckCircleIcon className="h-4 w-4 text-green-500" />
                                         ) : (
-                                          <XCircleIcon className="h-5 w-5 text-red-500" />
+                                          <XCircleIcon className="h-4 w-4 text-red-500" />
                                         )}
                                       </div>
                                     )}
@@ -1866,12 +1859,12 @@ const SessionPlay = () => {
 
                         {/* Message d'aide pour QCM multiple */}
                         {isMultipleChoice && !isAnswered && !showResults && (
-                          <div className="mt-3 text-center">
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                          <div className="mt-2 text-center">
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
                               {Array.isArray(selectedAnswer) &&
                               selectedAnswer.length > 0 ? (
                                 <>
-                                  <span className="font-medium text-blue-600 dark:text-blue-400">
+                                  <span className="font-medium text-primary-600 dark:text-primary-400">
                                     {selectedAnswer.length} réponse
                                     {selectedAnswer.length > 1 ? "s" : ""}{" "}
                                     sélectionnée
@@ -1892,16 +1885,15 @@ const SessionPlay = () => {
                     );
                   })()}
 
-                {currentQuestion.type === "vrai_faux" &&
+                {/* Vrai/Faux - dimensions réduites */}
+                {currentQuestion?.type === "vrai_faux" &&
                   (() => {
-                    // Déterminer les options Vrai/Faux
                     let vraiOptions;
 
                     if (
                       Array.isArray(currentQuestion.options) &&
                       currentQuestion.options.length === 2
                     ) {
-                      // Format avec options explicites
                       vraiOptions = currentQuestion.options.map(
                         (option, index) => ({
                           text: option.text || (index === 0 ? "Vrai" : "Faux"),
@@ -1909,15 +1901,13 @@ const SessionPlay = () => {
                         })
                       );
                     } else {
-                      // Format avec correctAnswer - générer les options
                       let vraiIsCorrect = false;
-
                       if (typeof currentQuestion.correctAnswer === "boolean") {
                         vraiIsCorrect = currentQuestion.correctAnswer === true;
                       } else if (
                         typeof currentQuestion.correctAnswer === "number"
                       ) {
-                        vraiIsCorrect = currentQuestion.correctAnswer === 0; // 0 = Vrai, 1 = Faux
+                        vraiIsCorrect = currentQuestion.correctAnswer === 0;
                       } else if (
                         typeof currentQuestion.correctAnswer === "string"
                       ) {
@@ -1928,7 +1918,6 @@ const SessionPlay = () => {
                           correctStr
                         );
                       }
-
                       vraiOptions = [
                         { text: "Vrai", isCorrect: vraiIsCorrect },
                         { text: "Faux", isCorrect: !vraiIsCorrect },
@@ -1936,7 +1925,7 @@ const SessionPlay = () => {
                     }
 
                     return (
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-3">
                         {vraiOptions.map((answer, index) => {
                           const isCorrectAnswer = answer.isCorrect;
                           const isSelected = selectedAnswer === index;
@@ -1945,7 +1934,6 @@ const SessionPlay = () => {
                           const isWrong =
                             showCorrectAnswer && isSelected && !isCorrectAnswer;
 
-                          // Calcul des pourcentages si résultats disponibles
                           const responseCount =
                             questionResults?.responses?.filter(
                               (r) => r.answer === index
@@ -1959,42 +1947,33 @@ const SessionPlay = () => {
                                 )
                               : 0;
 
-                          // Couleurs et styles selon l'état
                           let buttonClasses = "relative group";
                           let contentClasses =
-                            "relative z-10 flex flex-col items-center justify-center p-8 rounded-2xl border-3 transition-all duration-300 transform";
-                          let iconClasses =
-                            "mb-4 transition-transform duration-300";
+                            "relative z-10 flex flex-col items-center justify-center p-5 rounded-xl border-2 transition-all duration-300";
 
                           if (isAnswered || showResults || isSubmitting) {
                             contentClasses += " cursor-not-allowed";
                           } else {
                             contentClasses +=
-                              " cursor-pointer hover:scale-105 hover:shadow-2xl";
-                            iconClasses += " group-hover:scale-110";
+                              " cursor-pointer hover:scale-105 hover:shadow-lg";
                           }
 
-                          // États visuels
                           if (isSelected && !showResults) {
-                            // Sélectionné (avant résultats)
                             contentClasses +=
                               index === 0
-                                ? " border-green-500 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 shadow-xl shadow-green-200 dark:shadow-green-900/50"
-                                : " border-red-500 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/30 dark:to-red-800/30 shadow-xl shadow-red-200 dark:shadow-red-900/50";
+                                ? " border-green-500 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 shadow-md"
+                                : " border-red-500 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/30 dark:to-red-800/30 shadow-md";
                           } else if (showResults && isCorrect) {
-                            // Bonne réponse (après résultats)
                             contentClasses +=
-                              " border-green-500 bg-gradient-to-br from-green-100 to-green-200 dark:from-green-800/50 dark:to-green-700/50 shadow-xl ring-4 ring-green-300 dark:ring-green-700";
+                              " border-green-500 bg-gradient-to-br from-green-100 to-green-200 dark:from-green-800/50 dark:to-green-700/50 shadow-lg ring-2 ring-green-300 dark:ring-green-700";
                           } else if (showResults && isWrong) {
-                            // Mauvaise réponse (après résultats)
                             contentClasses +=
-                              " border-red-500 bg-gradient-to-br from-red-100 to-red-200 dark:from-red-800/50 dark:to-red-700/50 shadow-xl ring-4 ring-red-300 dark:ring-red-700";
+                              " border-red-500 bg-gradient-to-br from-red-100 to-red-200 dark:from-red-800/50 dark:to-red-700/50 shadow-lg ring-2 ring-red-300 dark:ring-red-700";
                           } else {
-                            // État normal
                             contentClasses +=
                               index === 0
-                                ? " border-green-300 dark:border-green-600 bg-white dark:bg-gray-800 hover:border-green-400 dark:hover:border-green-500"
-                                : " border-red-300 dark:border-red-600 bg-white dark:bg-gray-800 hover:border-red-400 dark:hover:border-red-500";
+                                ? " border-green-300 dark:border-green-600 bg-white dark:bg-gray-800 hover:border-green-400"
+                                : " border-red-300 dark:border-red-600 bg-white dark:bg-gray-800 hover:border-red-400";
                           }
 
                           return (
@@ -2007,46 +1986,44 @@ const SessionPlay = () => {
                               className={buttonClasses}
                             >
                               <div className={contentClasses}>
-                                {/* Icône principale */}
-                                <div className={iconClasses}>
+                                {/* Icône principale - plus petite */}
+                                <div className="mb-3">
                                   {index === 0 ? (
-                                    // Icône VRAI
                                     <div
-                                      className={`w-20 h-20 rounded-full flex items-center justify-center ${
+                                      className={`w-14 h-14 rounded-full flex items-center justify-center ${
                                         isSelected && !showResults
                                           ? "bg-green-500 text-white"
                                           : showResults && isCorrect
-                                          ? "bg-green-600 text-white animate-bounce"
+                                          ? "bg-green-600 text-white"
                                           : "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
                                       }`}
                                     >
                                       <CheckCircleIcon
-                                        className="w-12 h-12"
+                                        className="w-8 h-8"
                                         strokeWidth={2.5}
                                       />
                                     </div>
                                   ) : (
-                                    // Icône FAUX
                                     <div
-                                      className={`w-20 h-20 rounded-full flex items-center justify-center ${
+                                      className={`w-14 h-14 rounded-full flex items-center justify-center ${
                                         isSelected && !showResults
                                           ? "bg-red-500 text-white"
                                           : showResults && isCorrect
-                                          ? "bg-red-600 text-white animate-bounce"
+                                          ? "bg-red-600 text-white"
                                           : "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
                                       }`}
                                     >
                                       <XCircleIcon
-                                        className="w-12 h-12"
+                                        className="w-8 h-8"
                                         strokeWidth={2.5}
                                       />
                                     </div>
                                   )}
                                 </div>
 
-                                {/* Texte */}
+                                {/* Texte - plus petit */}
                                 <div
-                                  className={`text-3xl font-bold mb-2 transition-colors ${
+                                  className={`text-2xl font-bold mb-1 transition-colors ${
                                     isSelected && !showResults
                                       ? index === 0
                                         ? "text-green-700 dark:text-green-300"
@@ -2065,37 +2042,37 @@ const SessionPlay = () => {
 
                                 {/* Indicateur de sélection */}
                                 {isSelected && !showResults && (
-                                  <div className="absolute top-4 right-4">
+                                  <div className="absolute top-2 right-2">
                                     <div
-                                      className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                      className={`w-6 h-6 rounded-full flex items-center justify-center ${
                                         index === 0
                                           ? "bg-green-500"
                                           : "bg-red-500"
-                                      } text-white shadow-lg`}
+                                      } text-white shadow-md`}
                                     >
-                                      <CheckCircleIcon className="w-5 h-5" />
+                                      <CheckCircleIcon className="w-4 h-4" />
                                     </div>
                                   </div>
                                 )}
 
                                 {/* Indicateur de résultat */}
                                 {showResults && (isCorrect || isWrong) && (
-                                  <div className="absolute top-4 right-4">
+                                  <div className="absolute top-2 right-2">
                                     <div
-                                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                                      className={`w-7 h-7 rounded-full flex items-center justify-center ${
                                         isCorrect
-                                          ? "bg-green-500 animate-pulse"
+                                          ? "bg-green-500"
                                           : "bg-red-500"
-                                      } text-white shadow-lg`}
+                                      } text-white shadow-md`}
                                     >
                                       {isCorrect ? (
                                         <CheckCircleIcon
-                                          className="w-6 h-6"
+                                          className="w-5 h-5"
                                           strokeWidth={3}
                                         />
                                       ) : (
                                         <XCircleIcon
-                                          className="w-6 h-6"
+                                          className="w-5 h-5"
                                           strokeWidth={3}
                                         />
                                       )}
@@ -2103,10 +2080,10 @@ const SessionPlay = () => {
                                   </div>
                                 )}
 
-                                {/* Barre de statistiques (si résultats disponibles) */}
+                                {/* Statistiques */}
                                 {showResults && questionResults && (
-                                  <div className="w-full mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
-                                    <div className="flex items-center justify-between text-sm mb-2">
+                                  <div className="w-full mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                    <div className="flex items-center justify-between text-xs mb-1">
                                       <span className="font-medium text-gray-700 dark:text-gray-300">
                                         {responseCount} réponse
                                         {responseCount > 1 ? "s" : ""}
@@ -2121,9 +2098,9 @@ const SessionPlay = () => {
                                         {percentage}%
                                       </span>
                                     </div>
-                                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                                       <div
-                                        className={`h-2 rounded-full transition-all duration-1000 ease-out ${
+                                        className={`h-1.5 rounded-full transition-all duration-1000 ${
                                           index === 0
                                             ? "bg-green-500"
                                             : "bg-red-500"
@@ -2132,11 +2109,6 @@ const SessionPlay = () => {
                                       />
                                     </div>
                                   </div>
-                                )}
-
-                                {/* Animation de pulse pour la bonne réponse */}
-                                {showResults && isCorrect && (
-                                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-green-400/20 to-transparent animate-pulse pointer-events-none" />
                                 )}
                               </div>
                             </button>
@@ -2147,28 +2119,28 @@ const SessionPlay = () => {
                   })()}
               </div>
 
-              {/* 🔴 CORRECTION: Bouton de soumission avec validation par type */}
-              <div className="px-6 pb-6">
+              {/* Bouton de soumission - ROUGE BORDEAUX */}
+              <div className="px-4 pb-4">
                 {!isAnswered &&
                   !showResults &&
-                  currentQuestion.type !== "nuage_mots" && (
+                  currentQuestion?.type !== "nuage_mots" && (
                     <div className="text-center">
                       <button
                         onClick={handleSubmitAnswer}
                         disabled={
                           isSubmitting ||
-                          (currentQuestion.type === "reponse_libre" &&
+                          (currentQuestion?.type === "reponse_libre" &&
                             (!selectedAnswer ||
                               typeof selectedAnswer !== "string" ||
                               selectedAnswer.trim() === "")) ||
-                          ((currentQuestion.type === "qcm" ||
-                            currentQuestion.type === "vrai_faux") &&
+                          ((currentQuestion?.type === "qcm" ||
+                            currentQuestion?.type === "vrai_faux") &&
                             (selectedAnswer === null ||
                               selectedAnswer === undefined ||
                               (Array.isArray(selectedAnswer) &&
                                 selectedAnswer.length === 0)))
                         }
-                        className="inline-flex items-center px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:hover:transform-none"
+                        className="inline-flex items-center px-6 py-2.5 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-lg hover:from-primary-700 hover:to-primary-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
                       >
                         {isSubmitting ? (
                           <>
@@ -2178,7 +2150,7 @@ const SessionPlay = () => {
                         ) : (
                           <>
                             Confirmer ma réponse
-                            <ArrowRightIcon className="ml-2 h-5 w-5" />
+                            <ArrowRightIcon className="ml-2 h-4 w-4" />
                           </>
                         )}
                       </button>
@@ -2187,11 +2159,13 @@ const SessionPlay = () => {
 
                 {isAnswered && !showResults && (
                   <div className="text-center">
-                    <div className="inline-flex items-center px-6 py-3 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 rounded-xl border border-green-200 dark:border-green-800">
-                      <CheckCircleIcon className="h-5 w-5 mr-2" />
-                      <span className="font-medium">Réponse enregistrée !</span>
+                    <div className="inline-flex items-center px-4 py-2 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 rounded-lg border border-green-200 dark:border-green-800">
+                      <CheckCircleIcon className="h-4 w-4 mr-2" />
+                      <span className="font-medium text-sm">
+                        Réponse enregistrée !
+                      </span>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
                       En attente des autres participants...
                     </p>
                   </div>
@@ -2268,26 +2242,12 @@ const SessionPlay = () => {
             )}
 
             {sessionStatus === "finished" && (
-              <div className="text-center">
-                <CheckCircleIcon className="mx-auto h-16 w-16 text-green-500 mb-6" />
-                <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
-                  Quiz terminé !
-                </h2>
-                <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-                  Récupération de vos résultats en cours...
-                </p>
-
-                <div className="flex justify-center">
-                  <LoadingSpinner />
-                </div>
-
-                <button
-                  onClick={() => fetchFinalResults()}
-                  className="mt-6 bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-6 rounded-lg transition-colors"
-                >
-                  Actualiser les résultats
-                </button>
-              </div>
+              <button
+                onClick={() => fetchFinalResults()}
+                className="mt-6 bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-6 rounded-lg transition-colors"
+              >
+                Actualiser les résultats
+              </button>
             )}
           </div>
         )}
