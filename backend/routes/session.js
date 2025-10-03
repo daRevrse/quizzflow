@@ -836,7 +836,20 @@ router.post("/", authenticateToken, async (req, res) => {
     const code = await Session.generateUniqueCode();
 
     // Préparer les paramètres par défaut
-    const defaultSettings = {
+    // const defaultSettings = {
+    //   allowAnonymous: true,
+    //   allowLateJoin: false,
+    //   showLeaderboard: true,
+    //   maxParticipants: 100,
+    //   autoAdvance: false,
+    //   shuffleQuestions: false,
+    //   shuffleAnswers: false,
+    // };
+
+    // const sessionSettings = { ...defaultSettings, ...settings };
+
+    const sessionSettings = {
+      // Valeurs par défaut
       allowAnonymous: true,
       allowLateJoin: false,
       showLeaderboard: true,
@@ -844,9 +857,37 @@ router.post("/", authenticateToken, async (req, res) => {
       autoAdvance: false,
       shuffleQuestions: false,
       shuffleAnswers: false,
+      questionTimeLimit: null,
+      showCorrectAnswers: true,
+      randomizeQuestions: false,
+      enableChat: false,
+      
+      // Écraser avec les valeurs fournies (si définies)
+      ...(settings && typeof settings === 'object' ? settings : {}),
     };
-
-    const sessionSettings = { ...defaultSettings, ...settings };
+    
+    // Validation des settings après merge
+    if (sessionSettings.maxParticipants && 
+        (sessionSettings.maxParticipants < 1 || sessionSettings.maxParticipants > 1000)) {
+      return res.status(400).json({
+        error: "maxParticipants doit être entre 1 et 1000",
+        code: "INVALID_SETTINGS"
+      });
+    }
+    
+    if (sessionSettings.questionTimeLimit && 
+        (sessionSettings.questionTimeLimit < 5 || sessionSettings.questionTimeLimit > 600)) {
+      return res.status(400).json({
+        error: "questionTimeLimit doit être entre 5 et 600 secondes",
+        code: "INVALID_SETTINGS"
+      });
+    }
+    
+    // Log pour debug
+    console.log("🔧 Configuration de session appliquée:", {
+      received: settings,
+      final: sessionSettings
+    });
 
     console.log("⚙️ Paramètres session:", sessionSettings);
 
