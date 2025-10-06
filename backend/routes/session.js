@@ -9,7 +9,6 @@ const {
 } = require("../middleware/auth");
 const { Op } = require("sequelize");
 
-// Middleware pour charger une session avec validation robuste
 const loadSession = async (req, res, next) => {
   try {
     const sessionId = req.params.id;
@@ -835,21 +834,7 @@ router.post("/", authenticateToken, async (req, res) => {
     // Générer un code unique
     const code = await Session.generateUniqueCode();
 
-    // Préparer les paramètres par défaut
-    // const defaultSettings = {
-    //   allowAnonymous: true,
-    //   allowLateJoin: false,
-    //   showLeaderboard: true,
-    //   maxParticipants: 100,
-    //   autoAdvance: false,
-    //   shuffleQuestions: false,
-    //   shuffleAnswers: false,
-    // };
-
-    // const sessionSettings = { ...defaultSettings, ...settings };
-
-    const sessionSettings = {
-      // Valeurs par défaut
+    const defaultSettings = {
       allowAnonymous: true,
       allowLateJoin: false,
       showLeaderboard: true,
@@ -861,10 +846,11 @@ router.post("/", authenticateToken, async (req, res) => {
       showCorrectAnswers: true,
       randomizeQuestions: false,
       enableChat: false,
-      
-      // Écraser avec les valeurs fournies (si définies)
-      ...(settings && typeof settings === 'object' ? settings : {}),
     };
+
+    // Merger en donnant la priorité aux settings fournis
+    // Object.assign garantit que les valeurs fournies écrasent les valeurs par défaut
+    const sessionSettings = Object.assign({}, defaultSettings, settings);
     
     // Validation des settings après merge
     if (sessionSettings.maxParticipants && 
@@ -892,28 +878,47 @@ router.post("/", authenticateToken, async (req, res) => {
     console.log("⚙️ Paramètres session:", sessionSettings);
 
     // CORRECTION: Créer la session avec les UUID corrects
+    // const sessionData = {
+    //   code,
+    //   title: title.trim(),
+    //   description: description ? description.trim() : null,
+    //   quizId: quizId, // UUID du quiz
+    //   hostId: user.id, // UUID de l'utilisateur
+    //   settings: sessionSettings,
+    //   participants: [],
+    //   responses: {},
+    //   stats: {
+    //     totalParticipants: 0,
+    //     totalResponses: 0,
+    //     averageScore: 0,
+    //     participationRate: 0,
+    //     activeParticipants: 0,
+    //   },
+    // };
+
     const sessionData = {
       code,
       title: title.trim(),
       description: description ? description.trim() : null,
-      quizId: quizId, // UUID du quiz
-      hostId: user.id, // UUID de l'utilisateur
+      quizId: quiz.id,
+      hostId: user.id,
+      status: "waiting",
       settings: sessionSettings,
       participants: [],
-      responses: {},
+      currentQuestionIndex: null,
+      startedAt: null,
+      endedAt: null,
       stats: {
         totalParticipants: 0,
-        totalResponses: 0,
+        completedParticipants: 0,
         averageScore: 0,
-        participationRate: 0,
-        activeParticipants: 0,
+        averageTime: 0,
       },
     };
 
     console.log("💾 Données session à créer:", {
       ...sessionData,
-      quizIdType: typeof sessionData.quizId,
-      hostIdType: typeof sessionData.hostId
+      quizTitle: quiz.title,
     });
 
     const session = await Session.create(sessionData);

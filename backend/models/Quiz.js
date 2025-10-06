@@ -93,19 +93,19 @@ const Quiz = sequelize.define(
         maxAttempts: 1,
         passingScore: 50,
       },
-      validate: {
-        isValidSettings(value) {
-          if (value && typeof value === "object") {
-            const { maxAttempts, passingScore } = value;
-            if (maxAttempts && (maxAttempts < 1 || maxAttempts > 10)) {
-              throw new Error("maxAttempts doit être entre 1 et 10");
-            }
-            if (passingScore && (passingScore < 0 || passingScore > 100)) {
-              throw new Error("passingScore doit être entre 0 et 100");
-            }
-          }
-        },
-      },
+      // validate: {
+      //   isValidSettings(value) {
+      //     if (value && typeof value === "object") {
+      //       const { maxAttempts, passingScore } = value;
+      //       if (maxAttempts && (maxAttempts < 1 || maxAttempts > 10)) {
+      //         throw new Error("maxAttempts doit être entre 1 et 10");
+      //       }
+      //       if (passingScore && (passingScore < 0 || passingScore > 100)) {
+      //         throw new Error("passingScore doit être entre 0 et 100");
+      //       }
+      //     }
+      //   },
+      // },
     },
     category: {
       type: DataTypes.STRING(50),
@@ -204,32 +204,61 @@ const Quiz = sequelize.define(
   }
 );
 
-// Getters virtuels
-// Quiz.prototype.getQuestionCount = function () {
-//   return this.questions ? this.questions.length : 0;
-// };
-// Quiz.prototype.getQuestionCount = function () {
-//   return Array.isArray(this.questions) ? this.questions.length : 0;
-// };
+// Méthodes d'instance
 Quiz.prototype.getQuestionCount = function () {
-  const questions =
-    typeof this.questions === "string"
-      ? JSON.parse(this.questions)
-      : this.questions;
-  return Array.isArray(questions) ? questions.length : 0;
+  return Array.isArray(this.questions) ? this.questions.length : 0;
 };
 
 Quiz.prototype.getTotalPoints = function () {
-  const questions =
-    typeof this.questions === "string"
-      ? JSON.parse(this.questions)
-      : this.questions;
-
-  if (!Array.isArray(questions)) return 0;
-  return questions.reduce((total, question) => {
-    return total + (question.points || 1);
-  }, 0);
+  if (!Array.isArray(this.questions)) return 0;
+  return this.questions.reduce((total, q) => total + (q.points || 1), 0);
 };
+
+// Méthode statique pour créer avec validation
+Quiz.createWithValidation = async function (data) {
+  // Assurer que settings est un objet valide
+  const defaultSettings = {
+    isPublic: false,
+    allowAnonymous: true,
+    showResults: true,
+    showCorrectAnswers: true,
+    randomizeQuestions: false,
+    randomizeOptions: false,
+    maxAttempts: 1,
+    passingScore: 50,
+  };
+
+  const settings = Object.assign({}, defaultSettings, data.settings || {});
+
+  return await Quiz.create({
+    ...data,
+    settings,
+  });
+};
+
+// Hook avant mise à jour pour valider settings
+Quiz.beforeUpdate((quiz) => {
+  // Si settings est une string, c'est qu'il y a eu un double encodage
+  if (typeof quiz.settings === 'string') {
+    console.error('❌ ERREUR: settings est une string, tentative de correction');
+    try {
+      quiz.settings = JSON.parse(quiz.settings);
+    } catch (e) {
+      console.error('❌ Impossible de parser settings:', e);
+      // Réinitialiser aux valeurs par défaut
+      quiz.settings = {
+        isPublic: false,
+        allowAnonymous: true,
+        showResults: true,
+        showCorrectAnswers: true,
+        randomizeQuestions: false,
+        randomizeOptions: false,
+        maxAttempts: 1,
+        passingScore: 50,
+      };
+    }
+  }
+});
 
 // Méthodes d'instance
 Quiz.prototype.getPublicData = function () {

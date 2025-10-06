@@ -46,7 +46,22 @@ const QuizView = () => {
     try {
       setLoading(true);
       const response = await quizService.getQuiz(id);
-      setQuiz(response.quiz);
+
+      // Cloner les données du quiz
+      const quizData = { ...response.quiz };
+
+      // Vérifier si le champ settings est une chaîne JSON
+      if (typeof quizData.settings === "string") {
+        try {
+          quizData.settings = JSON.parse(quizData.settings);
+        } catch (e) {
+          console.error("Erreur lors du parsing de settings :", e);
+        }
+      }
+
+      setQuiz(quizData);
+      console.log("Quiz chargé :", quizData);
+      console.log("isPublic:", quizData.settings?.isPublic);
     } catch (error) {
       console.error("Erreur lors du chargement du quiz:", error);
       if (error.response?.status === 404) {

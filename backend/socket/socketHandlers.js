@@ -36,7 +36,7 @@ function calculateSessionStats(sessionData) {
   const participants = Array.isArray(sessionData.participants) ? sessionData.participants : [];
   const responses = sessionData.responses || {};
   
-  console.log(`📊 Calcul stats session - ${participants.length} participants`);
+  // console.log(`📊 Calcul stats session - ${participants.length} participants`);
   
   const totalParticipants = participants.length;
   
@@ -160,23 +160,23 @@ function calculateSessionStats(sessionData) {
     calculatedAt: new Date(),
   };
   
-  console.log(`📊 Stats calculées:`, {
-    totalParticipants: stats.totalParticipants,
-    averageScore: stats.averageScore,
-    accuracyRate: stats.accuracyRate,
-    participationRate: stats.participationRate
-  });
+  // console.log(`📊 Stats calculées:`, {
+  //   totalParticipants: stats.totalParticipants,
+  //   averageScore: stats.averageScore,
+  //   accuracyRate: stats.accuracyRate,
+  //   participationRate: stats.participationRate
+  // });
   
   return stats;
 }
 
   function debugTimer(sessionId, action, details = {}) {
     const timestamp = new Date().toISOString();
-    console.log(`⏰ [${timestamp}] TIMER DEBUG - Session ${sessionId}:`);
-    console.log(`   Action: ${action}`);
-    console.log(`   Détails:`, details);
-    console.log(`   Timers actifs: ${activeQuestionTimers.size}`);
-    console.log(`   Timer pour cette session: ${activeQuestionTimers.has(sessionId) ? 'OUI' : 'NON'}`);
+    // console.log(`⏰ [${timestamp}] TIMER DEBUG - Session ${sessionId}:`);
+    // console.log(`   Action: ${action}`);
+    // console.log(`   Détails:`, details);
+    // console.log(`   Timers actifs: ${activeQuestionTimers.size}`);
+    // console.log(`   Timer pour cette session: ${activeQuestionTimers.has(sessionId) ? 'OUI' : 'NON'}`);
     
     // Stocker l'info de debug
     if (!timerDebugInfo.has(sessionId)) {
@@ -203,22 +203,22 @@ function calculateSessionStats(sessionData) {
       debugTimer(sessionId, "CLEAR_EXISTING_TIMER");
     }
   
-    console.log(`⏰ === DÉMARRAGE TIMER ===`);
-    console.log(`   Session: ${sessionId}`);
-    console.log(`   Question: ${questionIndex}`);
-    console.log(`   Durée: ${timeLimit}s`);
-    console.log(`   Fin prévue: ${new Date(Date.now() + timeLimit * 1000).toISOString()}`);
+    // console.log(`⏰ === DÉMARRAGE TIMER ===`);
+    // console.log(`   Session: ${sessionId}`);
+    // console.log(`   Question: ${questionIndex}`);
+    // console.log(`   Durée: ${timeLimit}s`);
+    // console.log(`   Fin prévue: ${new Date(Date.now() + timeLimit * 1000).toISOString()}`);
     
     const timerId = setTimeout(async () => {
-      console.log(`\n🚨 === TIMER EXPIRÉ ===`);
-      console.log(`   Session: ${sessionId}`);
-      console.log(`   Question: ${questionIndex}`);
-      console.log(`   Heure: ${new Date().toISOString()}`);
+      // console.log(`\n🚨 === TIMER EXPIRÉ ===`);
+      // console.log(`   Session: ${sessionId}`);
+      // console.log(`   Question: ${questionIndex}`);
+      // console.log(`   Heure: ${new Date().toISOString()}`);
       
       debugTimer(sessionId, "TIMER_EXPIRED", { questionIndex });
       
       try {
-        console.log(`🔍 Recherche session ${sessionId} pour avancement auto...`);
+        // console.log(`🔍 Recherche session ${sessionId} pour avancement auto...`);
         
         const session = await Session.findByPk(sessionId, {
           include: [{ model: Quiz, as: "quiz" }],
@@ -230,32 +230,32 @@ function calculateSessionStats(sessionData) {
           return;
         }
     
-        console.log(`✅ Session trouvée: ${session.code} (status: ${session.status})`);
+        // console.log(`✅ Session trouvée: ${session.code} (status: ${session.status})`);
     
         if (session.status !== "active") {
-          console.log(`⚠️ Session ${sessionId} non active (${session.status}), timer annulé`);
+          // console.log(`⚠️ Session ${sessionId} non active (${session.status}), timer annulé`);
           debugTimer(sessionId, "SESSION_NOT_ACTIVE", { status: session.status });
           return;
         }
     
         const totalQuestions = session.quiz?.questions?.length || 0;
-        console.log(`📊 Questions: ${questionIndex + 1}/${totalQuestions}`);
+        // console.log(`📊 Questions: ${questionIndex + 1}/${totalQuestions}`);
         
         if (questionIndex >= totalQuestions - 1) {// CORRECTION: Dernière question - terminer proprement la session
-          console.log(`🏁 === DERNIÈRE QUESTION TERMINÉE ===`);
-          console.log(`   Fin automatique de session ${sessionId}`);
+          // console.log(`🏁 === DERNIÈRE QUESTION TERMINÉE ===`);
+          // console.log(`   Fin automatique de session ${sessionId}`);
           
           debugTimer(sessionId, "AUTO_END_SESSION", { questionIndex, totalQuestions });
           
           // CORRECTION: Vérifier le statut avant de terminer
           if (session.status === "finished") {
-            console.log(`⚠️ Session ${sessionId} déjà terminée, pas d'action nécessaire`);
+            // console.log(`⚠️ Session ${sessionId} déjà terminée, pas d'action nécessaire`);
             debugTimer(sessionId, "SESSION_ALREADY_FINISHED");
             return;
           }
         
           if (!["active", "paused"].includes(session.status)) {
-            console.log(`⚠️ Session ${sessionId} dans un état non terminable: ${session.status}`);
+            // console.log(`⚠️ Session ${sessionId} dans un état non terminable: ${session.status}`);
             debugTimer(sessionId, "SESSION_NOT_TERMINABLE", { status: session.status });
             return;
           }
@@ -272,7 +272,7 @@ function calculateSessionStats(sessionData) {
             
             await session.update({ stats: finalStats });
         
-            console.log(`📢 Notification fin de session automatique`);
+            // console.log(`📢 Notification fin de session automatique`);
             
             // Notification uniforme avec status "finished"
             const endNotification = {
@@ -293,14 +293,14 @@ function calculateSessionStats(sessionData) {
               isHost: true
             });
         
-            console.log(`✅ Session ${sessionId} terminée automatiquement`);
+            // console.log(`✅ Session ${sessionId} terminée automatiquement`);
         
           } catch (endError) {
             console.error(`❌ Erreur lors de la fin automatique de session ${sessionId}:`, endError);
             
             // Si l'erreur indique que la session est déjà terminée, ce n'est pas grave
             if (endError.message?.includes("terminée") || endError.message?.includes("finished")) {
-              console.log(`⚠️ Session ${sessionId} était déjà terminée - pas d'erreur réelle`);
+              // console.log(`⚠️ Session ${sessionId} était déjà terminée - pas d'erreur réelle`);
               debugTimer(sessionId, "SESSION_ALREADY_FINISHED_ON_END");
             } else {
               // Pour d'autres erreurs, on les log mais on continue
@@ -312,10 +312,10 @@ function calculateSessionStats(sessionData) {
           const newIndex = questionIndex + 1;
           const nextQuestion = session.quiz.questions[newIndex];
           
-          console.log(`➡️ === PASSAGE AUTOMATIQUE ===`);
-          console.log(`   Session: ${sessionId}`);
-          console.log(`   De question ${questionIndex} vers ${newIndex}`);
-          console.log(`   Nouvelle question: "${nextQuestion?.question?.substring(0, 50)}..."`);
+          // console.log(`➡️ === PASSAGE AUTOMATIQUE ===`);
+          // console.log(`   Session: ${sessionId}`);
+          // console.log(`   De question ${questionIndex} vers ${newIndex}`);
+          // console.log(`   Nouvelle question: "${nextQuestion?.question?.substring(0, 50)}..."`);
           
           debugTimer(sessionId, "AUTO_NEXT_QUESTION", { 
             from: questionIndex, 
@@ -328,7 +328,7 @@ function calculateSessionStats(sessionData) {
             currentQuestionStartedAt: new Date(),
           });
     
-          console.log(`📢 Notification nouvelle question automatique`);
+          // console.log(`📢 Notification nouvelle question automatique`);
     
           // Notifier tous les participants
           io.to(`session_${sessionId}`).emit("next_question", {
@@ -349,14 +349,14 @@ function calculateSessionStats(sessionData) {
             isHost: true
           });
     
-          console.log(`✅ Passage automatique vers question ${newIndex + 1} réussi`);
+          // console.log(`✅ Passage automatique vers question ${newIndex + 1} réussi`);
     
           // Démarrer le timer pour la nouvelle question si elle a une limite de temps
           if (nextQuestion && nextQuestion.timeLimit) {
-            console.log(`⏰ Démarrage timer pour nouvelle question: ${nextQuestion.timeLimit}s`);
+            // console.log(`⏰ Démarrage timer pour nouvelle question: ${nextQuestion.timeLimit}s`);
             startQuestionTimer(sessionId, newIndex, nextQuestion.timeLimit);
           } else {
-            console.log(`⏰ Pas de timer pour la nouvelle question`);
+            // console.log(`⏰ Pas de timer pour la nouvelle question`);
           }
         }
     
@@ -374,7 +374,7 @@ function calculateSessionStats(sessionData) {
         // Nettoyer le timer
         activeQuestionTimers.delete(sessionId);
         debugTimer(sessionId, "TIMER_CLEANED");
-        console.log(`🧹 Timer nettoyé pour session ${sessionId}\n`);
+        // console.log(`🧹 Timer nettoyé pour session ${sessionId}\n`);
       }
     }, timeLimit * 1000);
   
@@ -382,9 +382,9 @@ function calculateSessionStats(sessionData) {
     activeQuestionTimers.set(sessionId, timerId);
     debugTimer(sessionId, "TIMER_STORED", { timerId: timerId.toString() });
     
-    console.log(`✅ Timer démarré et stocké pour session ${sessionId}`);
-    console.log(`   Timer ID: ${timerId}`);
-    console.log(`   Timers actifs total: ${activeQuestionTimers.size}\n`);
+    // console.log(`✅ Timer démarré et stocké pour session ${sessionId}`);
+    // console.log(`   Timer ID: ${timerId}`);
+    // console.log(`   Timers actifs total: ${activeQuestionTimers.size}\n`);
   }
 
   function calculateSimilarity(str1, str2) {
@@ -427,9 +427,9 @@ function calculateSessionStats(sessionData) {
     if (activeQuestionTimers.has(sessionId)) {
       clearTimeout(activeQuestionTimers.get(sessionId));
       activeQuestionTimers.delete(sessionId);
-      console.log(`⏹️ Timer arrêté pour session ${sessionId} (${reason})`);
+      // console.log(`⏹️ Timer arrêté pour session ${sessionId} (${reason})`);
     } else {
-      console.log(`⚠️ Aucun timer actif à arrêter pour session ${sessionId}`);
+      // console.log(`⚠️ Aucun timer actif à arrêter pour session ${sessionId}`);
     }
   }
 
@@ -507,7 +507,7 @@ function calculateSessionStats(sessionData) {
       // AJOUT: Démarrer le timer pour la nouvelle question
       if (nextQuestion && nextQuestion.timeLimit) {
         startQuestionTimer(session.id, newIndex, nextQuestion.timeLimit);
-        console.log(`⏰ Timer démarré pour question ${newIndex + 1}: ${nextQuestion.timeLimit}s`);
+        // console.log(`⏰ Timer démarré pour question ${newIndex + 1}: ${nextQuestion.timeLimit}s`);
       }
   
       io.to(`session_${session.id}`).emit("next_question", {
@@ -517,7 +517,7 @@ function calculateSessionStats(sessionData) {
         startedAt: new Date(),
       });
   
-      console.log(`➡️ Passage manuel à la question ${newIndex + 1}`);
+      // console.log(`➡️ Passage manuel à la question ${newIndex + 1}`);
     } catch (error) {
       console.error("Erreur question suivante:", error);
       socket.emit("error", {
@@ -547,7 +547,7 @@ function calculateSessionStats(sessionData) {
   
       // CORRECTION: Gérer le cas où la session est déjà terminée
       if (session.status === "finished") {
-        console.log(`⚠️ Session ${session.id} déjà terminée, envoi confirmation`);
+        // console.log(`⚠️ Session ${session.id} déjà terminée, envoi confirmation`);
         
         // Confirmer que la session est terminée sans erreur
         socket.emit("session_ended", {
@@ -571,7 +571,7 @@ function calculateSessionStats(sessionData) {
         });
       }
   
-      console.log(`🏁 Fin manuelle de session ${session.code} depuis Socket.IO`);
+      // console.log(`🏁 Fin manuelle de session ${session.code} depuis Socket.IO`);
   
       // Utiliser la méthode endSession du modèle
       await session.endSession();
@@ -585,7 +585,7 @@ function calculateSessionStats(sessionData) {
       
       await session.update({ stats: finalStats });
   
-      console.log(`✅ Session ${session.code} terminée manuellement via Socket.IO`);
+      // console.log(`✅ Session ${session.code} terminée manuellement via Socket.IO`);
   
       // Notifier tous les participants
       io.to(`session_${session.id}`).emit("session_ended", {
@@ -654,7 +654,7 @@ function calculateSessionStats(sessionData) {
         sessionId: session.id,
       });
   
-      console.log(`⏸️ Session ${session.code} mise en pause, timer arrêté`);
+      // console.log(`⏸️ Session ${session.code} mise en pause, timer arrêté`);
     } catch (error) {
       console.error("Erreur lors de la pause:", error);
       socket.emit("error", { message: "Erreur lors de la pause" });
@@ -688,7 +688,7 @@ function calculateSessionStats(sessionData) {
       
       if (currentQuestion && currentQuestion.timeLimit) {
         startQuestionTimer(session.id, currentQuestionIndex, currentQuestion.timeLimit);
-        console.log(`⏰ Timer redémarré après pause: ${currentQuestion.timeLimit}s`);
+        // console.log(`⏰ Timer redémarré après pause: ${currentQuestion.timeLimit}s`);
       }
   
       io.to(`session_${session.id}`).emit("session_resumed", {
@@ -696,7 +696,7 @@ function calculateSessionStats(sessionData) {
         resumedAt: new Date(),
       });
   
-      console.log(`▶️ Session ${session.code} reprise, timer redémarré`);
+      // console.log(`▶️ Session ${session.code} reprise, timer redémarré`);
     } catch (error) {
       console.error("Erreur lors de la reprise:", error);
       socket.emit("error", { message: "Erreur lors de la reprise" });
@@ -707,10 +707,10 @@ function calculateSessionStats(sessionData) {
     const socket = this;
 
     try {
-      console.log(`\n🎯 === DEBUT handleJoinSession ===`);
-      console.log(`   Socket ID: ${socket.id}`);
-      console.log(`   User: ${socket.user ? socket.user.username : "anonyme"}`);
-      console.log(`   Data brute reçue:`, JSON.stringify(data, null, 2));
+      // console.log(`\n🎯 === DEBUT handleJoinSession ===`);
+      // console.log(`   Socket ID: ${socket.id}`);
+      // console.log(`   User: ${socket.user ? socket.user.username : "anonyme"}`);
+      // console.log(`   Data brute reçue:`, JSON.stringify(data, null, 2));
 
       // Validation des données reçues
       if (!data || typeof data !== "object") {
@@ -730,13 +730,13 @@ function calculateSessionStats(sessionData) {
       // 🔧 DÉTECTION DU FORMAT ET EXTRACTION FLEXIBLE - AJOUT DU 3ème FORMAT
       if (data.sessionCode && data.participantName) {
         // Format 1 : { sessionCode, participantName, isAnonymous }
-        console.log(`📋 Format standard détecté`);
+        // console.log(`📋 Format standard détecté`);
         sessionCode = data.sessionCode;
         participantName = data.participantName;
         isAnonymous = data.isAnonymous;
       } else if (data.sessionId && data.participant) {
         // Format 2 : { sessionId, participant: { name, ... } }
-        console.log(`📋 Format alternatif détecté (sessionId + participant)`);
+        // console.log(`📋 Format alternatif détecté (sessionId + participant)`);
 
         // Chercher la session par ID pour récupérer le code
         try {
@@ -757,9 +757,9 @@ function calculateSessionStats(sessionData) {
           participantName = data.participant.name;
           isAnonymous = data.participant.isAnonymous || false;
 
-          console.log(
-            `✅ Session trouvée par ID, code récupéré: ${sessionCode}`
-          );
+          // console.log(
+          //   `✅ Session trouvée par ID, code récupéré: ${sessionCode}`
+          // );
         } catch (error) {
           console.error(`❌ Erreur lors de la recherche par ID:`, error);
           return socket.emit("error", {
@@ -773,9 +773,9 @@ function calculateSessionStats(sessionData) {
         data.role === "participant"
       ) {
         // Format 3 : { sessionId, participantId, role } - NOUVEAU FORMAT
-        console.log(
-          `📋 Format connexion Socket détecté (reconnexion participant)`
-        );
+        // console.log(
+        //   `📋 Format connexion Socket détecté (reconnexion participant)`
+        // );
 
         try {
           // Récupérer la session par ID
@@ -822,9 +822,9 @@ function calculateSessionStats(sessionData) {
           isAnonymous = existingParticipant.isAnonymous || false;
           participantId = data.participantId; // Réutiliser l'ID existant
 
-          console.log(
-            `✅ Reconnexion participant: ${participantName} (${participantId})`
-          );
+          // console.log(
+          //   `✅ Reconnexion participant: ${participantName} (${participantId})`
+          // );
         } catch (error) {
           console.error(`❌ Erreur lors de la reconnexion:`, error);
           return socket.emit("error", {
@@ -854,12 +854,12 @@ function calculateSessionStats(sessionData) {
         });
       }
 
-      console.log(`📊 Données extraites:`, {
-        sessionCode,
-        participantName,
-        isAnonymous: Boolean(isAnonymous),
-        participantId: participantId || "nouveau",
-      });
+      // console.log(`📊 Données extraites:`, {
+      //   sessionCode,
+      //   participantName,
+      //   isAnonymous: Boolean(isAnonymous),
+      //   participantId: participantId || "nouveau",
+      // });
 
       // Validation des champs extraits
       if (
@@ -894,15 +894,15 @@ function calculateSessionStats(sessionData) {
       const cleanSessionCode = sessionCode.trim().toUpperCase();
       const cleanParticipantName = participantName.trim();
 
-      console.log(`🧹 Données nettoyées:`, {
-        cleanSessionCode,
-        cleanParticipantName,
-        isAnonymous: Boolean(isAnonymous),
-        isReconnection: !!participantId,
-      });
+      // console.log(`🧹 Données nettoyées:`, {
+      //   cleanSessionCode,
+      //   cleanParticipantName,
+      //   isAnonymous: Boolean(isAnonymous),
+      //   isReconnection: !!participantId,
+      // });
 
       // Recherche de la session complète
-      console.log(`🔍 Recherche session avec code: "${cleanSessionCode}"`);
+      // console.log(`🔍 Recherche session avec code: "${cleanSessionCode}"`);
 
       const session = await Session.findOne({
         where: {
@@ -934,14 +934,14 @@ function calculateSessionStats(sessionData) {
         });
       }
 
-      console.log(`✅ Session trouvée:`, {
-        id: session.id,
-        code: session.code,
-        title: session.title,
-        status: session.status,
-        participantsType: typeof session.participants,
-        isArray: Array.isArray(session.participants),
-      });
+      // console.log(`✅ Session trouvée:`, {
+      //   id: session.id,
+      //   code: session.code,
+      //   title: session.title,
+      //   status: session.status,
+      //   participantsType: typeof session.participants,
+      //   isArray: Array.isArray(session.participants),
+      // });
 
       // S'assurer que participants est un tableau
       let currentParticipants = session.participants;
@@ -949,7 +949,7 @@ function calculateSessionStats(sessionData) {
         currentParticipants = JSON.parse(currentParticipants);
       }
       if (!Array.isArray(currentParticipants)) {
-        console.log(`⚠️ Participants n'est pas un tableau, initialisation`);
+        // console.log(`⚠️ Participants n'est pas un tableau, initialisation`);
         currentParticipants = [];
       }
 
@@ -1019,7 +1019,7 @@ function calculateSessionStats(sessionData) {
         );
 
         if (existingParticipant) {
-          console.log(`❌ Nom déjà pris: "${cleanParticipantName}"`);
+          // console.log(`❌ Nom déjà pris: "${cleanParticipantName}"`);
           return socket.emit("error", {
             message: "Ce nom est déjà pris dans cette session",
             code: "NAME_TAKEN",
@@ -1056,7 +1056,7 @@ function calculateSessionStats(sessionData) {
         await session.update({ participants: updatedParticipants });
         currentParticipants = updatedParticipants;
 
-        console.log(`➕ Nouveau participant créé: ${finalParticipantId}`);
+        // console.log(`➕ Nouveau participant créé: ${finalParticipantId}`);
       }
 
       // Configuration du socket
@@ -1100,7 +1100,7 @@ function calculateSessionStats(sessionData) {
         isReconnection: isReconnection,
       };
 
-      console.log(`📤 Envoi session_joined au participant`);
+      // console.log(`📤 Envoi session_joined au participant`);
       socket.emit("session_joined", responseData);
 
       // Notifications aux autres participants et à l'hôte
@@ -1118,7 +1118,7 @@ function calculateSessionStats(sessionData) {
           },
         };
 
-        console.log(`📢 Notification à l'hôte: host_${session.id}`);
+        // console.log(`📢 Notification à l'hôte: host_${session.id}`);
         io.to(`host_${session.id}`).emit(
           "participant_joined",
           hostNotification
@@ -1135,20 +1135,20 @@ function calculateSessionStats(sessionData) {
           isReconnection: true,
         };
 
-        console.log(`🔄 Notification reconnexion à l'hôte`);
+        // console.log(`🔄 Notification reconnexion à l'hôte`);
         io.to(`host_${session.id}`).emit(
           "participant_reconnected",
           reconnectionNotification
         );
       }
 
-      console.log(`✅ === FIN handleJoinSession SUCCESS ===`);
-      console.log(
-        `   ${
-          isReconnection ? "Reconnexion" : "Nouveau participant"
-        }: "${cleanParticipantName}"`
-      );
-      console.log(`   Total participants: ${currentParticipants.length}\n`);
+      // console.log(`✅ === FIN handleJoinSession SUCCESS ===`);
+      // console.log(
+      //   `   ${
+      //     isReconnection ? "Reconnexion" : "Nouveau participant"
+      //   }: "${cleanParticipantName}"`
+      // );
+      // console.log(`   Total participants: ${currentParticipants.length}\n`);
     } catch (error) {
       console.error(`💥 === ERREUR handleJoinSession ===`);
       console.error(`   Socket ID: ${socket.id}`);
@@ -1167,10 +1167,10 @@ function calculateSessionStats(sessionData) {
   // Handler: Quitter la session (SIMPLIFIÉ)
   async function handleLeaveSession() {
     const socket = this;
-    console.log(`👋 Leave session demandé par ${socket.id}`);
+    // console.log(`👋 Leave session demandé par ${socket.id}`);
 
     if (!socket.sessionId || !socket.participantId) {
-      console.log(`   Pas de session/participant à quitter`);
+      // console.log(`   Pas de session/participant à quitter`);
       return;
     }
 
@@ -1340,10 +1340,10 @@ function calculateSessionStats(sessionData) {
   async function handleSubmitResponse(data) {
     const socket = this;
     
-    console.log(`🚀 === DÉBUT handleSubmitResponse ===`);
-    console.log(`   Socket ID: ${socket.id}`);
-    console.log(`   Participant ID: ${socket.participantId}`);
-    console.log(`   Data reçue:`, data);
+    // console.log(`🚀 === DÉBUT handleSubmitResponse ===`);
+    // console.log(`   Socket ID: ${socket.id}`);
+    // console.log(`   Participant ID: ${socket.participantId}`);
+    // console.log(`   Data reçue:`, data);
     
     if (!socket.participantId || !socket.sessionId) {
       const error = {
@@ -1408,12 +1408,12 @@ function calculateSessionStats(sessionData) {
       const question = questions[questionIndex];
       const actualQuestionId = `q_${questionIndex}`;
       
-      console.log(`✅ Question trouvée à l'index ${questionIndex}:`);
-      console.log(`   Question: "${question.question}"`);
-      console.log(`   Type: ${question.type}`);
-      console.log(`   ID généré: ${actualQuestionId}`);
-      console.log(`   Options:`, question.options);
-      console.log(`   Réponse correcte:`, question.correctAnswer);
+      // console.log(`✅ Question trouvée à l'index ${questionIndex}:`);
+      // console.log(`   Question: "${question.question}"`);
+      // console.log(`   Type: ${question.type}`);
+      // console.log(`   ID généré: ${actualQuestionId}`);
+      // console.log(`   Options:`, question.options);
+      // console.log(`   Réponse correcte:`, question.correctAnswer);
       
       // Vérifier correspondance questionId
       if (questionId !== actualQuestionId && questionId !== questionIndex.toString() && questionId !== questionIndex) {
@@ -1430,13 +1430,13 @@ function calculateSessionStats(sessionData) {
       
       // Vérifier si le participant a déjà répondu (STRUCTURE TABLEAU)
       const responses = session.responses || {};
-      console.log(`🔍 Vérification des réponses existantes pour question ${actualQuestionId}...`);
-      console.log(`   Structure responses:`, typeof responses, Object.keys(responses));
+      // console.log(`🔍 Vérification des réponses existantes pour question ${actualQuestionId}...`);
+      // console.log(`   Structure responses:`, typeof responses, Object.keys(responses));
       
       // Initialiser le tableau pour cette question si nécessaire
       if (!Array.isArray(responses[actualQuestionId])) {
         responses[actualQuestionId] = [];
-        console.log(`📋 Initialisation tableau réponses pour ${actualQuestionId}`);
+        // console.log(`📋 Initialisation tableau réponses pour ${actualQuestionId}`);
       }
       
       // Vérifier si le participant a déjà répondu (dans le tableau)
@@ -1454,18 +1454,18 @@ function calculateSessionStats(sessionData) {
       }
       
       // CORRECTION PRINCIPALE: Calculer le score avec logique améliorée
-      console.log(`🧮 Calcul du score amélioré...`);
+      // console.log(`🧮 Calcul du score amélioré...`);
     let isCorrect = false;
     let points = 0;
     
-    console.log(`   Réponse reçue: "${answer}" (type: ${typeof answer})`);
+    // console.log(`   Réponse reçue: "${answer}" (type: ${typeof answer})`);
     
     if (question.type === "qcm") {
-      console.log(`   Type QCM - Options:`, question.options);
+      // console.log(`   Type QCM - Options:`, question.options);
       const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
       const isMultipleChoice = correctOptions.length > 1;
       
-      console.log(`   QCM Multiple: ${isMultipleChoice} (${correctOptions.length} bonnes réponses)`);
+      // console.log(`   QCM Multiple: ${isMultipleChoice} (${correctOptions.length} bonnes réponses)`);
     
       if (isMultipleChoice) {
         // ✅ QCM à choix multiples
@@ -1485,13 +1485,13 @@ function calculateSessionStats(sessionData) {
           const answerIndices = answer.map(a => parseInt(a)).sort((a, b) => a - b);
           const expectedIndices = correctIndices.sort((a, b) => a - b);
           
-          console.log(`   Indices attendus: [${expectedIndices}]`);
-          console.log(`   Indices reçus: [${answerIndices}]`);
+          // console.log(`   Indices attendus: [${expectedIndices}]`);
+          // console.log(`   Indices reçus: [${answerIndices}]`);
           
           // ✅ Comparaison stricte: toutes les réponses doivent être correctes
           isCorrect = JSON.stringify(answerIndices) === JSON.stringify(expectedIndices);
           
-          console.log(`   Résultat QCM multiple: ${isCorrect}`);
+          // console.log(`   Résultat QCM multiple: ${isCorrect}`);
         }
       } else {
         // ✅ QCM simple (une seule bonne réponse)
@@ -1504,7 +1504,7 @@ function calculateSessionStats(sessionData) {
           if (!isNaN(answerIndex) && answerIndex >= 0 && answerIndex < question.options.length) {
             // Réponse par index
             isCorrect = question.options[answerIndex].isCorrect === true;
-            console.log(`   Réponse par index ${answerIndex}: ${isCorrect}`);
+            // console.log(`   Réponse par index ${answerIndex}: ${isCorrect}`);
           } else {
             // Réponse par texte ou ID
             isCorrect = correctOptions.some(opt => 
@@ -1517,8 +1517,8 @@ function calculateSessionStats(sessionData) {
       }
     }
     else if (question.type === "vrai_faux" || question.type === "vraifaux") {
-      console.log(`   Type Vrai/Faux - Réponse correcte: ${question.correctAnswer}`);
-      console.log(`   Réponse reçue: ${answer} (type: ${typeof answer})`);
+      // console.log(`   Type Vrai/Faux - Réponse correcte: ${question.correctAnswer}`);
+      // console.log(`   Réponse reçue: ${answer} (type: ${typeof answer})`);
       
       // CORRECTION: Gérer tous les formats possibles
       let normalizedAnswer;
@@ -1528,11 +1528,11 @@ function calculateSessionStats(sessionData) {
       if (typeof answer === 'number' || !isNaN(parseInt(answer))) {
         const answerIndex = parseInt(answer);
         normalizedAnswer = answerIndex === 0 ? "vrai" : "faux";
-        console.log(`   Réponse par index ${answerIndex} → "${normalizedAnswer}"`);
+        // console.log(`   Réponse par index ${answerIndex} → "${normalizedAnswer}"`);
       } else {
         // 2. Si la réponse est du texte
         normalizedAnswer = String(answer).toLowerCase().trim();
-        console.log(`   Réponse par texte → "${normalizedAnswer}"`);
+        // console.log(`   Réponse par texte → "${normalizedAnswer}"`);
       }
       
       // Normaliser la réponse correcte
@@ -1544,7 +1544,7 @@ function calculateSessionStats(sessionData) {
         normalizedCorrect = String(question.correctAnswer).toLowerCase().trim();
       }
       
-      console.log(`   Réponse correcte normalisée → "${normalizedCorrect}"`);
+      // console.log(`   Réponse correcte normalisée → "${normalizedCorrect}"`);
       
       // 3. Comparaison avec toutes les variantes possibles
       isCorrect = (
@@ -1560,10 +1560,10 @@ function calculateSessionStats(sessionData) {
         (normalizedAnswer === "faux" && normalizedCorrect === "1")     // 1 = Faux
       );
       
-      console.log(`   Résultat comparaison: "${normalizedAnswer}" vs "${normalizedCorrect}" → ${isCorrect}`);
+      // console.log(`   Résultat comparaison: "${normalizedAnswer}" vs "${normalizedCorrect}" → ${isCorrect}`);
     }
     else if (question.type === "reponse_libre") {
-      console.log(`   Type Réponse libre - Réponse correcte: ${question.correctAnswer}`);
+      // console.log(`   Type Réponse libre - Réponse correcte: ${question.correctAnswer}`);
       
       const userAnswer = String(answer).toLowerCase().trim();
       const correctAnswer = String(question.correctAnswer).toLowerCase().trim();
@@ -1576,12 +1576,12 @@ function calculateSessionStats(sessionData) {
         // Accepter si 90% de similarité (simple implémentation)
         const similarity = calculateSimilarity(userAnswer, correctAnswer);
         isCorrect = similarity >= 0.9;
-        console.log(`   Similarité: ${similarity} → ${isCorrect}`);
+        // console.log(`   Similarité: ${similarity} → ${isCorrect}`);
       }
       
-      console.log(`   "${userAnswer}" === "${correctAnswer}" → ${isCorrect}`);
+      // console.log(`   "${userAnswer}" === "${correctAnswer}" → ${isCorrect}`);
     }else if (question.type === "nuage_mots") {
-      console.log(`   Type Nuage de mots - Validation spéciale`);
+      // console.log(`   Type Nuage de mots - Validation spéciale`);
       
       // Pour les nuages de mots, pas de "bonne" ou "mauvaise" réponse
       // On attribue des points pour la participation
@@ -1611,7 +1611,7 @@ function calculateSessionStats(sessionData) {
         console.log(`   ❌ Aucun mot valide`);
         isCorrect = false;
       } else {
-        console.log(`   ✅ ${validWords.length} mots valides soumis`);
+        // console.log(`   ✅ ${validWords.length} mots valides soumis`);
         // Points proportionnels au nombre de mots (1-5 mots = 1-5 points max)
         // Mais plafonné aux points de la question
         const basePoints = Math.min(validWords.length, question.points || 1);
@@ -1626,9 +1626,9 @@ function calculateSessionStats(sessionData) {
     
     points = isCorrect ? (question.points || 1) : 0;
     
-    console.log(`   🎯 Résultat final: ${isCorrect ? 'CORRECT' : 'INCORRECT'} (${points} points)`);
+    // console.log(`   🎯 Résultat final: ${isCorrect ? 'CORRECT' : 'INCORRECT'} (${points} points)`);
 
-    console.log(`💾 Utilisation de session.addResponse()...`);
+    // console.log(`💾 Utilisation de session.addResponse()...`);
       
     const responseDataForModel = {
       questionId: actualQuestionId,
@@ -1640,7 +1640,7 @@ function calculateSessionStats(sessionData) {
       submittedAt: new Date(),
     };
     
-    console.log(`📝 Données pour addResponse:`, responseDataForModel);
+    // console.log(`📝 Données pour addResponse:`, responseDataForModel);
     
     try {
       // Cette méthode va :
@@ -1650,7 +1650,7 @@ function calculateSessionStats(sessionData) {
       // 4. Sauvegarder en base de données
       await session.addResponse(responseDataForModel);
       
-      console.log(`✅ session.addResponse() terminé avec succès`);
+      // console.log(`✅ session.addResponse() terminé avec succès`);
       
       // Recharger la session pour avoir les données à jour
       await session.reload();
@@ -1659,7 +1659,7 @@ function calculateSessionStats(sessionData) {
       console.error(`❌ Erreur dans session.addResponse():`, addResponseError.message);
       
       // Fallback : sauvegarde manuelle comme avant
-      console.log(`🔄 Fallback - sauvegarde manuelle...`);
+      // console.log(`🔄 Fallback - sauvegarde manuelle...`);
       
       const responses = session.responses || {};
       if (!Array.isArray(responses[actualQuestionId])) {
@@ -1692,7 +1692,7 @@ function calculateSessionStats(sessionData) {
     const participantIndex = participants.findIndex(p => p.id === socket.participantId);
     const updatedParticipant = participantIndex !== -1 ? participants[participantIndex] : null;
       
-      console.log(`✅ Session mise à jour avec succès`);
+      // console.log(`✅ Session mise à jour avec succès`);
       
       // ✅ CONFIRMATION AVEC DONNÉES MISES À JOUR
       const confirmationData = {
@@ -1707,7 +1707,7 @@ function calculateSessionStats(sessionData) {
         message: isCorrect ? "Bonne réponse !" : "Réponse incorrecte"
       };
       
-      console.log(`📤 Envoi de confirmation avec stats mises à jour:`, confirmationData);
+      // console.log(`📤 Envoi de confirmation avec stats mises à jour:`, confirmationData);
       socket.emit("response_submitted", confirmationData);
       
       // Notifier l'hôte avec les stats mises à jour
@@ -1731,10 +1731,10 @@ function calculateSessionStats(sessionData) {
         }
       };
       
-      console.log(`📤 Notification à l'hôte avec stats complètes:`, hostNotification);
+      // console.log(`📤 Notification à l'hôte avec stats complètes:`, hostNotification);
       io.to(`host_${session.id}`).emit("new_response", hostNotification);
       
-      console.log(`✅ === FIN handleSubmitResponse SUCCESS ===\n`);
+      // console.log(`✅ === FIN handleSubmitResponse SUCCESS ===\n`);
       
     } catch (error) {
       console.error(`💥 === ERREUR handleSubmitResponse ===`);
@@ -1750,10 +1750,10 @@ function calculateSessionStats(sessionData) {
         details: process.env.NODE_ENV === "development" ? error.message : "Erreur serveur"
       };
       
-      console.log(`📤 Envoi erreur:`, errorResponse);
+      // console.log(`📤 Envoi erreur:`, errorResponse);
       socket.emit("error", errorResponse);
       
-      console.log(`❌ === FIN handleSubmitResponse ERROR ===\n`);
+      // console.log(`❌ === FIN handleSubmitResponse ERROR ===\n`);
     }
   }
 
@@ -1808,7 +1808,7 @@ function calculateSessionStats(sessionData) {
   // Handler: Déconnexion avec nettoyage complet
   async function handleDisconnect(reason) {
     const socket = this;
-    console.log(`🔌 Déconnexion: ${socket.id} - Raison: ${reason}`);
+    // console.log(`🔌 Déconnexion: ${socket.id} - Raison: ${reason}`);
 
     if (socket.sessionId && socket.isParticipant && socket.participantId) {
       try {
@@ -1839,7 +1839,7 @@ function calculateSessionStats(sessionData) {
   const handleJoinSessionSocket = (socket, data) => {
     const { sessionId, participantId, participantName } = data;
   
-    console.log("🔌 Connexion Socket participant:", data);
+    // console.log("🔌 Connexion Socket participant:", data);
   
     if (!sessionId || !participantId) {
       socket.emit("error", {
@@ -1882,10 +1882,10 @@ function calculateSessionStats(sessionData) {
   
   async function handleStartSession() {
     const socket = this;
-    console.log(`\n🚀 === DÉMARRAGE SESSION ===`);
-    console.log(`   Socket ID: ${socket.id}`);
-    console.log(`   Is Host: ${socket.isHost}`);
-    console.log(`   Session ID: ${socket.sessionId}`);
+    // console.log(`\n🚀 === DÉMARRAGE SESSION ===`);
+    // console.log(`   Socket ID: ${socket.id}`);
+    // console.log(`   Is Host: ${socket.isHost}`);
+    // console.log(`   Session ID: ${socket.sessionId}`);
     
     if (!socket.isHost || !socket.sessionId) {
       console.log(`❌ Permission insuffisante pour démarrage`);
@@ -1915,9 +1915,9 @@ function calculateSessionStats(sessionData) {
         });
       }
   
-      console.log(`📋 Démarrage session ${session.code}:`);
-      console.log(`   Participants: ${participants.length}`);
-      console.log(`   Questions: ${session.quiz?.questions?.length || 0}`);
+      // console.log(`📋 Démarrage session ${session.code}:`);
+      // console.log(`   Participants: ${participants.length}`);
+      // console.log(`   Questions: ${session.quiz?.questions?.length || 0}`);
   
       await session.update({
         status: "active",
@@ -1928,21 +1928,21 @@ function calculateSessionStats(sessionData) {
   
       // DÉMARRER LE TIMER POUR LA PREMIÈRE QUESTION
       const firstQuestion = session.quiz?.questions?.[0];
-      console.log(`🔍 Première question:`, {
-        exists: !!firstQuestion,
-        question: firstQuestion?.question?.substring(0, 50),
-        timeLimit: firstQuestion?.timeLimit,
-        type: firstQuestion?.type
-      });
+      // console.log(`🔍 Première question:`, {
+      //   exists: !!firstQuestion,
+      //   question: firstQuestion?.question?.substring(0, 50),
+      //   timeLimit: firstQuestion?.timeLimit,
+      //   type: firstQuestion?.type
+      // });
   
       if (firstQuestion && firstQuestion.timeLimit) {
-        console.log(`⏰ === CONFIGURATION TIMER PREMIÈRE QUESTION ===`);
-        console.log(`   Question: "${firstQuestion.question?.substring(0, 50)}..."`);
-        console.log(`   Durée: ${firstQuestion.timeLimit}s`);
+        // console.log(`⏰ === CONFIGURATION TIMER PREMIÈRE QUESTION ===`);
+        // console.log(`   Question: "${firstQuestion.question?.substring(0, 50)}..."`);
+        // console.log(`   Durée: ${firstQuestion.timeLimit}s`);
         
         startQuestionTimer(session.id, 0, firstQuestion.timeLimit);
       } else {
-        console.log(`⏰ Pas de timer pour la première question`);
+        // console.log(`⏰ Pas de timer pour la première question`);
         debugTimer(session.id, "NO_TIMER_FIRST_QUESTION", {
           hasQuestion: !!firstQuestion,
           timeLimit: firstQuestion?.timeLimit
@@ -1956,9 +1956,9 @@ function calculateSessionStats(sessionData) {
         startedAt: new Date(),
       });
   
-      console.log(`✅ Session ${session.code} démarrée avec succès`);
-      console.log(`   Timer actif: ${activeQuestionTimers.has(session.id)}`);
-      console.log(`=== FIN DÉMARRAGE SESSION ===\n`);
+      // console.log(`✅ Session ${session.code} démarrée avec succès`);
+      // console.log(`   Timer actif: ${activeQuestionTimers.has(session.id)}`);
+      // console.log(`=== FIN DÉMARRAGE SESSION ===\n`);
       
     } catch (error) {
       console.error(`💥 Erreur lors du démarrage:`, error);
@@ -1968,18 +1968,18 @@ function calculateSessionStats(sessionData) {
   }
   
   function debugAllTimers() {
-    console.log(`\n📊 === ÉTAT DES TIMERS ===`);
-    console.log(`   Timers actifs: ${activeQuestionTimers.size}`);
+    // console.log(`\n📊 === ÉTAT DES TIMERS ===`);
+    // console.log(`   Timers actifs: ${activeQuestionTimers.size}`);
     
     for (const [sessionId, timerId] of activeQuestionTimers.entries()) {
-      console.log(`   - Session ${sessionId}: Timer ${timerId}`);
+      // console.log(`   - Session ${sessionId}: Timer ${timerId}`);
       
       if (timerDebugInfo.has(sessionId)) {
         const history = timerDebugInfo.get(sessionId).slice(-3); // 3 dernières actions
-        console.log(`     Historique:`, history.map(h => `${h.action}(${h.timestamp})`).join(', '));
+        // console.log(`     Historique:`, history.map(h => `${h.action}(${h.timestamp})`).join(', '));
       }
     }
-    console.log(`=== FIN ÉTAT TIMERS ===\n`);
+    // console.log(`=== FIN ÉTAT TIMERS ===\n`);
   }
 
   global.debugAllTimers = debugAllTimers;
@@ -2002,7 +2002,7 @@ function handleDisconnect() {
   // Si c'est l'hôte qui se déconnecte, arrêter le timer
   if (socket.isHost && socket.sessionId) {
     stopQuestionTimer(socket.sessionId);
-    console.log(`🔌 Hôte déconnecté, timer arrêté pour session ${socket.sessionId}`);
+    // console.log(`🔌 Hôte déconnecté, timer arrêté pour session ${socket.sessionId}`);
   }
   
   // Appeler le handler original

@@ -336,32 +336,32 @@ export const sessionService = {
         sessionData
       );
 
-      // CORRECTION: Assurer le format correct des settings
-      const defaultSettings = {
-        allowAnonymous: true,
-        allowLateJoin: false,
-        showLeaderboard: true,
-        maxParticipants: 100,
-        autoAdvance: false,
-        shuffleQuestions: false,
-        shuffleAnswers: false,
-        questionTimeLimit: null,
-        showCorrectAnswers: true,
-        randomizeQuestions: false,
-        enableChat: false,
-      };
+      // // CORRECTION: Assurer le format correct des settings
+      // const defaultSettings = {
+      //   allowAnonymous: true,
+      //   allowLateJoin: false,
+      //   showLeaderboard: true,
+      //   maxParticipants: 100,
+      //   autoAdvance: false,
+      //   shuffleQuestions: false,
+      //   shuffleAnswers: false,
+      //   questionTimeLimit: null,
+      //   showCorrectAnswers: true,
+      //   randomizeQuestions: false,
+      //   enableChat: false,
+      // };
 
-      // Merger les settings avec les valeurs par défaut
-      const mergedSettings = { ...defaultSettings };
+      // // Merger les settings avec les valeurs par défaut
+      // const mergedSettings = { ...defaultSettings };
 
-      if (sessionData.settings && typeof sessionData.settings === "object") {
-        // Copier seulement les propriétés définies
-        Object.keys(sessionData.settings).forEach((key) => {
-          if (sessionData.settings[key] !== undefined) {
-            mergedSettings[key] = sessionData.settings[key];
-          }
-        });
-      }
+      // if (sessionData.settings && typeof sessionData.settings === "object") {
+      //   // Copier seulement les propriétés définies
+      //   Object.keys(sessionData.settings).forEach((key) => {
+      //     if (sessionData.settings[key] !== undefined) {
+      //       mergedSettings[key] = sessionData.settings[key];
+      //     }
+      //   });
+      // }
 
       // Formater les données pour l'API
       const cleanData = {
@@ -372,7 +372,7 @@ export const sessionService = {
           sessionData.description && sessionData.description.trim()
             ? sessionData.description.trim()
             : undefined,
-        settings: mergedSettings,
+        settings: sessionData.settings,
       };
 
       console.log(

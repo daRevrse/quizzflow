@@ -99,6 +99,21 @@ const QuizEdit = () => {
       const response = await quizService.getQuiz(id);
       const quiz = response.quiz;
 
+      console.log("📥 Quiz chargé depuis l'API:", quiz);
+      console.log("⚙️ Settings reçus (bruts):", quiz.settings);
+
+      // ✅ Convertir settings en objet si c'est une chaîne JSON
+      let parsedSettings = quiz.settings;
+      if (typeof quiz.settings === "string") {
+        try {
+          parsedSettings = JSON.parse(quiz.settings);
+          console.log("✅ Settings parsés avec succès:", parsedSettings);
+        } catch (e) {
+          console.error("❌ Erreur lors du parsing de settings:", e);
+          parsedSettings = {}; // valeur par défaut
+        }
+      }
+
       // Vérifier les permissions
       if (
         quiz.creatorId !== user.id &&
@@ -112,7 +127,21 @@ const QuizEdit = () => {
 
       setOriginalQuiz(quiz);
 
-      // Remplir le formulaire avec les données du quiz
+      // ⚙️ Préparer les settings avec des valeurs par défaut (en utilisant ??)
+      const loadedSettings = {
+        isPublic: parsedSettings?.isPublic ?? false,
+        allowAnonymous: parsedSettings?.allowAnonymous ?? true,
+        showResults: parsedSettings?.showResults ?? true,
+        showCorrectAnswers: parsedSettings?.showCorrectAnswers ?? true,
+        randomizeQuestions: parsedSettings?.randomizeQuestions ?? false,
+        randomizeOptions: parsedSettings?.randomizeOptions ?? false,
+        maxAttempts: parsedSettings?.maxAttempts ?? 1,
+        passingScore: parsedSettings?.passingScore ?? 50,
+      };
+
+      console.log("✅ Settings après traitement:", loadedSettings);
+
+      // 🧾 Remplir le formulaire avec les données du quiz
       reset({
         title: quiz.title || "",
         description: quiz.description || "",
@@ -120,19 +149,12 @@ const QuizEdit = () => {
         difficulty: quiz.difficulty || "moyen",
         tags: quiz.tags || [],
         questions: quiz.questions || [],
-        settings: {
-          isPublic: quiz.settings?.isPublic || false,
-          allowAnonymous: quiz.settings?.allowAnonymous || true,
-          showResults: quiz.settings?.showResults || true,
-          showCorrectAnswers: quiz.settings?.showCorrectAnswers || true,
-          randomizeQuestions: quiz.settings?.randomizeQuestions || false,
-          randomizeOptions: quiz.settings?.randomizeOptions || false,
-          maxAttempts: quiz.settings?.maxAttempts || 1,
-          passingScore: quiz.settings?.passingScore || 50,
-        },
+        settings: loadedSettings,
       });
+
+      console.log("📝 Formulaire reset avec succès");
     } catch (error) {
-      console.error("Erreur lors du chargement du quiz:", error);
+      console.error("❌ Erreur lors du chargement du quiz:", error);
       toast.error("Erreur lors du chargement du quiz");
       navigate("/quiz");
     } finally {

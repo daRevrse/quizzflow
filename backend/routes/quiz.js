@@ -471,22 +471,27 @@ router.post(
         difficulty = "moyen",
       } = req.body;
 
+      // CORRECTION: Utiliser Object.assign pour garantir l'écrasement
+      const defaultSettings = {
+        isPublic: false,
+        allowAnonymous: true,
+        showResults: true,
+        showCorrectAnswers: true,
+        randomizeQuestions: false,
+        randomizeOptions: false,
+        maxAttempts: 1,
+        passingScore: 50,
+      };
+
+      // Merger en donnant la priorité aux settings fournis
+      const quizSettings = Object.assign({}, defaultSettings, settings);
+
       const quiz = await Quiz.create({
         title: title.trim(),
         description: description?.trim(),
         creatorId: req.user.id,
         questions,
-        settings: {
-          isPublic: false,
-          allowAnonymous: true,
-          showResults: true,
-          showCorrectAnswers: true,
-          randomizeQuestions: false,
-          randomizeOptions: false,
-          maxAttempts: 1,
-          passingScore: 50,
-          ...settings,
-        },
+        settings: quizSettings, // ← Utiliser les settings mergés
         category: category?.trim(),
         tags,
         difficulty,
@@ -545,19 +550,115 @@ router.put(
         difficulty,
       } = req.body;
 
+      console.log("\n🔍 ===== DEBUG PUT QUIZ =====");
+      console.log("📥 Settings reçus:", settings);
+      console.log("🔬 Type settings:", typeof settings);
+      
+      if (settings) {
+        Object.keys(settings).forEach(key => {
+          console.log(`  ${key}: ${typeof settings[key]} = ${settings[key]}`);
+        });
+      }
+
       const updates = {};
 
       if (title !== undefined) updates.title = title.trim();
       if (description !== undefined) updates.description = description?.trim();
       if (questions !== undefined) updates.questions = questions;
-      if (settings !== undefined) {
-        updates.settings = { ...quiz.settings, ...settings };
-      }
       if (category !== undefined) updates.category = category?.trim();
       if (tags !== undefined) updates.tags = tags;
       if (difficulty !== undefined) updates.difficulty = difficulty;
 
+      // CORRECTION CRITIQUE : Traiter settings correctement
+      if (settings !== undefined) {
+        // Vérifier que settings est un objet, pas une string
+        let parsedSettings = settings;
+        
+        if (typeof settings === 'string') {
+          console.error("❌ ERREUR: settings est une string, tentative de parse");
+          try {
+            parsedSettings = JSON.parse(settings);
+          } catch (e) {
+            console.error("❌ Impossible de parser settings:", e);
+            return res.status(400).json({
+              error: "Format de settings invalide",
+              code: "INVALID_SETTINGS_FORMAT"
+            });
+          }
+        }
+
+        // Récupérer les settings actuels
+        const currentSettings = quiz.settings || {};
+
+        // Merger en assurant les bons types
+        const mergedSettings = {};
+        
+        // Définir tous les champs avec leurs types
+        const settingsSchema = {
+          isPublic: 'boolean',
+          allowAnonymous: 'boolean',
+          showResults: 'boolean',
+          showCorrectAnswers: 'boolean',
+          randomizeQuestions: 'boolean',
+          randomizeOptions: 'boolean',
+          maxAttempts: 'number',
+          passingScore: 'number',
+        };
+
+        // Pour chaque champ du schéma
+        Object.keys(settingsSchema).forEach(key => {
+          const expectedType = settingsSchema[key];
+          
+          // Si une nouvelle valeur est fournie
+          if (parsedSettings.hasOwnProperty(key)) {
+            const value = parsedSettings[key];
+            
+            if (expectedType === 'boolean') {
+              // Convertir en booléen
+              mergedSettings[key] = Boolean(value);
+            } else if (expectedType === 'number') {
+              // Convertir en nombre
+              mergedSettings[key] = parseInt(value) || (key === 'maxAttempts' ? 1 : 50);
+            } else {
+              mergedSettings[key] = value;
+            }
+          } 
+          // Sinon garder la valeur actuelle
+          else if (currentSettings.hasOwnProperty(key)) {
+            mergedSettings[key] = currentSettings[key];
+          }
+          // Sinon utiliser la valeur par défaut
+          else {
+            if (expectedType === 'boolean') {
+              mergedSettings[key] = key === 'allowAnonymous' || 
+                                   key === 'showResults' || 
+                                   key === 'showCorrectAnswers';
+            } else if (expectedType === 'number') {
+              mergedSettings[key] = key === 'maxAttempts' ? 1 : 50;
+            }
+          }
+        });
+
+        console.log("✅ Settings après traitement:", mergedSettings);
+        console.log("🔬 Types après traitement:");
+        Object.keys(mergedSettings).forEach(key => {
+          console.log(`  ${key}: ${typeof mergedSettings[key]} = ${mergedSettings[key]}`);
+        });
+
+        // IMPORTANT : Assigner l'objet directement, pas via JSON.stringify
+        updates.settings = mergedSettings;
+      }
+
+      console.log("💾 Updates à appliquer:", updates);
+      console.log("🔍 ===== FIN DEBUG =====\n");
+
+      // Mettre à jour le quiz
       await quiz.update(updates);
+
+      // Recharger pour avoir les données à jour
+      await quiz.reload();
+
+      console.log("💾 Settings après sauvegarde:", quiz.settings);
 
       res.json({
         message: "Quiz mis à jour avec succès",
@@ -565,21 +666,29 @@ router.put(
           id: quiz.id,
           title: quiz.title,
           description: quiz.description,
-          questions: quiz.questions,
-          settings: quiz.settings,
           category: quiz.category,
           tags: quiz.tags,
           difficulty: quiz.difficulty,
           questionCount: quiz.getQuestionCount(),
           totalPoints: quiz.getTotalPoints(),
           estimatedDuration: quiz.estimatedDuration,
+          settings: quiz.settings,
           updatedAt: quiz.updatedAt,
         },
       });
     } catch (error) {
-      console.error("Erreur lors de la mise à jour du quiz:", error);
+      console.error("❌ Erreur lors de la mise à jour du quiz:", error);
+
+      if (error.name === "SequelizeValidationError") {
+        return res.status(400).json({
+          error: "Données invalides",
+          details: error.errors.map((err) => err.message),
+        });
+      }
+
       res.status(500).json({
         error: "Erreur lors de la mise à jour du quiz",
+        details: process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   }
@@ -705,18 +814,28 @@ router.get("/:id/public", async (req, res) => {
     });
 
     if (!quiz || !quiz.isActive) {
-      return res.status(404).json({
-        error: "Quiz non trouvé",
-      });
+      return res.status(404).json({ error: "Quiz non trouvé" });
+    }
+
+    // ✅ Corriger ici : parser les settings s'ils sont en JSON string
+    let parsedSettings = {};
+    try {
+      if (typeof quiz.settings === "string") {
+        parsedSettings = JSON.parse(quiz.settings);
+      } else {
+        parsedSettings = quiz.settings || {};
+      }
+    } catch (err) {
+      console.error("Erreur lors du parsing de settings:", err);
     }
 
     // Vérifier les permissions d'accès
-    const canAccess = 
-      quiz.settings?.isPublic || // Quiz public
+    const canAccess =
+      parsedSettings.isPublic ||
       (userId && (
-        userId === quiz.creatorId || // Propriétaire
-        req.user?.role === "admin" || // Admin
-        req.user?.role === "formateur" // Formateur
+        userId === quiz.creatorId ||
+        req.user?.role === "admin" ||
+        req.user?.role === "formateur"
       ));
 
     if (!canAccess) {
@@ -734,15 +853,17 @@ router.get("/:id/public", async (req, res) => {
       difficulty: quiz.difficulty,
       tags: quiz.tags,
       settings: {
-        isPublic: quiz.settings?.isPublic || false,
-        allowAnonymous: quiz.settings?.allowAnonymous || false,
-        showResults: quiz.settings?.showResults || false,
+        isPublic: parsedSettings.isPublic || false,
+        allowAnonymous: parsedSettings.allowAnonymous || false,
+        showResults: parsedSettings.showResults || false,
       },
-      creator: quiz.creator ? {
-        id: quiz.creator.id,
-        firstName: quiz.creator.firstName,
-        username: quiz.creator.username,
-      } : null,
+      creator: quiz.creator
+        ? {
+            id: quiz.creator.id,
+            firstName: quiz.creator.firstName,
+            username: quiz.creator.username,
+          }
+        : null,
       createdAt: quiz.createdAt,
       updatedAt: quiz.updatedAt,
       questionCount: quiz.getQuestionCount(),
@@ -750,20 +871,19 @@ router.get("/:id/public", async (req, res) => {
       estimatedDuration: quiz.estimatedDuration,
     };
 
-    // Ajouter les informations des questions SANS révéler les réponses
+    // Ajouter les questions sans réponses
     if (quiz.questions && Array.isArray(quiz.questions)) {
       publicQuizData.questions = quiz.questions.map((question, index) => ({
         id: question.id || `question_${index}`,
         type: question.type,
         question: question.question,
         image: question.image,
-        // Pour QCM, inclure seulement les textes des options (pas les bonnes réponses)
-        ...(question.type === 'qcm' && question.options && {
-          options: question.options.map(opt => ({
-            text: opt.text || opt
-          }))
-        }),
-        // Ne PAS inclure: correctAnswer, explanation, isCorrect, points, timeLimit
+        ...(question.type === "qcm" &&
+          question.options && {
+            options: question.options.map((opt) => ({
+              text: opt.text || opt,
+            })),
+          }),
       }));
     }
 
@@ -774,17 +894,14 @@ router.get("/:id/public", async (req, res) => {
         totalParticipants: quiz.stats.totalParticipants || 0,
         averageScore: quiz.stats.averageScore || 0,
         completionRate: quiz.stats.completionRate || 0,
-        // Ne pas inclure les statistiques détaillées par question
       };
     }
 
     console.log(`✅ Vue publique quiz ${id} envoyée`);
-
     res.json({
       message: "Vue publique du quiz récupérée avec succès",
       quiz: publicQuizData,
     });
-
   } catch (error) {
     console.error("❌ Erreur vue publique quiz:", error);
     res.status(500).json({
@@ -792,5 +909,6 @@ router.get("/:id/public", async (req, res) => {
     });
   }
 });
+
 
 module.exports = router;

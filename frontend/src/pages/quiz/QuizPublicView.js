@@ -41,6 +41,17 @@ const QuizPublicView = () => {
 
       // Vérifier si le quiz est public ou si l'utilisateur a les permissions
       const quiz = response.quiz;
+
+      console.log("quiz", quiz);
+
+      if (typeof quiz.settings === "string") {
+        try {
+          quiz.settings = JSON.parse(quiz.settings);
+        } catch (e) {
+          console.error("Erreur lors du parsing de settings :", e);
+        }
+      }
+
       const canView =
         quiz.settings?.isPublic ||
         user?.role === "formateur" ||
